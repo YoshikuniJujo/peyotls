@@ -1,13 +1,10 @@
 issues
 ======
 
-リポジトリの移動
-----------------
+move repository
+---------------
 
-1. forestのissueで不要なものはcloseする
-2. forestのissueで必要なものはコピーする
-    1. まずはforestのissueをファイルにまとめてしまい、peyotlsリポジトリにup
-    2. そこからpeyotlsのissueへ書き写す
+copy issues from issues.md to issues of peyotls.
 
 enhancement
 -----------
