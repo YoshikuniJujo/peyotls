@@ -8,3 +8,9 @@ issues
 2. forestのissueで必要なものはコピーする
     1. まずはforestのissueをファイルにまとめてしまい、peyotlsリポジトリにup
     2. そこからpeyotlsのissueへ書き写す
+
+enhancement
+-----------
+
+=renegotiation= 
+    RFC 5746
