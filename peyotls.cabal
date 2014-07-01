@@ -6,7 +6,7 @@ version:	0.0.0.0
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
-homepage:	https://github.com/YoshikuniJujo/forest/
+homepage:	https://github.com/YoshikuniJujo/peyotls/wiki
 
 license:	BSD3
 license-file:	LICENSE
@@ -267,11 +267,11 @@ data-files:
 
 source-repository	head
     type:	git
-    location:	git://github.com/YoshikuniJujo/forest.git
+    location:	git://github.com/YoshikuniJujo/peyotls.git
 
 source-repository	this
     type:	git
-    location:	git://github.com/YoshikuniJujo/forest.git
+    location:	git://github.com/YoshikuniJujo/peyotls.git
     tag:	peyotls-0.0.0.0
 
 library
