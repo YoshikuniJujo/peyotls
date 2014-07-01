@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Data.HandleLike
+import System.Environment
 import Network
 import Network.PeyoTLS.ReadFile
 import Network.PeyoTLS.Client
@@ -13,11 +14,12 @@ import qualified Data.ByteString.Char8 as BSC
 
 main :: IO ()
 main = do
-	rk <- readKey "client_rsa.key"
-	rc <- readCertificateChain "client_rsa.crt"
-	ek <- readKey "client_ecdsa.key"
-	ec <- readCertificateChain "client_ecdsa.crt"
-	ca <- readCertificateStore ["cacert.pem"]
+	d : _ <- getArgs
+	rk <- readKey $ d ++ "/yoshikuni.sample_key"
+	rc <- readCertificateChain $ d ++ "/yoshikuni.sample_crt"
+	ek <- readKey $ d ++ "/client_ecdsa.sample_key"
+	ec <- readCertificateChain $ d ++ "/client_ecdsa.sample_crt"
+	ca <- readCertificateStore [d ++ "/cacert.pem"]
 	h <- connectTo "localhost" $ PortNumber 443
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
