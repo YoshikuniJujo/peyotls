@@ -10,7 +10,6 @@ import Data.HandleLike
 
 import Control.Concurrent.STM
 import qualified Data.ByteString as BS
-import Network.PeyoTLS.ReadFile
 import System.IO
 import CommandLine
 import System.Environment
@@ -64,16 +63,16 @@ srv sw cs = do
 
 readFiles :: IO (CertSecretKey, X509.CertificateChain, X509.CertificateStore)
 readFiles = (,,)
-	<$> readKey "certFiles/yoshikuni.sample_key"
-	<*> readCertificateChain "certFiles/yoshikuni.sample_crt"
-	<*> readCertificateStore ["certFiles/cacert.pem"]
+	<$> readPathKey "certs/yoshikuni.sample_key"
+	<*> readPathCertificateChain "certs/yoshikuni.sample_crt"
+	<*> readPathCertificateStore ["certs/cacert.pem"]
 
 readFilesEcdsa :: IO
 	(CertSecretKey, X509.CertificateChain, X509.CertificateStore)
 readFilesEcdsa = (,,)
-	<$> readKey "certFiles/client_ecdsa.sample_key"
-	<*> readCertificateChain "certFiles/client_ecdsa.sample_crt"
-	<*> readCertificateStore ["certFiles/cacert.pem"]
+	<$> readPathKey "certs/client_ecdsa.sample_key"
+	<*> readPathCertificateChain "certs/client_ecdsa.sample_crt"
+	<*> readPathCertificateStore ["certs/cacert.pem"]
 
 data ChanHandle = ChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
 

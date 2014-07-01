@@ -1,7 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module CommandLine (readOptions) where
+module CommandLine (
+	readOptions,
+	readPathKey, readPathCertificateChain, readPathCertificateStore) where
+
+import Paths_peyotls
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
@@ -16,6 +20,15 @@ import Network.PeyoTLS.Server (CipherSuite(..), KeyExchange(..), BulkEncryption(
 
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
+
+readPathKey :: FilePath -> IO CertSecretKey
+readPathKey = (readKey =<<) . getDataFileName
+
+readPathCertificateChain :: FilePath -> IO X509.CertificateChain
+readPathCertificateChain = (readCertificateChain =<<) . getDataFileName
+
+readPathCertificateStore :: [FilePath] -> IO X509.CertificateStore
+readPathCertificateStore = (readCertificateStore =<<) . mapM getDataFileName
 
 readOptions :: [String] -> IO (
 	PortID,
@@ -32,18 +45,18 @@ readOptions args = do
 	let	prt = PortNumber 443 `fromMaybe` optPort opts
 		css = maybe id (drop . fromEnum) (optLevel opts) cipherSuites
 		td = "test" `fromMaybe` optTestDirectory opts
-		rkf = "certFiles/localhost.sample_key" `fromMaybe`
+		rkf = "certs/localhost.sample_key" `fromMaybe`
 			optRsaKeyFile opts
-		rcf = "certFiles/localhost.sample_crt" `fromMaybe`
+		rcf = "certs/localhost.sample_crt" `fromMaybe`
 			optRsaCertFile opts
-		ekf = "certFiles/localhost_ecdsa.sample_key" `fromMaybe`
+		ekf = "certs/localhost_ecdsa.sample_key" `fromMaybe`
 			optEcKeyFile opts
-		ecf = "certFiles/localhost_ecdsa.sample_crt" `fromMaybe`
+		ecf = "certs/localhost_ecdsa.sample_crt" `fromMaybe`
 			optEcCertFile opts
-	rsa <- (,) <$> readKey rkf <*> readCertificateChain rcf
-	ec <- (,) <$> readKey ekf <*> readCertificateChain ecf
+	rsa <- (,) <$> readPathKey rkf <*> readPathCertificateChain rcf
+	ec <- (,) <$> readPathKey ekf <*> readPathCertificateChain ecf
 	mcs <- if optDisableClientCert opts then return Nothing else Just <$>
-		readCertificateStore ["certFiles/cacert.pem"]
+		readPathCertificateStore ["certs/cacert.pem"]
 	return (prt, css, rsa, ec, mcs, td)
 
 data Options = Options {
