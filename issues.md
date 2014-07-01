@@ -12,5 +12,7 @@ issues
 enhancement
 -----------
 
-=renegotiation= 
-    RFC 5746
+<dl>
+    <dt>renegotiation</dt>
+    <dd>RFC 5746</dd>
+</dl>
