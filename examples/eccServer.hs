@@ -5,6 +5,7 @@ import Control.Monad
 import "monads-tf" Control.Monad.State
 import Control.Concurrent
 import Data.HandleLike
+import System.Environment
 import Network
 import Network.PeyoTLS.Server
 import Network.PeyoTLS.ReadFile
@@ -26,10 +27,11 @@ cipherSuites = [
 
 main :: IO ()
 main = do
-	rk <- readKey "localhost.key"
-	rc <- readCertificateChain "localhost.crt"
-	ek <- readKey "localhost_ecdsa.key"
-	ec <- readCertificateChain "localhost_ecdsa.crt"
+	d : _ <- getArgs
+	rk <- readKey $ d ++ "/localhost.sample_key"
+	rc <- readCertificateChain $ d ++ "/localhost.sample_crt"
+	ek <- readKey $ d ++ "/localhost_ecdsa.sample_key"
+	ec <- readCertificateChain $ d ++ "/localhost_ecdsa.sample_crt"
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	soc <- listenOn $ PortNumber 443
 	void . (`runStateT` g0) . forever $ do

@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Data.HandleLike
+import System.Environment
 import Network
 import Network.PeyoTLS.ReadFile
 import Network.PeyoTLS.Client
@@ -24,7 +25,8 @@ cipherSuites = [
 
 main :: IO ()
 main = do
-	ca <- readCertificateStore ["cacert.pem"]
+	d : _ <- getArgs
+	ca <- readCertificateStore [d ++ "/cacert.pem"]
 	h <- connectTo "localhost" $ PortNumber 443
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
