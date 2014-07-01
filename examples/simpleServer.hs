@@ -5,6 +5,7 @@ import Control.Monad
 import "monads-tf" Control.Monad.State
 import Control.Concurrent
 import Data.HandleLike
+import System.Environment
 import Network
 import Network.PeyoTLS.Server
 import Network.PeyoTLS.ReadFile
@@ -15,8 +16,9 @@ import qualified Data.ByteString.Char8 as BSC
 
 main :: IO ()
 main = do
-	k <- readKey "localhost.key"
-	c <- readCertificateChain "localhost.crt"
+	d : _ <- getArgs
+	k <- readKey $ d ++ "/localhost.sample_key"
+	c <- readCertificateChain $ d ++ "/localhost.sample_crt"
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	soc <- listenOn $ PortNumber 443
 	void . (`runStateT` g0) . forever $ do
