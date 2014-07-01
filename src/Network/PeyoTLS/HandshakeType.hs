@@ -18,7 +18,7 @@ import Data.Word.Word24 (Word24)
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 

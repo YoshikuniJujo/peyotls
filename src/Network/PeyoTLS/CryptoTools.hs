@@ -17,8 +17,7 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.Cipher.AES as AES
 
-import qualified Codec.Bytable as B
-import Codec.Bytable.BigEndian ()
+import qualified Codec.Bytable.BigEndian as B
 
 makeKeys :: Int -> BS.ByteString -> BS.ByteString -> BS.ByteString ->
 	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)

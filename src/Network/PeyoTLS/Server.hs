@@ -22,7 +22,7 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC

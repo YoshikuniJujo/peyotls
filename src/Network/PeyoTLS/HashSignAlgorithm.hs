@@ -5,8 +5,7 @@ module Network.PeyoTLS.HashSignAlgorithm (SignAlg(..), HashAlg(..)) where
 import Data.Word (Word8)
 
 import qualified Data.ByteString as BS
-import qualified Codec.Bytable as B
-import Codec.Bytable.BigEndian ()
+import qualified Codec.Bytable.BigEndian as B
 
 data HashAlg = Sha1 | Sha224 | Sha256 | Sha384 | Sha512 | HARaw Word8
 	deriving Show

@@ -15,7 +15,7 @@ import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 
 import Network.PeyoTLS.HashSignAlgorithm (HashAlg, SignAlg)
 

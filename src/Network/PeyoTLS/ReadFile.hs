@@ -16,7 +16,7 @@ import qualified Data.PEM as PEM
 import qualified Data.X509 as X509
 import qualified Data.X509.File as X509
 import qualified Data.X509.CertificateStore as X509
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 import Codec.Bytable.BigEndian ()
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECC as ECC

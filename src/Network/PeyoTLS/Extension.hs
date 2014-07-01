@@ -8,7 +8,7 @@ import Data.Bits (shiftL, (.|.))
 import Data.Word (Word8, Word16)
 
 import qualified Data.ByteString as BS
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 

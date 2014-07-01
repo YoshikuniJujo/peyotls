@@ -11,7 +11,7 @@ import Data.Word (Word8, Word16)
 import Numeric (showHex)
 
 import qualified Data.ByteString as BS
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 
 import Network.PeyoTLS.Extension (Extension, SignAlg(..), HashAlg(..))
 import Network.PeyoTLS.CipherSuite (

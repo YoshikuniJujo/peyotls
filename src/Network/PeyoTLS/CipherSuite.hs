@@ -8,7 +8,7 @@ import Data.Word (Word8)
 import Data.String (IsString(..))
 
 import qualified Data.ByteString as BS
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 
 data CipherSuite
 	= CipherSuite KeyExchange BulkEncryption
