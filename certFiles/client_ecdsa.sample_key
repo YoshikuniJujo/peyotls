@@ -1,0 +1,40 @@
+Public Key Info:
+	Public Key Algorithm: EC
+	Key Security Level: High (256 bits)
+
+curve:	SECP256R1
+private key:
+	00:ea:38:bc:05:19:7d:93:72:7c:30:70:1c:51:52:
+	05:24:5d:74:b0:7c:c9:dd:d8:01:bc:98:f8:52:38:
+	4b:aa:8c:
+
+x:
+	00:d3:98:0f:89:d6:76:f6:e0:0e:cb:3a:2e:9f:19:
+	c8:b1:4c:dc:5b:78:2f:98:ee:9e:c5:8e:d7:34:5a:
+	21:6b:60:
+
+y:
+	00:ec:b8:80:62:62:c8:76:25:3b:f0:fd:f3:6c:40:
+	fc:73:2d:3d:f4:a8:ff:9c:4e:a4:f2:1d:48:a1:95:
+	83:e9:f3:
+
+
+Public Key ID: 2B:3F:67:7F:08:90:36:EF:50:D8:4B:60:A4:2D:B7:28:D4:EF:C4:88
+Public key's random art:
++--[  EC  256]----+
+|       ..        |
+|     . oo        |
+|    . +.o=       |
+|   . . B*.+      |
+|    E o.S* .     |
+|     . o..+      |
+|      . oo . .   |
+|       o. + . .  |
+|        .+ ...   |
++-----------------+
+
+-----BEGIN EC PRIVATE KEY-----
+MHgCAQEEIQDqOLwFGX2TcnwwcBxRUgUkXXSwfMnd2AG8mPhSOEuqjKAKBggqhkjO
+PQMBB6FEA0IABNOYD4nWdvbgDss6Lp8ZyLFM3Ft4L5junsWO1zRaIWtg7LiAYmLI
+diU78P3zbED8cy099Kj/nE6k8h1IoZWD6fM=
+-----END EC PRIVATE KEY-----
