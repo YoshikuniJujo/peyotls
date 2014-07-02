@@ -138,9 +138,11 @@ clientHello cssv = do
 	chk cv css cms
 		| cv < version = throwError ALFatal ADProtocolVersion $
 			pmsg ++ "client version should 3.3 or more"
+			{-
 		| CipherSuite RSA AES_128_CBC_SHA `notElem` css =
 			throwError ALFatal ADIllegalParameter $
 				pmsg ++ "TLS_RSA_AES_128_CBC_SHA must be supported"
+				-}
 		| CompressionMethodNull `notElem` cms =
 			throwError ALFatal ADDecodeError $
 				pmsg ++ "compression method NULL must be supported"

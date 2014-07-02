@@ -66,7 +66,7 @@ instance ValidateHandle Handle where
 	validate _ cs (X509.CertificateChain cc) =
 		X509.validate X509.HashSHA256 X509.defaultHooks
 			validationChecks cs validationCache ("", "") $
-				X509.CertificateChain cc -- $ reverse cc
+				X509.CertificateChain cc -- reverse cc
 		where
 		validationCache = X509.ValidationCache
 			(\_ _ _ -> return X509.ValidationCacheUnknown)
