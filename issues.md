@@ -10,8 +10,6 @@ enhancement
 -----------
 
 <dl>
-    <dt>renegotiation</dt>
-    <dd>RFC 5746</dd>
     <dt>Select curve from client hello</dt>
     <dd>Add curve list to arguments, and merge with client hello</dd>
     <dt>Process encrypted secret key</dt>
