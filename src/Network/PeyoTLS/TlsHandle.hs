@@ -5,7 +5,7 @@ module Network.PeyoTLS.TlsHandle (
 		run, withRandom, randomByteString,
 	TlsHandle(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
-		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
 		setKeys,
 		handshakeHash, finishedHash ) where
@@ -35,12 +35,11 @@ import Network.PeyoTLS.TlsMonad (
 		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	PartnerId, newPartnerId, Keys(..), nullKeys )
+	PartnerId, newPartnerId, Keys(..))
 import qualified Network.PeyoTLS.CryptoTools as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
 data TlsHandle h g = TlsHandle {
---	keys :: Keys,
 	clientId :: PartnerId,
 	tlsHandle :: h, names :: [String] }
 
@@ -221,19 +220,7 @@ generateKeys p cs cr sr pms = do
 			kReadMacKey = cwmk, kWriteMacKey = swmk,
 			kReadKey = cwk, kWriteKey = swk }
 
-cipherSuite :: TlsHandle h g -> CipherSuite
-cipherSuite _ = kCachedCS nullKeys -- . keys
-
-setCipherSuite :: CipherSuite -> TlsHandle h g -> TlsHandle h g
-setCipherSuite c t = t
--- setCipherSuite c t@TlsHandle{ keys = k } = t{ keys = k{ kCachedCS = c } }
-
 data RW = Read | Write deriving Show
-
-flushCipherSuite :: RW -> TlsHandle h g -> TlsHandle h g
-flushCipherSuite p t = t -- @TlsHandle{ keys = ks } = t {- case p of
---	Read -> t{ keys = ks { kReadCS = kCachedCS ks } }
---	Write -> t{ keys = ks { kWriteCS = kCachedCS ks } } -}
 
 flushCipherSuiteSt :: HandleLike h => RW -> PartnerId -> TlsM h g ()
 flushCipherSuiteSt p = case p of

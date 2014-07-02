@@ -38,7 +38,7 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 		run, withRandom, randomByteString,
 	TlsHandle(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
-		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..) )
 
@@ -96,13 +96,11 @@ setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite cs = do
 	t <- gets fst
 	lift $ TH.setCipherSuiteSt (TH.clientId t) cs
-	modify . first $ TH.setCipherSuite cs
 
 flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
 flushCipherSuite p = do
 	t <- gets fst
 	lift $ TH.flushCipherSuiteSt p (TH.clientId t)
-	TH.flushCipherSuite p `liftM` gets fst >>= modify . first . const
 
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
