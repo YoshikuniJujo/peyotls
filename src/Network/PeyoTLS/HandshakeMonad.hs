@@ -66,7 +66,7 @@ instance ValidateHandle Handle where
 	validate _ cs (X509.CertificateChain cc) =
 		X509.validate X509.HashSHA256 X509.defaultHooks
 			validationChecks cs validationCache ("", "") $
-				X509.CertificateChain cc -- reverse cc
+				X509.CertificateChain cc
 		where
 		validationCache = X509.ValidationCache
 			(\_ _ _ -> return X509.ValidationCacheUnknown)
@@ -86,8 +86,8 @@ certNames = nms
 handshakeValidate :: ValidateHandle h =>
 	X509.CertificateStore -> X509.CertificateChain ->
 	HandshakeM h g [X509.FailedReason]
-handshakeValidate cs cc@(X509.CertificateChain (c : _)) = gets fst >>= \t -> do
-	modify . first $ const t { TH.names = certNames $ X509.getCertificate c }
+handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
+	modify . first $ const t { TH.names = certNames $ X509.getCertificate $ last c }
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 handshakeValidate _ _ = error "empty certificate chain"
 

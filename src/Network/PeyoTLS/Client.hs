@@ -100,7 +100,8 @@ dheHandshake :: (ValidateHandle h, CPRG g, KeyExchangeClass ke, Show (Secret ke)
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
 dheHandshake t cr sr crts ca = do
-	cc@(X509.CertificateChain (c : _)) <- readHandshake
+	cc@(X509.CertificateChain cs) <- readHandshake
+	let c = last cs
 	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> succeedHandshake t pk cr sr cc crts ca
 		X509.PubKeyECDSA cv pnt ->
