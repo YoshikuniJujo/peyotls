@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.HandshakeType (
+module Network.PeyoTLS.HandshakeType ( Extension(..),
 	Handshake, HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -22,7 +22,7 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Network.PeyoTLS.Hello (
+import Network.PeyoTLS.Hello ( Extension(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	CompressionMethod(..), HashAlg(..), SignAlg(..) )

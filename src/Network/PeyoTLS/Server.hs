@@ -30,7 +30,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import Network.PeyoTLS.HandshakeBase (
+import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
 	PeyotlsM, PeyotlsHandle,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	TlsHandle, names,
@@ -79,8 +79,8 @@ open :: (ValidateHandle h, CPRG g) => h ->
 	[(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
 open h cssv crts mcs = execHandshakeM h $ do
-	(cs@(CipherSuite ke be), cr, cv) <- clientHello $ filterCS crts cssv
-	sr <- serverHello cs rcc ecc
+	(cs@(CipherSuite ke be), cr, cv, rn) <- clientHello $ filterCS crts cssv
+	sr <- serverHello cs rcc ecc rn
 	setCipherSuite cs
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
@@ -128,10 +128,13 @@ dhKeyExchange ha dp ssk rs mcs = do
 		`ap` dhClientKeyExchange dp sv rs
 
 clientHello :: (HandleLike h, CPRG g) =>
-	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version)
+	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
 clientHello cssv = do
-	ClientHello cv cr _sid cscl cms _ <- readHandshake
-	chk cv cscl cms >> return (merge cssv cscl, cr, cv)
+	ClientHello cv cr _sid cscl cms e <- readHandshake
+	debug e
+	let rn = maybe False (ERenegoInfo "" `elem`) e
+	debug rn
+	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
 	where
 	merge sv cl = case find (`elem` cl) sv of
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
@@ -150,15 +153,17 @@ clientHello cssv = do
 		where pmsg = "TlsServer.clientHello: "
 
 serverHello :: (HandleLike h, CPRG g) => CipherSuite ->
-	X509.CertificateChain -> X509.CertificateChain ->
+	X509.CertificateChain -> X509.CertificateChain -> Bool ->
 	HandshakeM h g BS.ByteString
-serverHello cs@(CipherSuite ke _) rcc ecc = do
+serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 	sr <- randomByteString 32
-	writeHandshake $ ServerHello
-		version sr (SessionId "") cs CompressionMethodNull Nothing
+	writeHandshake . ServerHello
+		version sr (SessionId "") cs CompressionMethodNull $ if rn
+			then Just [ERenegoInfo ""]
+			else Nothing
 	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	return sr
-serverHello _ _ _ = E.throwError "TlsServer.serverHello: never occur"
+serverHello _ _ _ _ = E.throwError "TlsServer.serverHello: never occur"
 
 serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>

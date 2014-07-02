@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports,
 	TupleSections #-}
 
-module Network.PeyoTLS.HandshakeBase (
+module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	PeyotlsM, PeyotlsHandle,
 	debug, generateKs, blindSign, CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
@@ -51,7 +51,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
-import Network.PeyoTLS.HandshakeType (
+import Network.PeyoTLS.HandshakeType ( Extension(..),
 	Handshake, HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -81,7 +81,7 @@ type PeyotlsHandle = HM.TlsHandle Handle SystemRNG
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
 debug x = do
 	h <- gets $ HM.tlsHandle . fst
-	lift . lift . lift . hlDebug h "moderate" . BSC.pack . (++ "\n") $ show x
+	lift . lift . lift . hlDebug h "critical" . BSC.pack . (++ "\n") $ show x
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do

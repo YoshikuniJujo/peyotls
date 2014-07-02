@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Extension (Extension, SignAlg(..), HashAlg(..)) where
+module Network.PeyoTLS.Extension (Extension(..), SignAlg(..), HashAlg(..)) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Bits (shiftL, (.|.))
@@ -21,7 +21,7 @@ data Extension
 	| ENextProtoNego BS.ByteString
 	| ERenegoInfo BS.ByteString
 	| ERaw EType BS.ByteString
-	deriving Show
+	deriving (Show, Eq)
 
 instance B.Bytable Extension where
 	encode = encodeE; decode = B.evalBytableM B.parse
@@ -52,7 +52,7 @@ parseE = do
 
 data EType
 	= TSName         | TECurve     | TEcPFrt     | TSsnTicketTls
-	| TNextProtoNego | TRenegoInfo | TRaw Word16 deriving Show
+	| TNextProtoNego | TRenegoInfo | TRaw Word16 deriving (Show, Eq)
 
 instance B.Bytable EType where
 	encode TSName = B.encode (0 :: Word16)
@@ -75,7 +75,7 @@ instance B.Bytable EType where
 		_ -> Left "Extension: EType.decode"
 
 data ServerName = SNHostName BS.ByteString | SNRaw NameType BS.ByteString
-	deriving Show
+	deriving (Show, Eq)
 
 instance B.Bytable ServerName where
 	encode (SNHostName nm) = B.encode $ SNRaw NTHostName nm
@@ -88,7 +88,7 @@ instance B.Parsable ServerName where
 		return $ case t of
 			NTHostName -> SNHostName n; _ -> SNRaw t n
 
-data NameType = NTHostName | NTRaw Word8 deriving Show
+data NameType = NTHostName | NTRaw Word8 deriving (Show, Eq)
 
 instance B.Bytable NameType where
 	encode NTHostName = BS.pack [0]
@@ -162,7 +162,7 @@ instance B.Parsable ECC.Curve where
 		NamedCurve <- B.parse
 		B.parse
 
-data EcPointFormat = EPFUncompressed | EPFRaw Word8 deriving Show
+data EcPointFormat = EPFUncompressed | EPFRaw Word8 deriving (Show, Eq)
 
 instance B.Bytable EcPointFormat where
 	encode EPFUncompressed = BS.pack [0]

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.PeyoTLS.Hello (
+module Network.PeyoTLS.Hello ( Extension(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
@@ -13,7 +13,7 @@ import Numeric (showHex)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-import Network.PeyoTLS.Extension (Extension, SignAlg(..), HashAlg(..))
+import Network.PeyoTLS.Extension (Extension(..), SignAlg(..), HashAlg(..))
 import Network.PeyoTLS.CipherSuite (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
