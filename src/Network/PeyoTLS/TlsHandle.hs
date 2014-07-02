@@ -40,8 +40,9 @@ import qualified Network.PeyoTLS.CryptoTools as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
 data TlsHandle h g = TlsHandle {
+--	keys :: Keys,
 	clientId :: PartnerId,
-	tlsHandle :: h, keys :: Keys, names :: [String] }
+	tlsHandle :: h, names :: [String] }
 
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
 
@@ -60,7 +61,7 @@ newHandle h = do
 	let (i, s') = newPartnerId s
 	put s'
 	return TlsHandle {
-		clientId = i, tlsHandle = h, keys = nullKeys, names = [] }
+		clientId = i, tlsHandle = h, names = [] }
 
 getContentType :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ContentType
 getContentType t = do
@@ -116,7 +117,7 @@ read t n = do
 
 decrypt :: HandleLike h =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
-decrypt t@TlsHandle{ keys = _ks } ct e = do
+decrypt t ct e = do
 	ks <- getKeys $ clientId t
 	decrypt_ t ks ct e
 
@@ -159,7 +160,7 @@ flush t = do
 
 encrypt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
-encrypt t@TlsHandle{ keys = _ks } ct p = do
+encrypt t ct p = do
 	ks <- getKeys $ clientId t
 	encrypt_ t ks ct p
 
@@ -182,7 +183,8 @@ updateHash ::
 updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
 
 updateSequenceNumber :: HandleLike h => TlsHandle h g -> RW -> TlsM h g Word64
-updateSequenceNumber t@TlsHandle{ keys = ks } rw = do
+updateSequenceNumber t rw = do
+	ks <- getKeys $ clientId t
 	(sn, cs) <- case rw of
 		Read -> (, kReadCS ks) `liftM` getReadSn (clientId t)
 		Write -> (, kWriteCS ks) `liftM` getWriteSn (clientId t)
@@ -220,17 +222,18 @@ generateKeys p cs cr sr pms = do
 			kReadKey = cwk, kWriteKey = swk }
 
 cipherSuite :: TlsHandle h g -> CipherSuite
-cipherSuite = kCachedCS . keys
+cipherSuite _ = kCachedCS nullKeys -- . keys
 
 setCipherSuite :: CipherSuite -> TlsHandle h g -> TlsHandle h g
-setCipherSuite c t@TlsHandle{ keys = k } = t{ keys = k{ kCachedCS = c } }
+setCipherSuite c t = t
+-- setCipherSuite c t@TlsHandle{ keys = k } = t{ keys = k{ kCachedCS = c } }
 
 data RW = Read | Write deriving Show
 
 flushCipherSuite :: RW -> TlsHandle h g -> TlsHandle h g
-flushCipherSuite p t@TlsHandle{ keys = ks } = case p of
-	Read -> t{ keys = ks { kReadCS = kCachedCS ks } }
-	Write -> t{ keys = ks { kWriteCS = kCachedCS ks } }
+flushCipherSuite p t = t -- @TlsHandle{ keys = ks } = t {- case p of
+--	Read -> t{ keys = ks { kReadCS = kCachedCS ks } }
+--	Write -> t{ keys = ks { kWriteCS = kCachedCS ks } } -}
 
 flushCipherSuiteSt :: HandleLike h => RW -> PartnerId -> TlsM h g ()
 flushCipherSuiteSt p = case p of
@@ -238,9 +241,11 @@ flushCipherSuiteSt p = case p of
 	Write -> flushCipherSuiteWrite
 
 debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
-debugCipherSuite t a = thlDebug (tlsHandle t) "moderate" . BSC.pack
-	. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
-	. show . kCachedCS $ keys t
+debugCipherSuite t a = do
+	k <- getKeys $ clientId t
+	thlDebug (tlsHandle t) "moderate" . BSC.pack
+		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
+		. show $ kCachedCS k
 	where lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshakeHash :: HandleLike h => HandleHash h g -> TlsM h g BS.ByteString
@@ -248,7 +253,7 @@ handshakeHash = return . SHA256.finalize . snd
 
 finishedHash :: HandleLike h => HandleHash h g -> Side -> TlsM h g BS.ByteString
 finishedHash (t, ctx) partner = do
-	let ms = kMasterSecret $ keys t
+	ms <- kMasterSecret `liftM` getKeys (clientId t)
 	sha256 <- handshakeHash (t, ctx)
 	return $ CT.finishedHash (partner == Client) ms sha256
 

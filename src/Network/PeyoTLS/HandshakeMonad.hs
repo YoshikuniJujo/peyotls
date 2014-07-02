@@ -124,7 +124,7 @@ generateKeys p (cr, sr) pms = do
 	cs <- lift $ TH.getCipherSuiteSt (TH.clientId t)
 	k <- lift $ TH.generateKeys p cs cr sr pms
 	lift $ TH.setKeys (TH.clientId t) k
-	modify . first $ const t { TH.keys = k }
+--	modify . first $ const t { TH.keys = k }
 
 encryptRsa :: (HandleLike h, CPRG g) =>
 	RSA.PublicKey -> BS.ByteString -> HandshakeM h g BS.ByteString
