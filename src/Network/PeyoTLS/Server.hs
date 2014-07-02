@@ -10,7 +10,7 @@ module Network.PeyoTLS.Server (
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.Error (catchError)
+import "monads-tf" Control.Monad.Error (catchError, lift)
 import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
@@ -19,6 +19,7 @@ import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -86,6 +87,8 @@ open h cssv crts mcs = execHandshakeM h $ do
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> E.throwError
 			"TlsServer.open: not implemented bulk encryption type"
+	lift . lift . lift . hlDebug h "critical" . BSC.pack . (++ "\n") . show .
+		RSA.public_size $ RSA.private_pub rsk
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk

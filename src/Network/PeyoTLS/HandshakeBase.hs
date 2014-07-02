@@ -166,7 +166,8 @@ instance SecretKey RSA.PrivateKey where
 			ASN1.OctetString h, ASN1.End ASN1.Sequence]
 		b = ASN1.encodeASN1' ASN1.DER a
 		pd = BS.concat [ "\x00\x01",
-			BS.replicate (125 - BS.length b) 0xff, "\NUL", b ] in
+			BS.replicate (ps - 3 - BS.length b) 0xff, "\NUL", b ]
+		ps = RSA.public_size $ RSA.private_pub sk in
 		RSA.dp (Just bl) sk pd
 	signatureAlgorithm _ = Rsa
 
