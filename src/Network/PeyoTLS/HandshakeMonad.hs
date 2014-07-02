@@ -39,6 +39,7 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 	TlsHandle(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..) )
 
 throwError :: HandleLike h =>
@@ -92,10 +93,15 @@ handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
 handshakeValidate _ _ = error "empty certificate chain"
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
-setCipherSuite = modify . first . TH.setCipherSuite
+setCipherSuite cs = do
+	t <- gets fst
+	lift $ TH.setCipherSuiteSt (TH.clientId t) cs
+	modify . first $ TH.setCipherSuite cs
 
 flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
-flushCipherSuite p =
+flushCipherSuite p = do
+	t <- gets fst
+	lift $ TH.flushCipherSuiteSt p (TH.clientId t)
 	TH.flushCipherSuite p `liftM` gets fst >>= modify . first . const
 
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
@@ -115,7 +121,9 @@ generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
 generateKeys p (cr, sr) pms = do
 	t <- gets fst
-	k <- lift $ TH.generateKeys p (TH.cipherSuite t) cr sr pms
+	cs <- lift $ TH.getCipherSuiteSt (TH.clientId t)
+	k <- lift $ TH.generateKeys p cs cr sr pms
+	lift $ TH.setKeys (TH.clientId t) k
 	modify . first $ const t { TH.keys = k }
 
 encryptRsa :: (HandleLike h, CPRG g) =>

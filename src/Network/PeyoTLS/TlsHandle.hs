@@ -6,6 +6,8 @@ module Network.PeyoTLS.TlsHandle (
 	TlsHandle(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
+		setKeys,
 		handshakeHash, finishedHash ) where
 
 import Prelude hiding (read)
@@ -29,6 +31,8 @@ import Network.PeyoTLS.TlsMonad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
+		getCipherSuiteSt, setCipherSuiteSt,
+		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	PartnerId, newPartnerId, Keys(..), nullKeys )
@@ -112,9 +116,14 @@ read t n = do
 
 decrypt :: HandleLike h =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
-decrypt t _ e
-	| Keys{ kReadCS = CipherSuite _ BE_NULL } <- keys t = return e
-decrypt t@TlsHandle{ keys = ks } ct e = do
+decrypt t@TlsHandle{ keys = _ks } ct e = do
+	ks <- getKeys $ clientId t
+	decrypt_ t ks ct e
+
+decrypt_ :: HandleLike h => TlsHandle h g ->
+	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
+decrypt_ _ Keys{ kReadCS = CipherSuite _ BE_NULL } _ e = return e
+decrypt_ t ks ct e = do
 	let	CipherSuite _ be = kReadCS ks
 		wk = kReadKey ks
 		mk = kReadMacKey ks
@@ -150,9 +159,14 @@ flush t = do
 
 encrypt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
-encrypt t _ p
-	| Keys{ kWriteCS = CipherSuite _ BE_NULL } <- keys t = return p
-encrypt t@TlsHandle{ keys = ks } ct p = do
+encrypt t@TlsHandle{ keys = _ks } ct p = do
+	ks <- getKeys $ clientId t
+	encrypt_ t ks ct p
+
+encrypt_ :: (HandleLike h, CPRG g) => TlsHandle h g ->
+	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
+encrypt_ _ Keys{ kWriteCS = CipherSuite _ BE_NULL } _ p = return p
+encrypt_ t ks ct p = do
 	let	CipherSuite _ be = kWriteCS ks
 		wk = kWriteKey ks
 		mk = kWriteMacKey ks
@@ -217,6 +231,11 @@ flushCipherSuite :: RW -> TlsHandle h g -> TlsHandle h g
 flushCipherSuite p t@TlsHandle{ keys = ks } = case p of
 	Read -> t{ keys = ks { kReadCS = kCachedCS ks } }
 	Write -> t{ keys = ks { kWriteCS = kCachedCS ks } }
+
+flushCipherSuiteSt :: HandleLike h => RW -> PartnerId -> TlsM h g ()
+flushCipherSuiteSt p = case p of
+	Read -> flushCipherSuiteRead
+	Write -> flushCipherSuiteWrite
 
 debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
 debugCipherSuite t a = thlDebug (tlsHandle t) "moderate" . BSC.pack

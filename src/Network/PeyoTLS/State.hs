@@ -7,6 +7,8 @@ module Network.PeyoTLS.State (
 	randomGen, setRandomGen,
 	getBuf, setBuf, getWBuf, setWBuf,
 	getReadSN, getWriteSN, succReadSN, succWriteSN,
+	getCipherSuite, setCipherSuite, flushCipherSuiteRead, flushCipherSuiteWrite,
+	getKeys, setKeys,
 ) where
 
 import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
@@ -36,14 +38,17 @@ newPartnerId s = (PartnerId i ,) s{
 	where
 	i = nextPartnerId s
 	so = StateOne {
+		sKeys = nullKeys,
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
 		readSN = 0, writeSN = 0 }
 	sos = states s
 
 data StateOne g = StateOne {
+	sKeys :: Keys,
 	rBuffer :: (ContentType, BS.ByteString),
 	wBuffer :: (ContentType, BS.ByteString),
-	readSN :: Word64, writeSN :: Word64 }
+	readSN :: Word64,
+	writeSN :: Word64 }
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g
 getState i = fromJust' "getState" . lookup i . states
@@ -115,6 +120,28 @@ getBuf i = rBuffer . fromJust' "getBuf" . lookup i . states
 
 setBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
 setBuf i = modifyState i . \bs st -> st { rBuffer = bs }
+
+getCipherSuite :: PartnerId -> HandshakeState h g -> CipherSuite
+getCipherSuite i =
+	kCachedCS . sKeys . fromJust' "getCipherSuite" . lookup i . states
+
+setCipherSuite :: PartnerId -> CipherSuite -> Modify (HandshakeState h g)
+setCipherSuite i = modifyState i . \cs st ->
+	st { sKeys = (sKeys st) { kCachedCS = cs } }
+
+getKeys :: PartnerId -> HandshakeState h g -> Keys
+getKeys i = sKeys . fromJust' "getKeys" . lookup i . states
+
+setKeys :: PartnerId -> Keys -> Modify (HandshakeState h g)
+setKeys i = modifyState i . \k st -> st { sKeys = k }
+
+flushCipherSuiteRead :: PartnerId -> Modify (HandshakeState h g)
+flushCipherSuiteRead i = modifyState i $ \st ->
+	st { sKeys = (sKeys st) { kReadCS = kCachedCS (sKeys st) } }
+
+flushCipherSuiteWrite :: PartnerId -> Modify (HandshakeState h g)
+flushCipherSuiteWrite i = modifyState i $ \st ->
+	st { sKeys = (sKeys st) { kWriteCS = kCachedCS (sKeys st) } }
 
 getWBuf :: PartnerId -> HandshakeState h g -> (ContentType, BS.ByteString)
 getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . states
