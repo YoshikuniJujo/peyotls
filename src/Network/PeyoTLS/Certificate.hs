@@ -24,13 +24,16 @@ instance B.Bytable X509.CertificateChain where
 	encode = B.addLen w24 . cmap (B.addLen w24)
 		. (\(X509.CertificateChainRaw ccr) -> ccr)
 		. X509.encodeCertificateChain
+		. (\(X509.CertificateChain cs) ->
+			X509.CertificateChain $ reverse cs)
 
 instance B.Parsable X509.CertificateChain where
 	parse = do
 		ecc <- X509.decodeCertificateChain . X509.CertificateChainRaw <$>
 			(flip B.list (B.take =<< B.take 3) =<< B.take 3)
 		case ecc of
-			Right cc -> return cc
+			Right (X509.CertificateChain cs) ->
+				return . X509.CertificateChain $ reverse cs
 			Left (n, err) -> fail $ show n ++ " " ++ err
 
 data CertificateRequest

@@ -158,11 +158,12 @@ rsaVerify ha pk sn m = let
 		Sha1 -> (SHA1.hash, ASN1.OID [1, 3, 14, 3, 2, 26])
 		Sha256 -> (SHA256.hash, ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
 		_ -> error "not implemented"
-	Right [ASN1.Start ASN1.Sequence,
-		ASN1.Start ASN1.Sequence, oid, ASN1.Null, ASN1.End ASN1.Sequence,
-		ASN1.OctetString o, ASN1.End ASN1.Sequence ] =
-		ASN1.decodeASN1' ASN1.DER . BS.tail . BS.dropWhile (== 255) .
-			BS.drop 2 $ RSA.ep pk sn in
+	(o, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
+		. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
+		Right [ASN1.Start ASN1.Sequence,
+			ASN1.Start ASN1.Sequence, oid_, ASN1.Null, ASN1.End ASN1.Sequence,
+			ASN1.OctetString o_, ASN1.End ASN1.Sequence ] -> (o_, oid_)
+		e -> error $ show e in
 	oid == oid0 && o == hs m
 
 instance Verify ECDSA.PublicKey where
