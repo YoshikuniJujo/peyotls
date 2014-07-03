@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 import Control.Applicative
 import Control.Monad
@@ -90,7 +90,9 @@ instance HandleLike ChanHandle where
 					return (False, l, x)
 		if b	then (bs `BS.append`) <$> hlGet h (n - l)
 			else return bs
-	hlDebug _ _ = BS.putStr
+	hlDebug _ dl
+		| dl >= "high" = BS.putStr
+		| otherwise = const $ return ()
 	hlClose _ = return ()
 
 instance ValidateHandle ChanHandle where

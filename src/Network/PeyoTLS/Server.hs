@@ -10,7 +10,7 @@ module Network.PeyoTLS.Server (
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.Error (catchError, lift)
+import "monads-tf" Control.Monad.Error (catchError)
 import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
@@ -19,7 +19,6 @@ import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -87,8 +86,7 @@ open h cssv crts mcs = execHandshakeM h $ do
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> E.throwError
 			"TlsServer.open: not implemented bulk encryption type"
-	lift . lift . lift . hlDebug h "critical" . BSC.pack . (++ "\n") . show .
-		RSA.public_size $ RSA.private_pub rsk
+--	debug "medium" . RSA.public_size $ RSA.private_pub rsk
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
@@ -130,15 +128,16 @@ dhKeyExchange ha dp ssk rs mcs = do
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
 clientHello cssv = do
-	ClientHello cv cr _sid cscl cms e <- readHandshake
-	debug e
+	ch@(ClientHello cv cr _sid cscl cms e) <- readHandshake
+	debug "medium" ch
+--	debug "medium" e
 	let rn = maybe False (ERenegoInfo "" `elem`) e
-	debug rn
+--	debug "medium" rn
 	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
 	where
 	merge sv cl = case find (`elem` cl) sv of
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
-	chk cv css cms
+	chk cv _css cms
 		| cv < version = throwError ALFatal ADProtocolVersion $
 			pmsg ++ "client version should 3.3 or more"
 			{-

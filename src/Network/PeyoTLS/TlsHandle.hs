@@ -105,6 +105,9 @@ getWholeWithCt t = do
 	e <- read t =<< either (throwError . strMsg) return . B.decode =<< read t 2
 	when (BS.null e) $ throwError "TlsHandle.getWholeWithCt: e is null"
 	p <- decrypt t ct e
+	thlDebug (tlsHandle t) "high" . BSC.pack . (++ ": ") $ show ct
+	thlDebug (tlsHandle t) "high" . BSC.pack . (++  "\n") . show $ BS.head p
+	thlDebug (tlsHandle t) "low" . BSC.pack . (++ "\n") $ show p
 	return (ct, p)
 
 read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
@@ -230,7 +233,7 @@ flushCipherSuiteSt p = case p of
 debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
 debugCipherSuite t a = do
 	k <- getKeys $ clientId t
-	thlDebug (tlsHandle t) "moderate" . BSC.pack
+	thlDebug (tlsHandle t) "high" . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
 		. show $ kCachedCS k
 	where lenSpace n str = str ++ replicate (n - length str) ' '
@@ -292,5 +295,9 @@ checkAppData t m = m >>= \cp -> case cp of
 	(CTAlert, "\SOH\NUL") -> do
 		_ <- tlsPut (t, undefined) CTAlert "\SOH\NUL"
 		throwError "TlsHandle.checkAppData: EOF"
+	(CTHandshake, hs) -> do
+		lift . lift $ hlDebug (tlsHandle t) "critical" "renegotiation?"
+		lift . lift $ hlDebug (tlsHandle t) "critical" . BSC.pack $ show hs
+		return ""
 	_ -> do	_ <- tlsPut (t, undefined) CTAlert "\2\10"
 		throwError "TlsHandle.checkAppData: not application data"

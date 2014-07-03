@@ -78,10 +78,10 @@ import Network.PeyoTLS.CertSecretKey
 type PeyotlsM = HM.TlsM Handle SystemRNG
 type PeyotlsHandle = HM.TlsHandle Handle SystemRNG
 
-debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
-debug x = do
+debug :: (HandleLike h, Show a) => DebugLevel h -> a -> HM.HandshakeM h g ()
+debug p x = do
 	h <- gets $ HM.tlsHandle . fst
-	lift . lift . lift . hlDebug h "critical" . BSC.pack . (++ "\n") $ show x
+	lift . lift . lift . hlDebug h p . BSC.pack . (++ "\n") $ show x
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do

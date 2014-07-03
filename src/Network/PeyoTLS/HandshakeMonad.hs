@@ -90,7 +90,7 @@ handshakeValidate :: ValidateHandle h =>
 handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
 	modify . first $ const t { TH.names = certNames $ X509.getCertificate $ last c }
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
-handshakeValidate _ _ = error "empty certificate chain"
+-- handshakeValidate _ _ = error "empty certificate chain"
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite cs = do
