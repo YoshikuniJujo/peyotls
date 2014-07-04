@@ -29,6 +29,7 @@ import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
+import qualified "monads-tf" Control.Monad.Error as E
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -70,7 +71,10 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
-	Side(..), RW(..), handshakeHash, finishedHash, throwError )
+	Side(..), RW(..), handshakeHash, finishedHash, throwError,
+	hlPut_, tGetLine, tGetContent, tlsGet_, tlsPut_,
+--	hlGet_, hlGetLine_, hlGetContent_,
+	hlDebug_, hlClose_ )
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
 import Network.PeyoTLS.CertSecretKey
@@ -245,3 +249,38 @@ secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
 
 finishedHash :: (HandleLike h, CPRG g) => HM.Side -> HM.HandshakeM h g Finished
 finishedHash = (Finished `liftM`) . HM.finishedHash
+
+instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
+	type HandleMonad (HM.TlsHandle h g) = HM.TlsM h g
+	type DebugLevel (HM.TlsHandle h g) = DebugLevel h
+	hlPut = HM.hlPut_
+	hlGet = hlGet_
+	hlGetLine = hlGetLine_
+	hlGetContent = hlGetContent_
+	hlDebug = HM.hlDebug_
+	hlClose = HM.hlClose_
+
+hlGet_ :: (HandleLike h, CPRG g) =>
+	(HM.TlsHandle h g) -> Int -> HM.TlsM h g BS.ByteString
+hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ . (, undefined)
+
+hlGetLine_, hlGetContent_ ::
+	(HandleLike h, CPRG g) => (HM.TlsHandle h g) -> HM.TlsM h g BS.ByteString
+hlGetLine_ = ($) <$> checkAppData <*> HM.tGetLine
+hlGetContent_ = ($) <$> checkAppData <*> HM.tGetContent
+
+checkAppData :: (HandleLike h, CPRG g) => HM.TlsHandle h g ->
+	HM.TlsM h g (HM.ContentType, BS.ByteString) -> HM.TlsM h g BS.ByteString
+checkAppData t m = m >>= \cp -> case cp of
+	(HM.CTAppData, ad) -> return ad
+	(HM.CTAlert, "\SOH\NUL") -> do
+		_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\SOH\NUL"
+		E.throwError "TlsHandle.checkAppData: EOF"
+	(HM.CTHandshake, hs) -> do
+		lift . lift $ hlDebug (HM.tlsHandle t) "critical" "renegotiation?"
+		lift . lift $ hlDebug (HM.tlsHandle t) "critical" . BSC.pack $ show hs
+		lift . lift $ hlDebug (HM.tlsHandle t) "critical" . BSC.pack .
+			show $ (B.decode hs :: Either String Handshake)
+		return ""
+	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"
+		E.throwError "TlsHandle.checkAppData: not application data"

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.HandshakeMonad (
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, withRandom, randomByteString,
@@ -8,7 +8,12 @@ module Network.PeyoTLS.HandshakeMonad (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
-	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError ) where
+	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError,
+	TH.hlPut_, TH.hlDebug_, TH.hlClose_,
+	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_,
+--	checkAppData,
+--	hlGet_, hlGetLine_, hlGetContent_,
+	) where
 
 import Prelude hiding (read)
 
@@ -25,6 +30,7 @@ import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -40,7 +46,17 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
-	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..) )
+	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
+	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine,
+	)
+
+tlsGet_ :: (HandleLike h, CPRG g) =>
+	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
+tlsGet_ = TH.tlsGet
+
+tlsPut_ :: (HandleLike h, CPRG g) =>
+	(TH.TlsHandle h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandle h g, SHA256.Ctx)
+tlsPut_ = TH.tlsPut
 
 throwError :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a

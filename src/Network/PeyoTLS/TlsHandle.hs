@@ -8,11 +8,12 @@ module Network.PeyoTLS.TlsHandle (
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
 		setKeys,
-		handshakeHash, finishedHash ) where
+		handshakeHash, finishedHash,
+	hlPut_, hlDebug_, hlClose_, tGetLine, tGetContent,
+	) where
 
 import Prelude hiding (read)
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (second)
 import Control.Monad (liftM, when, unless)
 import "monads-tf" Control.Monad.State (get, put, lift)
@@ -247,16 +248,16 @@ finishedHash (t, ctx) partner = do
 	sha256 <- handshakeHash (t, ctx)
 	return $ CT.finishedHash (partner == Client) ms sha256
 
-instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
-	type HandleMonad (TlsHandle h g) = TlsM h g
-	type DebugLevel (TlsHandle h g) = DebugLevel h
-	hlPut = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
-	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet . (, undefined)
-	hlGetLine = ($) <$> checkAppData <*> tGetLine
-	hlGetContent = ($) <$> checkAppData <*> tGetContent
-	hlDebug t l = lift . lift . hlDebug (tlsHandle t) l
-	hlClose t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
-		flush t >> thlClose (tlsHandle t)
+hlPut_ :: (HandleLike h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+hlPut_ = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
+
+hlDebug_ :: HandleLike h =>
+	TlsHandle h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
+hlDebug_ t l = lift . lift . hlDebug (tlsHandle t) l
+
+hlClose_ :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
+hlClose_ t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
+	flush t >> thlClose (tlsHandle t)
 
 tGetLine :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
@@ -287,17 +288,3 @@ tGetContent t = do
 	bcp@(_, bp) <- getBuf $ clientId t
 	if BS.null bp then getWholeWithCt t else
 		setBuf (clientId t) (CTNull, BS.empty) >> return bcp
-
-checkAppData :: (HandleLike h, CPRG g) => TlsHandle h g ->
-	TlsM h g (ContentType, BS.ByteString) -> TlsM h g BS.ByteString
-checkAppData t m = m >>= \cp -> case cp of
-	(CTAppData, ad) -> return ad
-	(CTAlert, "\SOH\NUL") -> do
-		_ <- tlsPut (t, undefined) CTAlert "\SOH\NUL"
-		throwError "TlsHandle.checkAppData: EOF"
-	(CTHandshake, hs) -> do
-		lift . lift $ hlDebug (tlsHandle t) "critical" "renegotiation?"
-		lift . lift $ hlDebug (tlsHandle t) "critical" . BSC.pack $ show hs
-		return ""
-	_ -> do	_ <- tlsPut (t, undefined) CTAlert "\2\10"
-		throwError "TlsHandle.checkAppData: not application data"
