@@ -31,7 +31,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.HandshakeBase (
-	Extension(..), getClientFinished, debug, Finished(..),
+	Extension(..), getClientFinished, Finished(..),
 	getInitSet, setInitSet,
 	setClientFinished, getClientFinished,
 	setServerFinished, getServerFinished,
@@ -102,8 +102,6 @@ hello cscl = do
 	ServerHello _v sr _sid cs _cm e <- readHandshake
 	let	Just rn = getRenegoInfo e
 		rn0 = cf `BS.append` sf
-	debug "low" rn
-	debug "low" rn0
 	unless (rn == rn0) $ E.throwError "Network.PeyoTLS.Client.hello"
 	return (cr, sr, cs)
 	where

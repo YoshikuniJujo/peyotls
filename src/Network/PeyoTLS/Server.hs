@@ -122,13 +122,9 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 		_ -> \_ _ -> E.throwError
 			"TlsServer.open: not implemented key exchange type"
 	maybe (return ()) certificateVerify mpk
-	debug "low" ("before getChangeCipherSpec" :: String)
 	getChangeCipherSpec >> flushCipherSuite Read
 	cf@(Finished cfb) <- finishedHash Client
-	debug "low" ("client finished" :: String)
-	debug "low" cf
 	rcf <- readHandshake
-	debug "low" rcf
 	unless (cf == rcf) $ throwError ALFatal ADDecryptError
 		"TlsServer.open: wrong finished hash"
 	setClientFinished cfb
@@ -194,9 +190,6 @@ clientHello cssv = do
 --	debug "medium" e
 --	let rn = maybe False (ERenegoInfo "" `elem`) e
 --	debug "medium" rn
-	debug "low" ("CLIENT FINISHES" :: String)
-	debug "low" cf
-	debug "low" cf0
 	unless (cf == cf0) $ E.throwError "clientHello"
 	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
 	where
