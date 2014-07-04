@@ -151,7 +151,7 @@ handshakeValidate :: ValidateHandle h =>
 	X509.CertificateStore -> X509.CertificateChain ->
 	HandshakeM h g [X509.FailedReason]
 handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
-	modify . first $ const t { TH.names = certNames $ X509.getCertificate $ last c }
+	modify . first $ const t { TH.names = certNames . X509.getCertificate $ last c }
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 -- handshakeValidate _ _ = error "empty certificate chain"
 

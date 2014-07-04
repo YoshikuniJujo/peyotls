@@ -286,11 +286,11 @@ instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
 	hlClose = HM.hlClose_
 
 hlGet_ :: (HandleLike h, CPRG g) =>
-	(HM.TlsHandle h g) -> Int -> HM.TlsM h g BS.ByteString
+	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
 hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet__ . (, undefined)
 
 hlGetLine_, hlGetContent_ ::
-	(HandleLike h, CPRG g) => (HM.TlsHandle h g) -> HM.TlsM h g BS.ByteString
+	(HandleLike h, CPRG g) => HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
 hlGetLine_ = ($) <$> checkAppData <*> HM.tGetLine
 hlGetContent_ = ($) <$> checkAppData <*> HM.tGetContent
 
@@ -303,8 +303,8 @@ checkAppData t m = m >>= \cp -> case cp of
 		E.throwError "TlsHandle.checkAppData: EOF"
 	(HM.CTHandshake, hs) -> do
 		lift . lift $ hlDebug (HM.tlsHandle t) "critical" "renegotiation?"
-		lift . lift $ hlDebug (HM.tlsHandle t) "critical" . BSC.pack $ show hs
-		lift . lift $ hlDebug (HM.tlsHandle t) "critical" . BSC.pack .
+		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack $ show hs
+		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack .
 			show $ (B.decode hs :: Either String Handshake)
 		return ""
 	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"

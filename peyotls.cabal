@@ -39,7 +39,7 @@ description:
     .
     * ECDSA (SHA1 or SHA256 depending on the agreed cipher suite)
     .
-    And support secure renegotiation partially
+    And support secure renegotiation partially (RFC 5746)
     .
     * server can recieve client-initiated renegotiation
     .

@@ -103,9 +103,7 @@ buffered :: (HandleLike h, CPRG g) =>
 buffered t n = do
 	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
 	if rl <= 0
-	then do	let (ret, b') = BS.splitAt n b
-		setBuf (clientId t) $ if BS.null b' then (CTNull, "") else (ct, b')
-		return (ct, ret)
+	then splitRetBuf t n ct b
 	else do	(ct', b') <- getWholeWithCt t
 		unless (ct' == ct) . throwError . strMsg $
 			"Content Type confliction\n" ++
@@ -124,17 +122,21 @@ buffered_ rn t n = do
 		CTHandshake -> rn t >> buffered_ rn t n
 		_ -> do	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
 			if rl <= 0
-			then do let (ret, b') = BS.splitAt n b
-				setBuf (clientId t) $ if BS.null b'
-					then (CTNull, "") else (ct, b')
-				return (ct, ret)
+			then splitRetBuf t n ct b
 			else do (ct', b') <- getWholeWithCt t
 				unless (ct' == ct) . throwError . strMsg $
 					"Content Type confliction\n"
 				when (BS.null b') $ throwError "buffered: No data"
 				setBuf (clientId t) (ct', b')
-				second (b `BS.append`) `liftM` buffered t rl
-					
+				second (b `BS.append`) `liftM` buffered_ rn t rl
+
+splitRetBuf :: HandleLike h =>
+	TlsHandle h g -> Int -> ContentType -> BS.ByteString ->
+	TlsM h g (ContentType, BS.ByteString)
+splitRetBuf t n ct b = do
+	let (ret, b') = BS.splitAt n b
+	setBuf (clientId t) $ if BS.null b' then (CTNull, "") else (ct, b')
+	return (ct, ret)
 
 getWholeWithCt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
@@ -238,10 +240,9 @@ updateSequenceNumber t rw = do
 	return sn
 
 resetSequenceNumber :: HandleLike h => TlsHandle h g -> RW -> TlsM h g ()
-resetSequenceNumber t rw = do
-	case rw of
-		Read -> resetReadSn $ clientId t
-		Write -> resetWriteSn $ clientId t
+resetSequenceNumber t rw = case rw of
+	Read -> resetReadSn $ clientId t
+	Write -> resetWriteSn $ clientId t
 
 generateKeys :: HandleLike h => TlsHandle h g -> Side -> CipherSuite ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys

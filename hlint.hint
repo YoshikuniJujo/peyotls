@@ -1,0 +1,2 @@
+import "hlint" HLint.Default
+import "hlint" HLint.Dollar

@@ -5,8 +5,8 @@
 module Network.PeyoTLS.Server (
 	run, open, names,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	PeyotlsM, PeyotlsHandle,
-	TlsM, TlsHandle,
+	PeyotlsM, PeyotlsHandleS,
+	TlsM, TlsHandleS,
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative
@@ -17,7 +17,7 @@ import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
-import "crypto-random" Crypto.Random (CPRG)
+import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
@@ -33,7 +33,7 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Network.PeyoTLS.HandshakeBase as HB
 
 import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
-	PeyotlsM, PeyotlsHandle,
+	PeyotlsM,
 	TlsM, run, HandshakeM, execHandshakeM, oldHandshakeM,
 	withRandom, randomByteString,
 	TlsHandle,
@@ -62,6 +62,10 @@ import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
 	)
 
 import Network.PeyoTLS.ReadFile
+
+import System.IO
+
+type PeyotlsHandleS = TlsHandleS Handle SystemRNG
 
 names :: TlsHandleS h g -> [String]
 names = HB.names . tlsHandleS

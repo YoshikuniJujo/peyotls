@@ -97,7 +97,7 @@ hello cscl = do
 	cr <- randomByteString 32
 	cf <- getClientFinished
 	sf <- getServerFinished
-	writeHandshake $ ClientHello (3, 3) cr (SessionId "")
+	writeHandshake . ClientHello (3, 3) cr (SessionId "")
 		cscl' [CompressionMethodNull] $ Just [ERenegoInfo cf]
 	ServerHello _v sr _sid cs _cm e <- readHandshake
 	let	Just rn = getRenegoInfo e
