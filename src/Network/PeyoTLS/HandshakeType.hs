@@ -13,6 +13,7 @@ module Network.PeyoTLS.HandshakeType ( Extension(..),
 	DigitallySigned(..), Finished(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Monad (unless)
 import Data.Word (Word8, Word16)
 import Data.Word.Word24 (Word24)
 
@@ -31,7 +32,8 @@ import Network.PeyoTLS.Certificate (
 	ClientKeyExchange(..), DigitallySigned(..) )
 
 data Handshake
-	= HClientHello ClientHello           | HServerHello ServerHello
+	= HHelloRequest
+	| HClientHello ClientHello           | HServerHello ServerHello
 	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
 	| HCertificateReq CertificateRequest | HServerHelloDone
 	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyExchange
@@ -46,6 +48,9 @@ instance B.Parsable Handshake where
 		t <- B.take 1
 		len <- B.take 3
 		case t of
+			THelloRequest -> do
+				unless (len == 0) $ fail "parse Handshake"
+				return HHelloRequest
 			TClientHello -> HClientHello <$> B.take len
 			TServerHello -> HServerHello <$> B.take len
 			TCertificate -> HCertificate <$> B.take len
@@ -58,6 +63,7 @@ instance B.Parsable Handshake where
 			_ -> HRaw t <$> B.take len
 
 encodeH :: Handshake -> BS.ByteString
+encodeH HHelloRequest = encodeH $ HRaw THelloRequest ""
 encodeH (HClientHello ch) = encodeH . HRaw TClientHello $ B.encode ch
 encodeH (HServerHello sh) = encodeH . HRaw TServerHello $ B.encode sh
 encodeH (HCertificate crts) = encodeH . HRaw TCertificate $ B.encode crts
@@ -70,8 +76,10 @@ encodeH (HFinished bs) = encodeH $ HRaw TFinished bs
 encodeH (HRaw t bs) = B.encode t `BS.append` B.addLen (undefined :: Word24) bs
 
 class HandshakeItem hi where
-	fromHandshake :: Handshake -> Maybe hi;
-	toHandshake :: hi -> Handshake
+	fromHandshake :: Handshake -> Maybe hi; toHandshake :: hi -> Handshake
+
+instance HandshakeItem Handshake where
+	fromHandshake = Just; toHandshake = id
 
 instance (HandshakeItem l, HandshakeItem r) => HandshakeItem (Either l r) where
 	fromHandshake hs = let
@@ -200,13 +208,14 @@ instance HandshakeItem Finished where
 data ServerHelloDone = ServerHelloDone deriving Show
 
 data Type
-	= TClientHello | TServerHello
-	| TCertificate | TServerKeyEx | TCertificateReq | TServerHelloDone
-	| TCertVerify  | TClientKeyEx | TFinished       | TRaw Word8
+	= THelloRequest | TClientHello | TServerHello
+	| TCertificate  | TServerKeyEx | TCertificateReq | TServerHelloDone
+	| TCertVerify   | TClientKeyEx | TFinished       | TRaw Word8
 	deriving Show
 
 instance B.Bytable Type where
 	decode bs = case BS.unpack bs of
+		[0] -> Right THelloRequest
 		[1] -> Right TClientHello
 		[2] -> Right TServerHello
 		[11] -> Right TCertificate
@@ -218,6 +227,7 @@ instance B.Bytable Type where
 		[20] -> Right TFinished
 		[ht] -> Right $ TRaw ht
 		_ -> Left "Handshake.decodeT"
+	encode THelloRequest = BS.pack [0]
 	encode TClientHello = BS.pack [1]
 	encode TServerHello = BS.pack [2]
 	encode TCertificate = BS.pack [11]

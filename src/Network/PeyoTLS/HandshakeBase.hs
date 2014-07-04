@@ -302,10 +302,11 @@ checkAppData t m = m >>= \cp -> case cp of
 		_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\SOH\NUL"
 		E.throwError "TlsHandle.checkAppData: EOF"
 	(HM.CTHandshake, hs) -> do
-		lift . lift $ hlDebug (HM.tlsHandle t) "critical" "renegotiation?"
-		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack $ show hs
-		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack .
-			show $ (B.decode hs :: Either String Handshake)
+		lift . lift $ hlDebug (HM.tlsHandle t) "critical" "renegotiation?\n"
+		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack
+			. (++ "\n") $ show hs
+		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack
+			. (++ "\n") $ show (B.decode hs :: Either String Handshake)
 		return ""
 	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"
 		E.throwError "TlsHandle.checkAppData: not application data"

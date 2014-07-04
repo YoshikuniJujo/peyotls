@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Server (
-	run, open, names,
+	run, open, renegotiate, names,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	PeyotlsM, PeyotlsHandleS,
 	TlsM, TlsHandleS,
@@ -101,6 +101,9 @@ open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 	HB.setInitSet (cssv, crts, mcs)
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
+
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
+renegotiate (TlsHandleS t) = oldHandshakeM t "" $ writeHandshake HB.HHelloRequest
 
 succeed :: (ValidateHandle h, CPRG g) => CipherSuite -> BS.ByteString ->
 	Version -> [(CertSecretKey, X509.CertificateChain)] ->
