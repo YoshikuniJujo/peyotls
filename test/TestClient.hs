@@ -35,9 +35,10 @@ client g h crt crtS = (`run` g) $ do
 --	hlDebug t "medium" . BSC.pack . (++ "\n") . show $ names t
 	unless ("localhost" `elem` names t) $
 		error "certificate name mismatch"
+	hlPut t "G"
 	renegotiate t
 	hlPut t request
 	const () `liftM` hlGetContent t
 
 request :: BS.ByteString
-request = "GET / HTTP/1.1\r\n\r\n"
+request = "ET / HTTP/1.1\r\n\r\n"

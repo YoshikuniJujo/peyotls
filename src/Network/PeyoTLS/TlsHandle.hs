@@ -9,7 +9,7 @@ module Network.PeyoTLS.TlsHandle (
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
 		setKeys,
 		handshakeHash, finishedHash,
-	hlPut_, hlDebug_, hlClose_, tGetLine, tGetContent,
+	hlPut_, hlDebug_, hlClose_, tGetLine, tGetLine_, tGetContent,
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
 
@@ -17,6 +17,7 @@ module Network.PeyoTLS.TlsHandle (
 	InitialSettings,
 
 	resetSequenceNumber,
+	tlsGet_,
 	) where
 
 import Prelude hiding (read)
@@ -92,6 +93,13 @@ tlsGet hh@(t, _) n = do
 		CTHandshake -> updateHash hh bs
 		_ -> return hh
 
+tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
+	HandleHash h g -> Int ->
+	TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
+tlsGet_ rn hh@(t, _) n = do
+	r@(ct, bs) <- buffered_ rn t n
+	return (r, hh)
+
 buffered :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
 buffered t n = do
@@ -109,6 +117,26 @@ buffered t n = do
 		when (BS.null b') $ throwError "buffered: No data available"
 		setBuf (clientId t) (ct', b')
 		second (b `BS.append`) `liftM` buffered t rl
+
+buffered_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
+	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
+buffered_ rn t n = do
+	ct <- getContentType t
+	case ct of
+		CTHandshake -> rn t >> buffered_ rn t n
+		_ -> do	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
+			if rl <= 0
+			then do let (ret, b') = BS.splitAt n b
+				setBuf (clientId t) $ if BS.null b'
+					then (CTNull, "") else (ct, b')
+				return (ct, ret)
+			else do (ct', b') <- getWholeWithCt t
+				unless (ct' == ct) . throwError . strMsg $
+					"Content Type confliction\n"
+				when (BS.null b') $ throwError "buffered: No data"
+				setBuf (clientId t) (ct', b')
+				second (b `BS.append`) `liftM` buffered t rl
+					
 
 getWholeWithCt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
@@ -284,6 +312,22 @@ tGetLine t = do
 		_ -> do	cp <- getWholeWithCt t
 			setBuf (clientId t) cp
 			second (bp `BS.append`) `liftM` tGetLine t
+
+tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
+	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+tGetLine_ rn t = do
+	ct <- getContentType t
+	case ct of
+		CTHandshake -> rn t >> tGetLine_ rn t
+		_ -> do	(bct, bp) <- getBuf $ clientId t
+			case splitLine bp of
+				Just (l, ls) -> do
+					setBuf (clientId t) (bct, ls)
+					return (bct, l)
+				_ -> do	cp <- getWholeWithCt t
+					setBuf (clientId t) cp
+					second (bp `BS.append`) `liftM`
+						tGetLine_ rn t
 
 splitLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
 splitLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of

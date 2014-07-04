@@ -54,13 +54,14 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
-	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine,
+	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine, tGetLine_,
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
 
 	resetSequenceNumber,
 
 	getInitSetT, setInitSetT, InitialSettings,
+	tlsGet_,
 	)
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
@@ -69,6 +70,8 @@ resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
 tlsGet_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
 	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
+tlsGet_ = TH.tlsGet_
+	{-
 tlsGet_ rn th@(t, _) n = do
 	ct <- TH.getContentType t
 	case ct of
@@ -76,6 +79,7 @@ tlsGet_ rn th@(t, _) n = do
 			rn t
 			tlsGet_ rn th n
 		_ -> TH.tlsGet th n
+		-}
 
 tlsGet__ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
@@ -84,11 +88,7 @@ tlsGet__ = TH.tlsGet
 tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
 	TH.TlsHandle h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
-tGetLine_ rn t = do
-	ct <- TH.getContentType t
-	case ct of
-		TH.CTHandshake -> rn t >> tGetLine_ rn t
-		_ -> TH.tGetLine t
+tGetLine_ = TH.tGetLine_
 
 tGetContent_ rn t = do
 	ct <- TH.getContentType t
