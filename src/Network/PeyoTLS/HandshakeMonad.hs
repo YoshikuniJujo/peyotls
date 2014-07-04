@@ -21,6 +21,7 @@ module Network.PeyoTLS.HandshakeMonad (
 	resetSequenceNumber,
 
 	getInitSet, setInitSet,
+	flushAppData,
 	) where
 
 import Prelude hiding (read)
@@ -30,7 +31,8 @@ import qualified Data.ASN1.Types as ASN1
 import Control.Arrow (first)
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
-import "monads-tf" Control.Monad.State (StateT, execStateT, get, gets, put, modify)
+import "monads-tf" Control.Monad.State (
+	StateT, evalStateT, execStateT, get, gets, put, modify)
 import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.HandleLike (HandleLike(..))
@@ -62,6 +64,7 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 
 	getInitSetT, setInitSetT, InitialSettings,
 	tlsGet_,
+	flushAppData,
 	)
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
@@ -90,6 +93,9 @@ tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
 	TH.TlsHandle h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
 tGetLine_ = TH.tGetLine_
 
+flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
+flushAppData = gets fst >>= lift . TH.flushAppData
+
 tGetContent_ rn t = do
 	ct <- TH.getContentType t
 	case ct of
@@ -112,9 +118,8 @@ execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
 oldHandshakeM :: HandleLike h => TH.TlsHandle h g -> BS.ByteString ->
-	HandshakeM h g () -> TH.TlsM h g () -- (TH.TlsHandle h g)
-oldHandshakeM t bs hm =
-	const () `liftM` execStateT hm (t, SHA256.update SHA256.init bs)
+	HandshakeM h g a -> TH.TlsM h g a -- (TH.TlsHandle h g)
+oldHandshakeM t bs hm = evalStateT hm (t, SHA256.update SHA256.init bs)
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
 withRandom = lift . TH.withRandom

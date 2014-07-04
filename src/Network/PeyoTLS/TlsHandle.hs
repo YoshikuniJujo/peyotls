@@ -18,12 +18,13 @@ module Network.PeyoTLS.TlsHandle (
 
 	resetSequenceNumber,
 	tlsGet_,
+	flushAppData,
 	) where
 
 import Prelude hiding (read)
 
 import Control.Arrow (second)
-import Control.Monad (liftM, when, unless)
+import Control.Monad (liftM, ap, when, unless)
 import "monads-tf" Control.Monad.State (get, put, lift)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
@@ -84,6 +85,15 @@ getContentType t = do
 		(ct', bf) <- getWholeWithCt t
 		setBuf (clientId t) (ct', bf)
 		return ct'
+
+flushAppData :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
+flushAppData t = do
+	ct <- getContentType t
+	case ct of
+		CTAppData -> BS.append
+			`liftM` (snd `liftM` tGetContent t)
+			`ap` flushAppData t
+		_ -> return ""
 
 tlsGet :: (HandleLike h, CPRG g) => HandleHash h g ->
 	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)

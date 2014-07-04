@@ -37,6 +37,7 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	HM.tGetLine_,
 
 	HM.getInitSet, HM.setInitSet,
+	HM.flushAppData,
 	) where
 
 import Control.Applicative
@@ -96,6 +97,7 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	resetSequenceNumber,
 
 	getInitSet, setInitSet,
+	flushAppData,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 

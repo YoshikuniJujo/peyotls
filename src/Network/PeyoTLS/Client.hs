@@ -30,7 +30,7 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import Network.PeyoTLS.HandshakeBase (
+import Network.PeyoTLS.HandshakeBase ( flushAppData,
 	Extension(..), getClientFinished, Finished(..),
 	getInitSet, setInitSet,
 	setClientFinished, getClientFinished,
@@ -60,20 +60,23 @@ open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	TlsM h g (TlsHandle h g)
 open h cscl crts ca = execHandshakeM h $ do
 	setInitSet (cscl, crts, Just ca)
-	handshake cscl crts ca
+	cr <- clientHello cscl
+	handshake crts ca cr
 
-renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
 renegotiate t = do
 	oldHandshakeM t "" $ do
 		(cscl, crts, Just ca) <- getInitSet
-		handshake cscl crts ca
-	return ()
+		cr <- clientHello cscl
+		ret <- flushAppData
+		handshake crts ca cr
+		return ret
 
-handshake :: (ValidateHandle h, CPRG g) => [CipherSuite] ->
+handshake :: (ValidateHandle h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->
-	X509.CertificateStore -> HandshakeM h g ()
-handshake cscl crts ca = do
-	(cr, sr, cs@(CipherSuite ke _)) <- hello cscl
+	X509.CertificateStore -> BS.ByteString -> HandshakeM h g ()
+handshake crts ca cr = do
+	(sr, cs@(CipherSuite ke _)) <- serverHello
 	setCipherSuite cs
 	case ke of
 		RSA -> rsaHandshake cr sr crts ca
@@ -91,22 +94,25 @@ getRenegoInfo (Just []) = Nothing
 getRenegoInfo (Just (ERenegoInfo rn : _)) = Just rn
 getRenegoInfo (Just (_ : es)) = getRenegoInfo $ Just es
 
-hello :: (HandleLike h, CPRG g) =>
-	[CipherSuite] -> HandshakeM h g (BS.ByteString, BS.ByteString, CipherSuite)
-hello cscl = do
+clientHello :: (HandleLike h, CPRG g) =>
+	[CipherSuite] -> HandshakeM h g BS.ByteString
+clientHello cscl = do
 	cr <- randomByteString 32
 	cf <- getClientFinished
+	writeHandshake . ClientHello (3, 3) cr (SessionId "") cscl
+		[CompressionMethodNull] $ Just [ERenegoInfo cf]
+	return cr
+
+serverHello :: (HandleLike h, CPRG g) =>
+	HandshakeM h g (BS.ByteString, CipherSuite)
+serverHello = do
+	cf <- getClientFinished
 	sf <- getServerFinished
-	writeHandshake . ClientHello (3, 3) cr (SessionId "")
-		cscl' [CompressionMethodNull] $ Just [ERenegoInfo cf]
 	ServerHello _v sr _sid cs _cm e <- readHandshake
 	let	Just rn = getRenegoInfo e
 		rn0 = cf `BS.append` sf
 	unless (rn == rn0) $ E.throwError "Network.PeyoTLS.Client.hello"
-	return (cr, sr, cs)
-	where
-	cscl' = if b `elem` cscl then cscl else cscl ++ [b]
-	b = CipherSuite RSA AES_128_CBC_SHA
+	return (sr, cs)
 
 rsaHandshake :: (ValidateHandle h, CPRG g) =>
  	BS.ByteString -> BS.ByteString ->
