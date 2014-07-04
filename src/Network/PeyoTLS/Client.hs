@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	run, open, names,
+	run, open, renegotiate, names,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	PeyotlsM, PeyotlsHandle,
 	TlsM, TlsHandle,
@@ -31,8 +31,13 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.HandshakeBase (
+	Extension(..), getClientFinished, debug, Finished(..),
+	getInitSet, setInitSet,
+	setClientFinished, getClientFinished,
+	setServerFinished, getServerFinished,
 	PeyotlsM, PeyotlsHandle, names,
-	TlsM, run, HandshakeM, execHandshakeM, CertSecretKey(..),
+	TlsM, run, HandshakeM, execHandshakeM, oldHandshakeM,
+		CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,
 		readHandshake, getChangeCipherSpec,
@@ -54,6 +59,20 @@ open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandle h g)
 open h cscl crts ca = execHandshakeM h $ do
+	setInitSet (cscl, crts, Just ca)
+	handshake cscl crts ca
+
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+renegotiate t = do
+	oldHandshakeM t "" $ do
+		(cscl, crts, Just ca) <- getInitSet
+		handshake cscl crts ca
+	return ()
+
+handshake :: (ValidateHandle h, CPRG g) => [CipherSuite] ->
+	[(CertSecretKey, X509.CertificateChain)] ->
+	X509.CertificateStore -> HandshakeM h g ()
+handshake cscl crts ca = do
 	(cr, sr, cs@(CipherSuite ke _)) <- hello cscl
 	setCipherSuite cs
 	case ke of
@@ -66,13 +85,26 @@ open h cscl crts ca = execHandshakeM h $ do
 	dhType :: DH.Params; dhType = undefined
 	curveType :: ECC.Curve; curveType = undefined
 
+getRenegoInfo :: Maybe [Extension] -> Maybe BS.ByteString
+getRenegoInfo Nothing = Nothing
+getRenegoInfo (Just []) = Nothing
+getRenegoInfo (Just (ERenegoInfo rn : _)) = Just rn
+getRenegoInfo (Just (_ : es)) = getRenegoInfo $ Just es
+
 hello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g (BS.ByteString, BS.ByteString, CipherSuite)
 hello cscl = do
 	cr <- randomByteString 32
+	cf <- getClientFinished
+	sf <- getServerFinished
 	writeHandshake $ ClientHello (3, 3) cr (SessionId "")
-		cscl' [CompressionMethodNull] Nothing
-	ServerHello _v sr _sid cs _cm _e <- readHandshake
+		cscl' [CompressionMethodNull] $ Just [ERenegoInfo cf]
+	ServerHello _v sr _sid cs _cm e <- readHandshake
+	let	Just rn = getRenegoInfo e
+		rn0 = cf `BS.append` sf
+	debug "high" rn
+	debug "high" rn0
+	unless (rn == rn0) $ E.throwError "Network.PeyoTLS.Client.hello"
 	return (cr, sr, cs)
 	where
 	cscl' = if b `elem` cscl then cscl else cscl ++ [b]
@@ -218,9 +250,13 @@ finishHandshake crt = do
 			writeHandshake $ digitallySigned sk (pubKey sk c) hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
-	writeHandshake =<< finishedHash Client
+	fc@(Finished fcb) <- finishedHash Client
+	writeHandshake fc
+	setClientFinished fcb
 	getChangeCipherSpec >> flushCipherSuite Read
-	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
+	fs@(Finished fsb) <- finishedHash Server
+	setServerFinished fsb
+	(fs ==) `liftM` readHandshake >>= flip unless
 		(E.throwError "TlsClient.finishHandshake: finished hash failure")
 	where
 	digitallySigned sk pk hs = DigitallySigned (algorithm sk) $ sign sk pk hs

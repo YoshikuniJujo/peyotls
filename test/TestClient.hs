@@ -35,6 +35,7 @@ client g h crt crtS = (`run` g) $ do
 --	hlDebug t "medium" . BSC.pack . (++ "\n") . show $ names t
 	unless ("localhost" `elem` names t) $
 		error "certificate name mismatch"
+	renegotiate t
 	hlPut t request
 	const () `liftM` hlGetContent t
 
