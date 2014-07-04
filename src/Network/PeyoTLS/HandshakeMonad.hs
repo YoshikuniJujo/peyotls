@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.HandshakeMonad (
-	TH.TlsM, TH.run, HandshakeM, execHandshakeM, withRandom, randomByteString,
+	TH.TlsM, TH.run, HandshakeM, execHandshakeM, oldHandshakeM,
+	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
@@ -15,6 +16,8 @@ module Network.PeyoTLS.HandshakeMonad (
 --	hlGet_, hlGetLine_, hlGetContent_,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+
+	resetSequenceNumber,
 	) where
 
 import Prelude hiding (read)
@@ -51,7 +54,12 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine,
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
+
+	resetSequenceNumber,
 	)
+
+resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
+resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
 
 tlsGet_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
@@ -71,6 +79,10 @@ execHandshakeM :: HandleLike h =>
 	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle h g)
 execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
+
+oldHandshakeM :: HandleLike h => TH.TlsHandle h g -> BS.ByteString ->
+	HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle h g)
+oldHandshakeM t bs hm = fst `liftM` execStateT hm (t, SHA256.update SHA256.init bs)
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
 withRandom = lift . TH.withRandom
@@ -139,7 +151,7 @@ generateKeys :: HandleLike h => TH.Side ->
 generateKeys p (cr, sr) pms = do
 	t <- gets fst
 	cs <- lift $ TH.getCipherSuiteSt (TH.clientId t)
-	k <- lift $ TH.generateKeys p cs cr sr pms
+	k <- lift $ TH.generateKeys t p cs cr sr pms
 	lift $ TH.setKeys (TH.clientId t) k
 --	modify . first $ const t { TH.keys = k }
 

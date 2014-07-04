@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.HandshakeType ( Extension(..),
-	Handshake, HandshakeItem(..),
+	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),

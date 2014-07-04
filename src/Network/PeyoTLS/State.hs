@@ -6,7 +6,7 @@ module Network.PeyoTLS.State (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	getBuf, setBuf, getWBuf, setWBuf,
-	getReadSN, getWriteSN, succReadSN, succWriteSN,
+	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite, flushCipherSuiteRead, flushCipherSuiteWrite,
 	getKeys, setKeys,
 	getClientFinished, setClientFinished,
@@ -70,6 +70,10 @@ data Keys = Keys {
 	kCachedCS :: CipherSuite,
 	kReadCS :: CipherSuite, kWriteCS :: CipherSuite,
 	kMasterSecret :: BS.ByteString,
+	kCachedReadMacKey :: BS.ByteString,
+	kCachedWriteMacKey :: BS.ByteString,
+	kCachedReadKey :: BS.ByteString,
+	kCachedWriteKey :: BS.ByteString,
 	kReadMacKey :: BS.ByteString, kWriteMacKey :: BS.ByteString,
 	kReadKey :: BS.ByteString, kWriteKey :: BS.ByteString }
 	deriving (Show, Eq)
@@ -80,6 +84,8 @@ nullKeys = Keys {
 	kReadCS = CipherSuite KE_NULL BE_NULL,
 	kWriteCS = CipherSuite KE_NULL BE_NULL,
 	kMasterSecret = "",
+	kCachedReadMacKey = "", kCachedWriteMacKey = "",
+	kCachedReadKey = "", kCachedWriteKey = "",
 	kReadMacKey = "", kWriteMacKey = "", kReadKey = "", kWriteKey = "" }
 
 data ContentType
@@ -156,11 +162,19 @@ setServerFinished i = modifyState i . \sf st -> st { rnServerFinished = sf }
 
 flushCipherSuiteRead :: PartnerId -> Modify (HandshakeState h g)
 flushCipherSuiteRead i = modifyState i $ \st ->
-	st { sKeys = (sKeys st) { kReadCS = kCachedCS (sKeys st) } }
+	st { sKeys = (sKeys st) {
+		kReadCS = kCachedCS (sKeys st),
+		kReadMacKey = kCachedReadMacKey (sKeys st),
+		kReadKey = kCachedReadKey (sKeys st)
+		} }
 
 flushCipherSuiteWrite :: PartnerId -> Modify (HandshakeState h g)
 flushCipherSuiteWrite i = modifyState i $ \st ->
-	st { sKeys = (sKeys st) { kWriteCS = kCachedCS (sKeys st) } }
+	st { sKeys = (sKeys st) {
+		kWriteCS = kCachedCS (sKeys st),
+		kWriteMacKey = kCachedWriteMacKey (sKeys st),
+		kWriteKey = kCachedWriteKey (sKeys st)
+		} }
 
 getWBuf :: PartnerId -> HandshakeState h g -> (ContentType, BS.ByteString)
 getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . states
@@ -175,6 +189,10 @@ getWriteSN i = writeSN . fromJust . lookup i . states
 succReadSN, succWriteSN :: PartnerId -> Modify (HandshakeState h g)
 succReadSN i = modifyState i $ \s -> s{ readSN = succ $ readSN s }
 succWriteSN i = modifyState i $ \s -> s{ writeSN = succ $ writeSN s }
+
+resetReadSN, resetWriteSN :: PartnerId -> Modify (HandshakeState h g)
+resetReadSN i = modifyState i $ \s -> s{ readSN = 0 }
+resetWriteSN i = modifyState i $ \s -> s{ writeSN = 0 }
 
 type Modify s = s -> s
 

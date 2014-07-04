@@ -12,6 +12,8 @@ module Network.PeyoTLS.TlsHandle (
 	hlPut_, hlDebug_, hlClose_, tGetLine, tGetContent,
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
+
+	resetSequenceNumber,
 	) where
 
 import Prelude hiding (read)
@@ -34,6 +36,7 @@ import Network.PeyoTLS.TlsMonad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
+		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
@@ -203,31 +206,34 @@ updateSequenceNumber t rw = do
 			Write -> succWriteSn $ clientId t
 	return sn
 
-generateKeys :: HandleLike h => Side -> CipherSuite ->
+resetSequenceNumber :: HandleLike h => TlsHandle h g -> RW -> TlsM h g ()
+resetSequenceNumber t rw = do
+	case rw of
+		Read -> resetReadSn $ clientId t
+		Write -> resetWriteSn $ clientId t
+
+generateKeys :: HandleLike h => TlsHandle h g -> Side -> CipherSuite ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys
-generateKeys p cs cr sr pms = do
+generateKeys t p cs cr sr pms = do
 	let CipherSuite _ be = cs
 	kl <- case be of
 		AES_128_CBC_SHA -> return 20
 		AES_128_CBC_SHA256 -> return 32
 		_ -> throwError
 			"TlsServer.generateKeys: not implemented bulk encryption"
-	let (ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
+	let	(ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
+	k <- getKeys $ clientId t
 	return $ case p of
-		Client -> Keys {
+		Client -> k {
 			kCachedCS = cs,
-			kReadCS = CipherSuite KE_NULL BE_NULL,
-			kWriteCS = CipherSuite KE_NULL BE_NULL,
 			kMasterSecret = ms,
-			kReadMacKey = swmk, kWriteMacKey = cwmk,
-			kReadKey = swk, kWriteKey = cwk }
-		Server -> Keys {
+			kCachedReadMacKey = swmk, kCachedWriteMacKey = cwmk,
+			kCachedReadKey = swk, kCachedWriteKey = cwk }
+		Server -> k {
 			kCachedCS = cs,
-			kReadCS = CipherSuite KE_NULL BE_NULL,
-			kWriteCS = CipherSuite KE_NULL BE_NULL,
 			kMasterSecret = ms,
-			kReadMacKey = cwmk, kWriteMacKey = swmk,
-			kReadKey = cwk, kWriteKey = swk }
+			kCachedReadMacKey = cwmk, kCachedWriteMacKey = swmk,
+			kCachedReadKey = cwk, kCachedWriteKey = swk }
 
 data RW = Read | Write deriving Show
 

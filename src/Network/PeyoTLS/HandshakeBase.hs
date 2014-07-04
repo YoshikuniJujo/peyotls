@@ -4,7 +4,7 @@
 module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	PeyotlsM, PeyotlsHandle,
 	debug, generateKs, blindSign, CertSecretKey(..),
-	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
+	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.oldHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.names,
 		readHandshake, getChangeCipherSpec,
@@ -26,6 +26,14 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError,
 	HM.getClientFinished, HM.setClientFinished,
 	HM.getServerFinished, HM.setServerFinished,
+	Finished(..),
+	HM.ContentType(CTAlert, CTHandshake, CTAppData),
+	HM.tlsPut_,
+	Handshake(..),
+	HM.tlsHandle,
+	HM.tGetContent,
+	HM.tlsGet_,
+	HM.tGetLine,
 	) where
 
 import Control.Applicative
@@ -56,7 +64,7 @@ import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
 import Network.PeyoTLS.HandshakeType ( Extension(..),
-	Handshake, HandshakeItem(..),
+	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
@@ -66,7 +74,8 @@ import Network.PeyoTLS.HandshakeType ( Extension(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.HandshakeMonad as HM (
-	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
+	TlsM, run, HandshakeM, execHandshakeM, oldHandshakeM,
+	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle(..), ContentType(..),
 		names,
@@ -80,6 +89,7 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	hlDebug_, hlClose_,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+	resetSequenceNumber,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
@@ -131,9 +141,12 @@ getChangeCipherSpec = do
 			"HandshakeBase.getChangeCipherSpec: " ++
 			"not change cipher spec: " ++
 			show cnt
+	HM.resetSequenceNumber HM.Read
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
-putChangeCipherSpec = uncurry HM.tlsPut . encodeContent $ CCCSpec ChangeCipherSpec
+putChangeCipherSpec = do
+	uncurry HM.tlsPut . encodeContent $ CCCSpec ChangeCipherSpec
+	HM.resetSequenceNumber HM.Write
 
 data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
 	deriving Show

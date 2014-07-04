@@ -5,6 +5,7 @@ module Network.PeyoTLS.TlsMonad (
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
+		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
@@ -32,7 +33,7 @@ import qualified Network.PeyoTLS.State as S (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
-	getReadSN, getWriteSN, succReadSN, succWriteSN,
+	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite,
 	flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
 	getClientFinished, setClientFinished,
@@ -58,6 +59,9 @@ getWriteSn = gets . S.getWriteSN; getReadSn = gets . S.getReadSN
 
 succWriteSn, succReadSn :: HandleLike h => S.PartnerId -> TlsM h g ()
 succWriteSn = modify . S.succWriteSN; succReadSn = modify . S.succReadSN
+
+resetWriteSn, resetReadSn :: HandleLike h => S.PartnerId -> TlsM h g ()
+resetWriteSn = modify . S.resetWriteSN; resetReadSn = modify . S.resetReadSN
 
 getCipherSuiteSt :: HandleLike h => S.PartnerId -> TlsM h g S.CipherSuite
 getCipherSuiteSt = gets . S.getCipherSuite
