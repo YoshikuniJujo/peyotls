@@ -5,7 +5,7 @@
 module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	PeyotlsM, PeyotlsHandle,
 	debug, generateKs, blindSign, CertSecretKey(..),
-	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.oldHandshakeM,
+	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.names,
 		readHandshake, getChangeCipherSpec,
@@ -78,7 +78,7 @@ import Network.PeyoTLS.HandshakeType ( Extension(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.HandshakeMonad as HM (
-	TlsM, run, HandshakeM, execHandshakeM, oldHandshakeM,
+	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle(..), ContentType(..),
@@ -90,7 +90,6 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
 	hlPut_, tGetLine, tGetContent, tlsGet_, tlsPut_,
 	tGetLine_, tGetContent_, tlsGet__,
---	hlGet_, hlGetLine_, hlGetContent_,
 	hlDebug_, hlClose_,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
@@ -258,9 +257,7 @@ instance DhParam ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
 	generateSecret c = getRangedInteger 32 1 (n - 1)
-		-- first (either error id . B.decode) . cprgGenerate 64
-		where
-		n = ECC.ecc_n $ ECC.common_curve c
+		where n = ECC.ecc_n $ ECC.common_curve c
 	calculatePublic cv sn =
 		ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
 	calculateShared cv sn pp =

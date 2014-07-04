@@ -36,7 +36,7 @@ import Network.PeyoTLS.HandshakeBase ( flushAppData,
 	setClientFinished, getClientFinished,
 	setServerFinished, getServerFinished,
 	PeyotlsM, PeyotlsHandle, names,
-	TlsM, run, HandshakeM, execHandshakeM, oldHandshakeM,
+	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 		CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,
@@ -64,13 +64,12 @@ open h cscl crts ca = execHandshakeM h $ do
 	handshake crts ca cr
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-renegotiate t = do
-	oldHandshakeM t "" $ do
-		(cscl, crts, Just ca) <- getInitSet
-		cr <- clientHello cscl
-		ret <- flushAppData
-		handshake crts ca cr
-		return ret
+renegotiate t = rerunHandshakeM t $ do
+	(cscl, crts, Just ca) <- getInitSet
+	cr <- clientHello cscl
+	ret <- flushAppData
+	handshake crts ca cr
+	return ret
 
 handshake :: (ValidateHandle h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->

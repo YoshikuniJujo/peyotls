@@ -38,9 +38,6 @@ randomFrom (x : xs) = do
 	b <- randomIO
 	(if b then (x :) else id) <$> randomFrom xs
 
-len :: Int
-len = length cipherSuites - 1
-
 main :: IO ()
 main = do
 	b <- randomIO

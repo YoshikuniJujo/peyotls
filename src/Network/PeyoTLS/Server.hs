@@ -1,24 +1,22 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, FlexibleContexts,
-	PackageImports, UndecidableInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+	UndecidableInstances, PackageImports #-}
 
 module Network.PeyoTLS.Server (
+	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS,
 	run, open, renegotiate, names,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	PeyotlsM, PeyotlsHandleS,
-	TlsM, TlsHandleS,
 	ValidateHandle(..), CertSecretKey ) where
 
-import Control.Applicative
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.Error (catchError)
-import qualified "monads-tf" Control.Monad.Error as E (throwError)
-import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
+import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
+import qualified "monads-tf" Control.Monad.Error as E
+import qualified "monads-tf" Control.Monad.Error.Class as E
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
@@ -31,39 +29,30 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified Network.PeyoTLS.HandshakeBase as HB
-
-import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
-	PeyotlsM,
-	TlsM, run, HandshakeM, execHandshakeM, oldHandshakeM,
-	withRandom, randomByteString,
-	TlsHandle,
+import Network.PeyoTLS.HandshakeBase (
+	PeyotlsM, TlsM, run,
+	HandshakeM, execHandshakeM, rerunHandshakeM,
+		setCipherSuite, withRandom, randomByteString,
+	ValidateHandle(..), handshakeValidate,
+	TlsHandle, CertSecretKey(..), ContentType(..),
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
-	ValidateHandle(..), handshakeValidate,
 	AlertLevel(..), AlertDesc(..),
-	ServerKeyExchange(..), ServerHelloDone(..),
-	ClientHello(..), ServerHello(..), SessionId(..),
+	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlg(..), SignAlg(..),
-		setCipherSuite,
+		getClientFinished, setClientFinished,
+		getServerFinished, setServerFinished,
+	ServerKeyExchange(..),
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
+	ServerHelloDone(..),
 	ClientKeyExchange(..), Epms(..),
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
-	Side(..), RW(..), finishedHash,
+	Finished(..), Side(..), RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, throwError,
-	CertSecretKey(..),
-	getClientFinished, setClientFinished,
-	getServerFinished, setServerFinished,
-	Finished(..),
-	ContentType(..),
-	tlsPut_, tGetContent_,
-	tlsGet_, tGetLine_,
-	)
 
-import Network.PeyoTLS.ReadFile
-
-import System.IO
+	tlsGet_, tGetLine_, tGetContent_, tlsPut_, debug )
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
 
@@ -104,13 +93,17 @@ open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 
 renegotiate ::
 	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g BS.ByteString
-renegotiate (TlsHandleS t) = oldHandshakeM t "" $ do
+renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
 	writeHandshake HB.HHelloRequest
 	ret <- HB.flushAppData
+	handshake
+	return ret
+
+handshake :: (ValidateHandle h, CPRG g) => HandshakeM h g ()
+handshake = do
 	(cssv, crts, mcs) <- HB.getInitSet
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
-	return ret
 
 succeed :: (ValidateHandle h, CPRG g) => CipherSuite -> BS.ByteString ->
 	Version -> [(CertSecretKey, X509.CertificateChain)] ->
@@ -123,7 +116,6 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> E.throwError
 			"TlsServer.open: not implemented bulk encryption type"
---	debug "medium" . RSA.public_size $ RSA.private_pub rsk
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
@@ -167,16 +159,6 @@ dhKeyExchange ha dp ssk rs mcs = do
 		`ap` requestAndCertificate mcs
 		`ap` dhClientKeyExchange dp sv rs
 
-{-
-fromClientHello :: [CipherSuite] -> Handshake -> (CipherSuite, BS.ByteString, Version, Bool)
-fromClientHello cssv (HClientHello (ClientHello cv cr _sid cscl _cms _e)) =
-	(merge cssv cscl, cr, cv, True)
-	where
-	merge sv cl = case find (`elem` cl) sv of
-		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
-fromClientHello _ _ = error "Server.fromClientHello: bad"
--}
-
 getRenegoInfo :: [CipherSuite] -> [Extension] -> Maybe BS.ByteString
 getRenegoInfo [] [] = Nothing
 getRenegoInfo (TLS_EMPTY_RENEGOTIATION_INFO_SCSV : _) _ = Just ""
@@ -189,17 +171,12 @@ clientHello :: (HandleLike h, CPRG g) =>
 clientHello cssv = do
 	cf0 <- getClientFinished
 	ch@(ClientHello cv cr _sid cscl cms me) <- readHandshake
---	let Just cf = getRenegoInfo me
---	let rn = True
 	let (cf, rn) = case me of
 		Nothing -> ("", False)
 		Just e -> case getRenegoInfo cscl e of
 			Nothing -> ("", False)
 			Just c -> (c, True)
 	debug "medium" ch
---	debug "medium" e
---	let rn = maybe False (ERenegoInfo "" `elem`) e
---	debug "medium" rn
 	unless (cf == cf0) $ E.throwError "clientHello"
 	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
 	where
@@ -208,11 +185,6 @@ clientHello cssv = do
 	chk cv _css cms
 		| cv < version = throwError ALFatal ADProtocolVersion $
 			pmsg ++ "client version should 3.3 or more"
-			{-
-		| CipherSuite RSA AES_128_CBC_SHA `notElem` css =
-			throwError ALFatal ADIllegalParameter $
-				pmsg ++ "TLS_RSA_AES_128_CBC_SHA must be supported"
-				-}
 		| CompressionMethodNull `notElem` cms =
 			throwError ALFatal ADDecodeError $
 				pmsg ++ "compression method NULL must be supported"
@@ -259,7 +231,7 @@ clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
 clientCertificate cs = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
-	chk cc -- >> setClientNames (certNames $ X509.getCertificate c)
+	chk cc
 	return . X509.certPubKey $ X509.getCertificate c
 	where
 	chk cc = do
@@ -278,7 +250,7 @@ rsaClientKeyExchange sk (cvj, cvn) rs = do
 	Epms epms <- readHandshake
 	debug "low" ("EPMS" :: String)
 	debug "low" epms
-	generateKeys Server rs =<< mkpms epms `catchError` const
+	generateKeys Server rs =<< mkpms epms `E.catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
 	mkpms epms = do
@@ -299,7 +271,7 @@ dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
 	let Right pv = B.decode cke
 	generateKeys Server rs =<< case Right $ calculateShared dp sv pv of
-		Left em -> E.throwError . strMsg $
+		Left em -> E.throwError . E.strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
 		Right sh -> return sh
 
@@ -363,37 +335,8 @@ checkAppData (TlsHandleS t) m = m >>= \cp -> case cp of
 	(CTAlert, "\SOH\NUL") -> do
 		_ <- tlsPut_ (t, undefined) CTAlert "\SOH\NUL"
 		E.throwError "TlsHandle.checkAppData: EOF"
-		{-
-	(CTHandshake, hs) -> do
-		lift . lift $ hlDebug (tlsHandle t) "low" "renegotiation?"
-		lift . lift $ hlDebug (tlsHandle t) "low" . BSC.pack $ show hs
-		lift . lift $ hlDebug (tlsHandle t) "low" . BSC.pack .
-			show $ (B.decode hs :: Either String Handshake)
---		renegotiation t hs
-		return ""
-		-}
 	_ -> do	_ <- tlsPut_ (t, undefined) CTAlert "\2\10"
 		E.throwError "TlsHandle.checkAppData: not application data"
 
-handshake :: (ValidateHandle h, CPRG g) =>
-	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
-	Maybe X509.CertificateStore -> HandshakeM h g ()
-handshake _cssv _crts _mcs = do
-	(cssv, crts, mcs) <- HB.getInitSet
-	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
-	succeed cs cr cv crts mcs rn
-
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
-rehandshake t = do
-	oldHandshakeM t "" $ handshake undefined undefined undefined
-	return ()
-
-{-
-renegotiation ::
-	(ValidateHandle h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
-renegotiation t hs = do
-	let	Right ch = B.decode hs
-		(cs, cr, cv, rn) = fromClientHello cipherSuites ch
-	oldHandshakeM t hs $ succeed cs cr cv certificateSets Nothing rn
-	return ()
-	-}
+rehandshake t = rerunHandshakeM t handshake

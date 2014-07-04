@@ -24,7 +24,7 @@ server :: (ValidateHandle h, CPRG g)  => g -> h ->
 server g h css rsa ec mcs = (`run` g) $ do
 	cl <- open h css [rsa, ec] mcs
 	const () `liftM` doUntil BS.null (hlGetLine cl)
-	renegotiate cl
+	_ <- renegotiate cl
 	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe $ names cl
 	hlClose cl
 

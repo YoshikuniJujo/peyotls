@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.HandshakeMonad (
-	TH.TlsM, TH.run, HandshakeM, execHandshakeM, oldHandshakeM,
+	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
@@ -13,8 +13,6 @@ module Network.PeyoTLS.HandshakeMonad (
 	TH.hlPut_, TH.hlDebug_, TH.hlClose_,
 	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_, tlsGet__,
 	tGetLine_, tGetContent_,
---	checkAppData,
---	hlGet_, hlGetLine_, hlGetContent_,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 
@@ -117,9 +115,9 @@ execHandshakeM :: HandleLike h =>
 execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
-oldHandshakeM :: HandleLike h => TH.TlsHandle h g -> BS.ByteString ->
-	HandshakeM h g a -> TH.TlsM h g a -- (TH.TlsHandle h g)
-oldHandshakeM t bs hm = evalStateT hm (t, SHA256.update SHA256.init bs)
+rerunHandshakeM ::
+	HandleLike h => TH.TlsHandle h g -> HandshakeM h g a -> TH.TlsM h g a
+rerunHandshakeM t hm = evalStateT hm (t, SHA256.init)
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
 withRandom = lift . TH.withRandom
@@ -158,7 +156,6 @@ handshakeValidate :: ValidateHandle h =>
 handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
 	modify . first $ const t { TH.names = certNames . X509.getCertificate $ last c }
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
--- handshakeValidate _ _ = error "empty certificate chain"
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite cs = do
@@ -190,7 +187,6 @@ generateKeys p (cr, sr) pms = do
 	cs <- lift $ TH.getCipherSuiteSt (TH.clientId t)
 	k <- lift $ TH.generateKeys t p cs cr sr pms
 	lift $ TH.setKeys (TH.clientId t) k
---	modify . first $ const t { TH.keys = k }
 
 encryptRsa :: (HandleLike h, CPRG g) =>
 	RSA.PublicKey -> BS.ByteString -> HandshakeM h g BS.ByteString

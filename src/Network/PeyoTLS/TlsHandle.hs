@@ -90,9 +90,8 @@ flushAppData :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteStrin
 flushAppData t = do
 	ct <- getContentType t
 	case ct of
-		CTAppData -> BS.append
-			`liftM` (snd `liftM` tGetContent t)
-			`ap` flushAppData t
+		CTAppData ->
+			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
 		_ -> return ""
 
 tlsGet :: (HandleLike h, CPRG g) => HandleHash h g ->
