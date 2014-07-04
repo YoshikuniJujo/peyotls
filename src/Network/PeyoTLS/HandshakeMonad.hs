@@ -112,8 +112,9 @@ execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
 oldHandshakeM :: HandleLike h => TH.TlsHandle h g -> BS.ByteString ->
-	HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle h g)
-oldHandshakeM t bs hm = fst `liftM` execStateT hm (t, SHA256.update SHA256.init bs)
+	HandshakeM h g () -> TH.TlsM h g () -- (TH.TlsHandle h g)
+oldHandshakeM t bs hm =
+	const () `liftM` execStateT hm (t, SHA256.update SHA256.init bs)
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
 withRandom = lift . TH.withRandom

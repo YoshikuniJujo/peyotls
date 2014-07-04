@@ -44,7 +44,7 @@ import Network.PeyoTLS.TlsMonad (
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
-	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ContentType(..), CipherSuite(..), BulkEncryption(..),
 	PartnerId, newPartnerId, Keys(..),
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
@@ -96,9 +96,7 @@ tlsGet hh@(t, _) n = do
 tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
 	HandleHash h g -> Int ->
 	TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
-tlsGet_ rn hh@(t, _) n = do
-	r@(ct, bs) <- buffered_ rn t n
-	return (r, hh)
+tlsGet_ rn hh@(t, _) n = (, hh) `liftM` buffered_ rn t n
 
 buffered :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
@@ -121,8 +119,8 @@ buffered t n = do
 buffered_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
 	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
 buffered_ rn t n = do
-	ct <- getContentType t
-	case ct of
+	ct0 <- getContentType t
+	case ct0 of
 		CTHandshake -> rn t >> buffered_ rn t n
 		_ -> do	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
 			if rl <= 0

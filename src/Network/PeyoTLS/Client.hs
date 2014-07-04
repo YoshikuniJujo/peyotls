@@ -8,7 +8,7 @@ module Network.PeyoTLS.Client (
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (unless, liftM, ap)
+import Control.Monad (unless, liftM)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike)
 import "crypto-random" Crypto.Random (CPRG)

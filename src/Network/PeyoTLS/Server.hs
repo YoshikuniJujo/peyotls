@@ -11,7 +11,7 @@ module Network.PeyoTLS.Server (
 
 import Control.Applicative
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.Error (catchError, lift)
+import "monads-tf" Control.Monad.Error (catchError)
 import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
@@ -20,7 +20,6 @@ import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -58,23 +57,11 @@ import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
 	getServerFinished, setServerFinished,
 	Finished(..),
 	ContentType(..),
-	tlsPut_, Handshake(..), tlsHandle, tGetContent_,
+	tlsPut_, tGetContent_,
 	tlsGet_, tGetLine_,
 	)
 
-import System.IO.Unsafe
 import Network.PeyoTLS.ReadFile
-
-cipherSuites :: [CipherSuite]
-cipherSuites = [
-	"TLS_RSA_WITH_AES_128_CBC_SHA"
-	]
-
-certificateSets :: [(CertSecretKey, X509.CertificateChain)]
-certificateSets = unsafePerformIO $ do
-	k <- readKey "rsa2048.sample_key"
-	c <- readCertificateChain "rsa2048.sample_crt"
-	return [(k, c)]
 
 names :: TlsHandleS h g -> [String]
 names = HB.names . tlsHandleS
@@ -148,6 +135,7 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 	where
 	Just (RsaKey rsk, rcc) = find isRsa crts
 	Just (EcdsaKey esk, ecc) = find isEcdsa crts
+succeed _ _ _ _ _ _ = E.throwError "Network.PeyoTLS.Server.succeed: not implemented"
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
@@ -169,6 +157,7 @@ dhKeyExchange ha dp ssk rs mcs = do
 		`ap` requestAndCertificate mcs
 		`ap` dhClientKeyExchange dp sv rs
 
+{-
 fromClientHello :: [CipherSuite] -> Handshake -> (CipherSuite, BS.ByteString, Version, Bool)
 fromClientHello cssv (HClientHello (ClientHello cv cr _sid cscl _cms _e)) =
 	(merge cssv cscl, cr, cv, True)
@@ -176,6 +165,7 @@ fromClientHello cssv (HClientHello (ClientHello cv cr _sid cscl _cms _e)) =
 	merge sv cl = case find (`elem` cl) sv of
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
 fromClientHello _ _ = error "Server.fromClientHello: bad"
+-}
 
 getRenegoInfo :: [CipherSuite] -> [Extension] -> Maybe BS.ByteString
 getRenegoInfo [] [] = Nothing
@@ -200,7 +190,7 @@ clientHello cssv = do
 --	debug "medium" e
 --	let rn = maybe False (ERenegoInfo "" `elem`) e
 --	debug "medium" rn
-	debug "low" "CLIENT FINISHES"
+	debug "low" ("CLIENT FINISHES" :: String)
 	debug "low" cf
 	debug "low" cf0
 	unless (cf == cf0) $ E.throwError "clientHello"
@@ -391,6 +381,7 @@ rehandshake t = do
 	oldHandshakeM t "" $ handshake undefined undefined undefined
 	return ()
 
+{-
 renegotiation ::
 	(ValidateHandle h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
 renegotiation t hs = do
@@ -398,3 +389,4 @@ renegotiation t hs = do
 		(cs, cr, cv, rn) = fromClientHello cipherSuites ch
 	oldHandshakeM t hs $ succeed cs cr cv certificateSets Nothing rn
 	return ()
+	-}

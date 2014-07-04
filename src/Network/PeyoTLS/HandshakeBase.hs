@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports,
 	TupleSections #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	PeyotlsM, PeyotlsHandle,
