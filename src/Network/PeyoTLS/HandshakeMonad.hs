@@ -13,6 +13,8 @@ module Network.PeyoTLS.HandshakeMonad (
 	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_,
 --	checkAppData,
 --	hlGet_, hlGetLine_, hlGetContent_,
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
 	) where
 
 import Prelude hiding (read)
@@ -30,7 +32,6 @@ import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -48,6 +49,8 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
 	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine,
+	getClientFinishedT, setClientFinishedT,
+	getServerFinishedT, setServerFinishedT,
 	)
 
 tlsGet_ :: (HandleLike h, CPRG g) =>
@@ -160,3 +163,12 @@ handshakeHash = get >>= lift . TH.handshakeHash
 
 finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteString
 finishedHash p = get >>= lift . flip TH.finishedHash p
+
+getClientFinished, getServerFinished :: HandleLike h => HandshakeM h g BS.ByteString
+getClientFinished = gets fst >>= lift . TH.getClientFinishedT
+getServerFinished = gets fst >>= lift . TH.getServerFinishedT
+
+setClientFinished, setServerFinished ::
+	HandleLike h => BS.ByteString -> HandshakeM h g ()
+setClientFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
+setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf

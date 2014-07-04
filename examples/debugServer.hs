@@ -27,7 +27,8 @@ main = do
 		liftIO . forkIO . (`run` g) $ do
 			p <- open (DebugHandle h $ Just "low") ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
 				Nothing
-			doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
+--			doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
+			hlGetContent p >>= liftIO . BSC.putStrLn
 			hlPut p $ BS.concat [
 				"HTTP/1.1 200 OK\r\n",
 				"Transfer-Encoding: chunked\r\n",

@@ -23,7 +23,10 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
 	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
 	HM.Side(..), HM.RW(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1, HM.throwError ) where
+	DhParam(..), dh3072Modp, secp256r1, HM.throwError,
+	HM.getClientFinished, HM.setClientFinished,
+	HM.getServerFinished, HM.setServerFinished,
+	) where
 
 import Control.Applicative
 import Control.Arrow (first)
@@ -74,7 +77,10 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
 	hlPut_, tGetLine, tGetContent, tlsGet_, tlsPut_,
 --	hlGet_, hlGetLine_, hlGetContent_,
-	hlDebug_, hlClose_ )
+	hlDebug_, hlClose_,
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
+	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
 import Network.PeyoTLS.CertSecretKey

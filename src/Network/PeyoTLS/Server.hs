@@ -48,7 +48,10 @@ import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Side(..), RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, throwError,
-	CertSecretKey(..) )
+	CertSecretKey(..),
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
+	)
 
 type Version = (Word8, Word8)
 

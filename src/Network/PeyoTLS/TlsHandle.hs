@@ -10,6 +10,8 @@ module Network.PeyoTLS.TlsHandle (
 		setKeys,
 		handshakeHash, finishedHash,
 	hlPut_, hlDebug_, hlClose_, tGetLine, tGetContent,
+	getClientFinishedT, setClientFinishedT,
+	getServerFinishedT, setServerFinishedT,
 	) where
 
 import Prelude hiding (read)
@@ -36,7 +38,10 @@ import Network.PeyoTLS.TlsMonad (
 		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	PartnerId, newPartnerId, Keys(..))
+	PartnerId, newPartnerId, Keys(..),
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
+	)
 import qualified Network.PeyoTLS.CryptoTools as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
@@ -288,3 +293,13 @@ tGetContent t = do
 	bcp@(_, bp) <- getBuf $ clientId t
 	if BS.null bp then getWholeWithCt t else
 		setBuf (clientId t) (CTNull, BS.empty) >> return bcp
+
+getClientFinishedT, getServerFinishedT ::
+	HandleLike h => TlsHandle h g -> TlsM h g BS.ByteString
+getClientFinishedT = getClientFinished . clientId
+getServerFinishedT = getServerFinished . clientId
+
+setClientFinishedT, setServerFinishedT ::
+	HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+setClientFinishedT = setClientFinished . clientId
+setServerFinishedT = setServerFinished . clientId

@@ -10,7 +10,11 @@ module Network.PeyoTLS.TlsMonad (
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
 	S.CipherSuite(..), S.KeyExchange(..), S.BulkEncryption(..),
-	S.PartnerId, S.newPartnerId, S.Keys(..), S.nullKeys ) where
+	S.PartnerId, S.newPartnerId, S.Keys(..), S.nullKeys,
+
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
+	) where
 
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
@@ -30,7 +34,10 @@ import qualified Network.PeyoTLS.State as S (
 	setBuf, getBuf, setWBuf, getWBuf,
 	getReadSN, getWriteSN, succReadSN, succWriteSN,
 	getCipherSuite, setCipherSuite,
-	flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys)
+	flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
+	)
 
 type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))
 
@@ -63,6 +70,16 @@ setKeys = (modify .) . S.setKeys
 
 getKeys :: HandleLike h => S.PartnerId -> TlsM h g S.Keys
 getKeys = gets . S.getKeys
+
+getClientFinished, getServerFinished ::
+	HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
+getClientFinished = gets . S.getClientFinished
+getServerFinished = gets . S.getServerFinished
+
+setClientFinished, setServerFinished ::
+	HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
+setClientFinished = (modify .) . S.setClientFinished
+setServerFinished = (modify .) . S.setServerFinished
 
 flushCipherSuiteRead, flushCipherSuiteWrite ::
 	HandleLike h => S.PartnerId -> TlsM h g ()

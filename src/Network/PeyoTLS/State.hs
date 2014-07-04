@@ -9,6 +9,8 @@ module Network.PeyoTLS.State (
 	getReadSN, getWriteSN, succReadSN, succWriteSN,
 	getCipherSuite, setCipherSuite, flushCipherSuiteRead, flushCipherSuiteWrite,
 	getKeys, setKeys,
+	getClientFinished, setClientFinished,
+	getServerFinished, setServerFinished,
 ) where
 
 import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
@@ -40,7 +42,9 @@ newPartnerId s = (PartnerId i ,) s{
 	so = StateOne {
 		sKeys = nullKeys,
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
-		readSN = 0, writeSN = 0 }
+		readSN = 0, writeSN = 0,
+		rnClientFinished = "", rnServerFinished = ""
+		}
 	sos = states s
 
 data StateOne g = StateOne {
@@ -48,7 +52,10 @@ data StateOne g = StateOne {
 	rBuffer :: (ContentType, BS.ByteString),
 	wBuffer :: (ContentType, BS.ByteString),
 	readSN :: Word64,
-	writeSN :: Word64 }
+	writeSN :: Word64,
+	rnClientFinished :: BS.ByteString,
+	rnServerFinished :: BS.ByteString
+	}
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g
 getState i = fromJust' "getState" . lookup i . states
@@ -134,6 +141,18 @@ getKeys i = sKeys . fromJust' "getKeys" . lookup i . states
 
 setKeys :: PartnerId -> Keys -> Modify (HandshakeState h g)
 setKeys i = modifyState i . \k st -> st { sKeys = k }
+
+getClientFinished, getServerFinished ::
+	PartnerId -> HandshakeState h g -> BS.ByteString
+getClientFinished i =
+	rnClientFinished . fromJust' "getClientFinished" . lookup i . states
+getServerFinished i =
+	rnServerFinished . fromJust' "getClientFinished" . lookup i . states
+
+setClientFinished, setServerFinished ::
+	PartnerId -> BS.ByteString -> Modify (HandshakeState h g)
+setClientFinished i = modifyState i . \cf st -> st { rnClientFinished = cf }
+setServerFinished i = modifyState i . \sf st -> st { rnServerFinished = sf }
 
 flushCipherSuiteRead :: PartnerId -> Modify (HandshakeState h g)
 flushCipherSuiteRead i = modifyState i $ \st ->
