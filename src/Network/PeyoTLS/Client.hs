@@ -102,8 +102,8 @@ hello cscl = do
 	ServerHello _v sr _sid cs _cm e <- readHandshake
 	let	Just rn = getRenegoInfo e
 		rn0 = cf `BS.append` sf
-	debug "high" rn
-	debug "high" rn0
+	debug "low" rn
+	debug "low" rn0
 	unless (rn == rn0) $ E.throwError "Network.PeyoTLS.Client.hello"
 	return (cr, sr, cs)
 	where

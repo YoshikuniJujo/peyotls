@@ -147,8 +147,8 @@ getWholeWithCt t = do
 	e <- read t =<< either (throwError . strMsg) return . B.decode =<< read t 2
 	when (BS.null e) $ throwError "TlsHandle.getWholeWithCt: e is null"
 	p <- decrypt t ct e
-	thlDebug (tlsHandle t) "high" . BSC.pack . (++ ": ") $ show ct
-	thlDebug (tlsHandle t) "high" . BSC.pack . (++  "\n") . show $ BS.head p
+	thlDebug (tlsHandle t) "medium" . BSC.pack . (++ ": ") $ show ct
+	thlDebug (tlsHandle t) "medium" . BSC.pack . (++  "\n") . show $ BS.head p
 	thlDebug (tlsHandle t) "low" . BSC.pack . (++ "\n") $ show p
 	return (ct, p)
 
