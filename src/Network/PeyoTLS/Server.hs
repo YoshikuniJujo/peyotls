@@ -102,12 +102,15 @@ open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
 
-renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
+renegotiate ::
+	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g BS.ByteString
 renegotiate (TlsHandleS t) = oldHandshakeM t "" $ do
 	writeHandshake HB.HHelloRequest
+	ret <- HB.flushAppData
 	(cssv, crts, mcs) <- HB.getInitSet
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
+	return ret
 
 succeed :: (ValidateHandle h, CPRG g) => CipherSuite -> BS.ByteString ->
 	Version -> [(CertSecretKey, X509.CertificateChain)] ->
