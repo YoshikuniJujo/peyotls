@@ -58,8 +58,8 @@ import Network.PeyoTLS.HandshakeBase ( debug, Extension(..),
 	getServerFinished, setServerFinished,
 	Finished(..),
 	ContentType(..),
-	tlsPut_, Handshake(..), tlsHandle, tGetContent,
-	tlsGet_, tGetLine,
+	tlsPut_, Handshake(..), tlsHandle, tGetContent_,
+	tlsGet_, tGetLine_,
 	)
 
 import System.IO.Unsafe
@@ -332,13 +332,13 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 
 hlGet_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> Int -> TlsM h g BS.ByteString
-hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet_
+hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet_ rehandshake
 	. (, undefined) . tlsHandleS
 
 hlGetLine_, hlGetContent_ ::
 	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g BS.ByteString
-hlGetLine_ = ($) <$> checkAppData <*> tGetLine . tlsHandleS
-hlGetContent_ = ($) <$> checkAppData <*> tGetContent . tlsHandleS
+hlGetLine_ = ($) <$> checkAppData <*> tGetLine_ rehandshake . tlsHandleS
+hlGetContent_ = ($) <$> checkAppData <*> tGetContent_ rehandshake . tlsHandleS
 
 checkAppData :: (ValidateHandle h, CPRG g) => TlsHandleS h g ->
 	TlsM h g (ContentType, BS.ByteString) -> TlsM h g BS.ByteString
@@ -347,14 +347,34 @@ checkAppData (TlsHandleS t) m = m >>= \cp -> case cp of
 	(CTAlert, "\SOH\NUL") -> do
 		_ <- tlsPut_ (t, undefined) CTAlert "\SOH\NUL"
 		E.throwError "TlsHandle.checkAppData: EOF"
+		{-
 	(CTHandshake, hs) -> do
-		lift . lift $ hlDebug (tlsHandle t) "critical" "renegotiation?"
-		lift . lift $ hlDebug (tlsHandle t) "critical" . BSC.pack $ show hs
-		lift . lift $ hlDebug (tlsHandle t) "critical" . BSC.pack .
+		lift . lift $ hlDebug (tlsHandle t) "low" "renegotiation?"
+		lift . lift $ hlDebug (tlsHandle t) "low" . BSC.pack $ show hs
+		lift . lift $ hlDebug (tlsHandle t) "low" . BSC.pack .
 			show $ (B.decode hs :: Either String Handshake)
-		let	Right ch = B.decode hs
-			(cs, cr, cv, rn) = fromClientHello cipherSuites ch
-		oldHandshakeM t hs $ succeed cs cr cv certificateSets Nothing rn
+--		renegotiation t hs
 		return ""
+		-}
 	_ -> do	_ <- tlsPut_ (t, undefined) CTAlert "\2\10"
 		E.throwError "TlsHandle.checkAppData: not application data"
+
+handshake :: (ValidateHandle h, CPRG g) =>
+	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
+	Maybe X509.CertificateStore -> HandshakeM h g ()
+handshake cssv crts mcs = do
+	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
+	succeed cs cr cv crts mcs rn
+
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+rehandshake t = do
+	oldHandshakeM t "" $ handshake cipherSuites certificateSets Nothing
+	return ()
+
+renegotiation ::
+	(ValidateHandle h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+renegotiation t hs = do
+	let	Right ch = B.decode hs
+		(cs, cr, cv, rn) = fromClientHello cipherSuites ch
+	oldHandshakeM t hs $ succeed cs cr cv certificateSets Nothing rn
+	return ()

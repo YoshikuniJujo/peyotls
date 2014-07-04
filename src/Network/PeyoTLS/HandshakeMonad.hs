@@ -11,7 +11,8 @@ module Network.PeyoTLS.HandshakeMonad (
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
 	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError,
 	TH.hlPut_, TH.hlDebug_, TH.hlClose_,
-	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_,
+	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_, tlsGet__,
+	tGetLine_, tGetContent_,
 --	checkAppData,
 --	hlGet_, hlGetLine_, hlGetContent_,
 	getClientFinished, setClientFinished,
@@ -62,8 +63,34 @@ resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
 
 tlsGet_ :: (HandleLike h, CPRG g) =>
+	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
 	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
-tlsGet_ = TH.tlsGet
+tlsGet_ rn th@(t, _) n = do
+	ct <- TH.getContentType t
+	case ct of
+		TH.CTHandshake -> do
+			rn t
+			tlsGet_ rn th n
+		_ -> TH.tlsGet th n
+
+tlsGet__ :: (HandleLike h, CPRG g) =>
+	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
+tlsGet__ = TH.tlsGet
+
+tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
+	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
+	TH.TlsHandle h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
+tGetLine_ rn t = do
+	ct <- TH.getContentType t
+	case ct of
+		TH.CTHandshake -> rn t >> tGetLine_ rn t
+		_ -> TH.tGetLine t
+
+tGetContent_ rn t = do
+	ct <- TH.getContentType t
+	case ct of
+		TH.CTHandshake -> rn t >> tGetContent_ rn t
+		_ -> TH.tGetContent t
 
 tlsPut_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandle h g, SHA256.Ctx)

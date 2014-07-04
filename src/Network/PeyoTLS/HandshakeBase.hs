@@ -31,9 +31,9 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	HM.tlsPut_,
 	Handshake(..),
 	HM.tlsHandle,
-	HM.tGetContent,
+	HM.tGetContent_,
 	HM.tlsGet_,
-	HM.tGetLine,
+	HM.tGetLine_,
 	) where
 
 import Control.Applicative
@@ -85,6 +85,7 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
 	hlPut_, tGetLine, tGetContent, tlsGet_, tlsPut_,
+	tGetLine_, tGetContent_, tlsGet__,
 --	hlGet_, hlGetLine_, hlGetContent_,
 	hlDebug_, hlClose_,
 	getClientFinished, setClientFinished,
@@ -281,7 +282,7 @@ instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
 
 hlGet_ :: (HandleLike h, CPRG g) =>
 	(HM.TlsHandle h g) -> Int -> HM.TlsM h g BS.ByteString
-hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ . (, undefined)
+hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet__ . (, undefined)
 
 hlGetLine_, hlGetContent_ ::
 	(HandleLike h, CPRG g) => (HM.TlsHandle h g) -> HM.TlsM h g BS.ByteString
