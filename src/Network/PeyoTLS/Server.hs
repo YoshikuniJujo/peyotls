@@ -177,15 +177,33 @@ fromClientHello cssv (HClientHello (ClientHello cv cr _sid cscl _cms _e)) =
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
 fromClientHello _ _ = error "Server.fromClientHello: bad"
 
+getRenegoInfo :: [CipherSuite] -> [Extension] -> Maybe BS.ByteString
+getRenegoInfo [] [] = Nothing
+getRenegoInfo (TLS_EMPTY_RENEGOTIATION_INFO_SCSV : _) _ = Just ""
+getRenegoInfo (_ : css) e = getRenegoInfo css e
+getRenegoInfo [] (ERenegoInfo rn : _) = Just rn
+getRenegoInfo [] (_ : es) = getRenegoInfo [] es
+
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
 clientHello cssv = do
-	ch@(ClientHello cv cr _sid cscl cms _e) <- readHandshake
+	cf0 <- getClientFinished
+	ch@(ClientHello cv cr _sid cscl cms me) <- readHandshake
+--	let Just cf = getRenegoInfo me
+--	let rn = True
+	let (cf, rn) = case me of
+		Nothing -> ("", False)
+		Just e -> case getRenegoInfo cscl e of
+			Nothing -> ("", False)
+			Just c -> (c, True)
 	debug "medium" ch
 --	debug "medium" e
 --	let rn = maybe False (ERenegoInfo "" `elem`) e
-	let rn = True
 --	debug "medium" rn
+	debug "low" "CLIENT FINISHES"
+	debug "low" cf
+	debug "low" cf0
+	unless (cf == cf0) $ E.throwError "clientHello"
 	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
 	where
 	merge sv cl = case find (`elem` cl) sv of
