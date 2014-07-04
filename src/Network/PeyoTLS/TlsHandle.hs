@@ -13,6 +13,9 @@ module Network.PeyoTLS.TlsHandle (
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
 
+	getInitSetT, setInitSetT,
+	InitialSettings,
+
 	resetSequenceNumber,
 	) where
 
@@ -44,6 +47,8 @@ import Network.PeyoTLS.TlsMonad (
 	PartnerId, newPartnerId, Keys(..),
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+	InitialSettings,
+	getInitSet, setInitSet,
 	)
 import qualified Network.PeyoTLS.CryptoTools as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
@@ -309,3 +314,9 @@ setClientFinishedT, setServerFinishedT ::
 	HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
 setClientFinishedT = setClientFinished . clientId
 setServerFinishedT = setServerFinished . clientId
+
+getInitSetT :: HandleLike h => TlsHandle h g -> TlsM h g InitialSettings
+getInitSetT = getInitSet . clientId
+
+setInitSetT :: HandleLike h => TlsHandle h g -> InitialSettings -> TlsM h g ()
+setInitSetT = setInitSet . clientId

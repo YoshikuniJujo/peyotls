@@ -9,8 +9,11 @@ module Network.PeyoTLS.State (
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite, flushCipherSuiteRead, flushCipherSuiteWrite,
 	getKeys, setKeys,
+	getInitSet, setInitSet,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+
+	InitialSettings,
 ) where
 
 import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
@@ -20,6 +23,10 @@ import Data.String (IsString(..))
 
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
+
+import Network.PeyoTLS.CertSecretKey
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 
 import Network.PeyoTLS.CipherSuite (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..))
@@ -43,9 +50,14 @@ newPartnerId s = (PartnerId i ,) s{
 		sKeys = nullKeys,
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
 		readSN = 0, writeSN = 0,
-		rnClientFinished = "", rnServerFinished = ""
+		rnClientFinished = "", rnServerFinished = "",
+		initialSettings = ([], [], Nothing)
 		}
 	sos = states s
+
+type InitialSettings = (
+	[CipherSuite], [(CertSecretKey, X509.CertificateChain)],
+	Maybe X509.CertificateStore)
 
 data StateOne g = StateOne {
 	sKeys :: Keys,
@@ -54,7 +66,10 @@ data StateOne g = StateOne {
 	readSN :: Word64,
 	writeSN :: Word64,
 	rnClientFinished :: BS.ByteString,
-	rnServerFinished :: BS.ByteString
+	rnServerFinished :: BS.ByteString,
+	initialSettings :: (
+		[CipherSuite], [(CertSecretKey, X509.CertificateChain)],
+		Maybe X509.CertificateStore)
 	}
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g
@@ -147,6 +162,12 @@ getKeys i = sKeys . fromJust' "getKeys" . lookup i . states
 
 setKeys :: PartnerId -> Keys -> Modify (HandshakeState h g)
 setKeys i = modifyState i . \k st -> st { sKeys = k }
+
+getInitSet :: PartnerId -> HandshakeState h g -> InitialSettings
+getInitSet i = initialSettings . fromJust' "getInitSet" . lookup i . states
+
+setInitSet :: PartnerId -> InitialSettings -> Modify (HandshakeState h g)
+setInitSet i = modifyState i . \is st -> st { initialSettings = is }
 
 getClientFinished, getServerFinished ::
 	PartnerId -> HandshakeState h g -> BS.ByteString

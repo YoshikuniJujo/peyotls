@@ -34,6 +34,8 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	HM.tGetContent_,
 	HM.tlsGet_,
 	HM.tGetLine_,
+
+	HM.getInitSet, HM.setInitSet,
 	) where
 
 import Control.Applicative
@@ -91,6 +93,8 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 	resetSequenceNumber,
+
+	getInitSet, setInitSet,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 

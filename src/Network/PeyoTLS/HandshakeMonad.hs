@@ -19,6 +19,8 @@ module Network.PeyoTLS.HandshakeMonad (
 	getServerFinished, setServerFinished,
 
 	resetSequenceNumber,
+
+	getInitSet, setInitSet,
 	) where
 
 import Prelude hiding (read)
@@ -57,6 +59,8 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 	getServerFinishedT, setServerFinishedT,
 
 	resetSequenceNumber,
+
+	getInitSetT, setInitSetT, InitialSettings,
 	)
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
@@ -211,3 +215,9 @@ setClientFinished, setServerFinished ::
 	HandleLike h => BS.ByteString -> HandshakeM h g ()
 setClientFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
 setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
+
+getInitSet :: HandleLike h => HandshakeM h g TH.InitialSettings
+getInitSet = gets fst >>= lift . TH.getInitSetT
+
+setInitSet :: HandleLike h => TH.InitialSettings -> HandshakeM h g ()
+setInitSet is = gets fst >>= lift . flip TH.setInitSetT is

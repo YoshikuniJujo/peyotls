@@ -8,6 +8,7 @@ module Network.PeyoTLS.TlsMonad (
 		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
+		getInitSet, setInitSet, S.InitialSettings,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
 	S.CipherSuite(..), S.KeyExchange(..), S.BulkEncryption(..),
@@ -36,8 +37,11 @@ import qualified Network.PeyoTLS.State as S (
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite,
 	flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
+	getInitSet, setInitSet,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+
+	InitialSettings,
 	)
 
 type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))
@@ -74,6 +78,12 @@ setKeys = (modify .) . S.setKeys
 
 getKeys :: HandleLike h => S.PartnerId -> TlsM h g S.Keys
 getKeys = gets . S.getKeys
+
+getInitSet :: HandleLike h => S.PartnerId -> TlsM h g S.InitialSettings
+getInitSet = gets . S.getInitSet
+
+setInitSet :: HandleLike h => S.PartnerId -> S.InitialSettings -> TlsM h g ()
+setInitSet = (modify .) . S.setInitSet
 
 getClientFinished, getServerFinished ::
 	HandleLike h => S.PartnerId -> TlsM h g BS.ByteString

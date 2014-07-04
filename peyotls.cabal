@@ -2,7 +2,7 @@ build-type:	Simple
 cabal-version:	>= 1.8
 
 name:		peyotls
-version:	0.0.0.13
+version:	0.0.0.16
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -39,11 +39,19 @@ description:
     .
     * ECDSA (SHA1 or SHA256 depending on the agreed cipher suite)
     .
+    And support secure renegotiation partially
+    .
+    * server can recieve client-initiated renegotiation
+    .
+    * can not send renegotiation from my client
+    .
+    * no server-initiated renegotiation
+    .
     Currently not implemente the following features.
     .
     * session resumption (RFC 5077)
     .
-    * renegotiation (RFC 5746)
+    * renegotiation (RFC 5746): partially
     .
     Server sample
     .
@@ -273,7 +281,7 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/peyotls.git
-    tag:	peyotls-0.0.0.13
+    tag:	peyotls-0.0.0.16
 
 library
     hs-source-dirs:	src

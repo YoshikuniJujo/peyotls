@@ -107,6 +107,7 @@ open :: (ValidateHandle h, CPRG g) => h ->
 	[(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
 open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
+	HB.setInitSet (cssv, crts, mcs)
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
 
@@ -362,13 +363,14 @@ checkAppData (TlsHandleS t) m = m >>= \cp -> case cp of
 handshake :: (ValidateHandle h, CPRG g) =>
 	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> HandshakeM h g ()
-handshake cssv crts mcs = do
+handshake _cssv _crts _mcs = do
+	(cssv, crts, mcs) <- HB.getInitSet
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = do
-	oldHandshakeM t "" $ handshake cipherSuites certificateSets Nothing
+	oldHandshakeM t "" $ handshake undefined undefined undefined
 	return ()
 
 renegotiation ::

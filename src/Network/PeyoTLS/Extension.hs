@@ -140,6 +140,8 @@ instance B.Bytable ECC.CurveName where
 	encode _ = error "Extension.encodeCN: not implemented"
 	decode bs = case BS.unpack bs of
 		[w1, w2] -> case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
+			(1 :: Word16) -> Right ECC.SEC_t163k1
+			(14 :: Word16) -> Right ECC.SEC_t571r1
 			(23 :: Word16) -> Right ECC.SEC_p256r1
 			(24 :: Word16) -> Right ECC.SEC_p384r1
 			(25 :: Word16) -> Right ECC.SEC_p521r1
