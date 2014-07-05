@@ -9,7 +9,7 @@ module Network.PeyoTLS.Client (
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (unless, liftM)
+import Control.Monad (when, unless, liftM)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
@@ -76,10 +76,10 @@ renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, Just ca) <- getInitSet
 	cr <- clientHello cscl
-	ret <- flushAppData
+	(ret, ne) <- flushAppData
 	bf <- HB.getAdBufH
 	HB.setAdBufH $ bf `BS.append` ret
-	handshake crts ca cr
+	when ne $ handshake crts ca cr
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do

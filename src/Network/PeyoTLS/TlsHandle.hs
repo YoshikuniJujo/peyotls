@@ -90,13 +90,22 @@ getContentType t = do
 		setBuf (clientId t) (ct', bf)
 		return ct'
 
-flushAppData :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
+flushAppData :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> TlsM h g (BS.ByteString, Bool)
 flushAppData t = do
 	ct <- getContentType t
 	case ct of
-		CTAppData ->
-			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
-		_ -> return ""
+		CTAppData -> do
+			(_, ad) <- tGetContent t
+			(bs, b) <- flushAppData t
+			return (ad `BS.append` bs, b)
+--			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
+		CTAlert -> do
+			((_, a), _) <- tlsGet True (t, undefined) 2
+			case a of
+				"\1\0" -> return ("", False)
+				_ -> throwError "flushAppData"
+		_ -> return ("", True)
 
 tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
 	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)

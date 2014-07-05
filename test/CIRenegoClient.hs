@@ -39,7 +39,7 @@ client g h crt crtS = (`run` g) $ do
 	hlPut t "G"
 	renegotiate t
 	hlPut t request
---	renegotiate t
+	renegotiate t
 	hlGetContent t >>= hlDebug t "critical"
 	hlClose t
 
