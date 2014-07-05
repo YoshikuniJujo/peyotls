@@ -36,7 +36,7 @@ client g h crt crtS = (`run` g) $ do
 	unless ("localhost" `elem` names t) $
 		error "certificate name mismatch"
 	hlPut t "G"
-	"" <- renegotiate t
+	renegotiate t
 	hlPut t request
 	const () `liftM` hlGetContent t
 

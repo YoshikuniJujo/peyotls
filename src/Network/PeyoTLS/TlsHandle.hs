@@ -102,8 +102,9 @@ tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
 	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
 tlsGet b hh@(t, _) n = do
 	r@(ct, bs) <- buffered t n
-	(r ,) `liftM` case (ct, b) of
-		(CTHandshake, True) -> updateHash hh bs
+	(r ,) `liftM` case (ct, b, bs) of
+		(CTHandshake, _, "\0\0\0\0") -> return hh
+		(CTHandshake, True, _) -> updateHash hh bs
 		_ -> return hh
 
 tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->

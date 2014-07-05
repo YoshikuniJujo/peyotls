@@ -121,6 +121,7 @@ readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g h
 readHandshake = do
 	cnt <- readContent (HM.tlsGet True) =<< HM.tlsGetContentType
 	hs <- case cnt of
+		CHandshake HHelloRequest -> readHandshake
 		CHandshake hs -> return hs
 		_ -> HM.throwError
 			HM.ALFatal HM.ADUnexpectedMessage $

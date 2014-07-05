@@ -72,22 +72,19 @@ open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 	cr <- clientHello cscl
 	handshake crts ca cr
 
-renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g BS.ByteString
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
-	(cscl, crts, Just ca) <- getInitSet
-	cr <- clientHello cscl
-	ret <- flushAppData
-	handshake crts ca cr
-	return ret
-
-rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
-rehandshake t = rerunHandshakeM t $ do
-	(_ :: HB.Handshake) <- readHandshakeNoHash
 	(cscl, crts, Just ca) <- getInitSet
 	cr <- clientHello cscl
 	ret <- flushAppData
 	bf <- HB.getAdBufH
 	HB.setAdBufH $ bf `BS.append` ret
+	handshake crts ca cr
+
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+rehandshake t = rerunHandshakeM t $ do
+	(cscl, crts, Just ca) <- getInitSet
+	cr <- clientHello cscl
 	handshake crts ca cr
 	return ()
 
