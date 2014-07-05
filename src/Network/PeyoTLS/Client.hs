@@ -2,17 +2,18 @@
 	UndecidableInstances, PackageImports, ScopedTypeVariables #-}
 
 module Network.PeyoTLS.Client (
+	PeyotlsM, PeyotlsHandleC,
+	TlsM, TlsHandleC,
 	run, open, renegotiate, names,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	PeyotlsM, PeyotlsHandle,
-	TlsM, TlsHandle,
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, liftM)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
-import "crypto-random" Crypto.Random (CPRG)
+import System.IO (Handle)
+import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified "monads-tf" Control.Monad.Error as E
 import qualified "monads-tf" Control.Monad.Error.Class as E
@@ -348,3 +349,5 @@ hlGetContent_ (TlsHandleC t) = do
 	then hlGetContentRn rehandshake t
 	else do	HB.setAdBuf t ""
 		return bf
+
+type PeyotlsHandleC = TlsHandleC Handle SystemRNG
