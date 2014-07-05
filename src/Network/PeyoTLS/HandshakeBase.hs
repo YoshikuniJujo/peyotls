@@ -29,12 +29,9 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	HM.getServerFinished, HM.setServerFinished,
 	Finished(..),
 	HM.ContentType(CTAlert, CTHandshake, CTAppData),
-	HM.tlsPut_,
 	Handshake(..),
 	HM.tlsHandle,
-	HM.tGetContent_,
-	HM.tlsGet_,
-	HM.tGetLine_,
+	hlGetRn, hlGetLineRn, hlGetContentRn,
 
 	HM.getInitSet, HM.setInitSet,
 	HM.flushAppData,
@@ -278,20 +275,12 @@ instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
 	type HandleMonad (HM.TlsHandle h g) = HM.TlsM h g
 	type DebugLevel (HM.TlsHandle h g) = DebugLevel h
 	hlPut = HM.hlPut_
-	hlGet = hlGet_
-	hlGetLine = hlGetLine_
-	hlGetContent = hlGetContent_
+	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .)
+		. HM.tlsGet__ . (, undefined)
+	hlGetLine = ($) <$> checkAppData <*> HM.tGetLine
+	hlGetContent = ($) <$> checkAppData <*> HM.tGetContent
 	hlDebug = HM.hlDebug_
 	hlClose = HM.hlClose_
-
-hlGet_ :: (HandleLike h, CPRG g) =>
-	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
-hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet__ . (, undefined)
-
-hlGetLine_, hlGetContent_ ::
-	(HandleLike h, CPRG g) => HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
-hlGetLine_ = ($) <$> checkAppData <*> HM.tGetLine
-hlGetContent_ = ($) <$> checkAppData <*> HM.tGetContent
 
 checkAppData :: (HandleLike h, CPRG g) => HM.TlsHandle h g ->
 	HM.TlsM h g (HM.ContentType, BS.ByteString) -> HM.TlsM h g BS.ByteString
@@ -309,3 +298,13 @@ checkAppData t m = m >>= \cp -> case cp of
 		return ""
 	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"
 		E.throwError "TlsHandle.checkAppData: not application data"
+
+hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle h g -> HM.TlsM h g ()) ->
+	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
+hlGetRn rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
+	. (, undefined)
+
+hlGetLineRn, hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
+	(HM.TlsHandle h g -> HM.TlsM h g ()) -> HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
+hlGetLineRn rh = ($) <$> checkAppData <*> HM.tGetLine_ rh
+hlGetContentRn rh = ($) <$> checkAppData <*> HM.tGetContent_ rh

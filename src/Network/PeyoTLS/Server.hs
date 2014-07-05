@@ -7,7 +7,6 @@ module Network.PeyoTLS.Server (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ValidateHandle(..), CertSecretKey ) where
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM, ap)
 import Data.List (find)
 import Data.Word (Word8)
@@ -34,7 +33,7 @@ import Network.PeyoTLS.HandshakeBase (
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		setCipherSuite, withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
-	TlsHandle, CertSecretKey(..), ContentType(..),
+	TlsHandle, CertSecretKey(..),
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 	AlertLevel(..), AlertDesc(..),
@@ -52,39 +51,15 @@ import Network.PeyoTLS.HandshakeBase (
 	Finished(..), Side(..), RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, throwError,
 
-	tlsGet_, tGetLine_, tGetContent_, tlsPut_, debug )
+	hlGetRn, hlGetLineRn, hlGetContentRn, debug )
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
 
 names :: TlsHandleS h g -> [String]
 names = HB.names . tlsHandleS
 
-type Version = (Word8, Word8)
-
-version :: Version
-version = (3, 3)
-
-filterCS :: [(CertSecretKey, X509.CertificateChain)] ->
-	[CipherSuite] -> [CipherSuite]
-filterCS crts cs = case find isEcdsa crts of
-	Just _ -> cs
-	_ -> filter (not . isEcdsaCS) cs
-
-isEcdsa :: (CertSecretKey, X509.CertificateChain) -> Bool
-isEcdsa (EcdsaKey _, _) = True
-isEcdsa _ = False
-
-isRsa :: (CertSecretKey, X509.CertificateChain) -> Bool
-isRsa (RsaKey _, _) = True
-isRsa _ = False
-
-isEcdsaCS :: CipherSuite -> Bool
-isEcdsaCS (CipherSuite ECDHE_ECDSA _) = True
-isEcdsaCS _ = False
-
-open :: (ValidateHandle h, CPRG g) => h ->
-	[CipherSuite] ->
-	[(CertSecretKey, X509.CertificateChain)] ->
+open :: (ValidateHandle h, CPRG g) =>
+	h -> [CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
 open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 	HB.setInitSet (cssv, crts, mcs)
@@ -99,11 +74,59 @@ renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
 	handshake
 	return ret
 
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+rehandshake t = rerunHandshakeM t handshake
+
 handshake :: (ValidateHandle h, CPRG g) => HandshakeM h g ()
 handshake = do
 	(cssv, crts, mcs) <- HB.getInitSet
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
+
+clientHello :: (HandleLike h, CPRG g) =>
+	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
+clientHello cssv = do
+	cf0 <- getClientFinished
+	ch@(ClientHello cv cr _sid cscl cms me) <- readHandshake
+	let (cf, rn) = case me of
+		Nothing -> ("", False)
+		Just e -> case getRenegoInfo cscl e of
+			Nothing -> ("", False)
+			Just c -> (c, True)
+	debug "medium" ch
+	unless (cf == cf0) $ E.throwError "clientHello"
+	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
+	where
+	merge sv cl = case find (`elem` cl) sv of
+		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
+	chk cv _css cms
+		| cv < version = throwError ALFatal ADProtocolVersion $
+			pmsg ++ "client version should 3.3 or more"
+		| CompressionMethodNull `notElem` cms =
+			throwError ALFatal ADDecodeError $
+				pmsg ++ "compression method NULL must be supported"
+		| otherwise = return ()
+		where pmsg = "TlsServer.clientHello: "
+	getRenegoInfo [] [] = Nothing
+	getRenegoInfo (TLS_EMPTY_RENEGOTIATION_INFO_SCSV : _) _ = Just ""
+	getRenegoInfo (_ : css) e = getRenegoInfo css e
+	getRenegoInfo [] (ERenegoInfo rn : _) = Just rn
+	getRenegoInfo [] (_ : es) = getRenegoInfo [] es
+
+serverHello :: (HandleLike h, CPRG g) => CipherSuite ->
+	X509.CertificateChain -> X509.CertificateChain -> Bool ->
+	HandshakeM h g BS.ByteString
+serverHello cs@(CipherSuite ke _) rcc ecc rn = do
+	sr <- randomByteString 32
+	cf <- getClientFinished
+	sf <- getServerFinished
+	writeHandshake . ServerHello
+		version sr (SessionId "") cs CompressionMethodNull $ if rn
+			then Just [ERenegoInfo $ cf `BS.append` sf]
+			else Nothing
+	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
+	return sr
+serverHello _ _ _ _ = E.throwError "TlsServer.serverHello: never occur"
 
 succeed :: (ValidateHandle h, CPRG g) => CipherSuite -> BS.ByteString ->
 	Version -> [(CertSecretKey, X509.CertificateChain)] ->
@@ -137,6 +160,8 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 	where
 	Just (RsaKey rsk, rcc) = find isRsa crts
 	Just (EcdsaKey esk, ecc) = find isEcdsa crts
+	isRsa (RsaKey _, _) = True
+	isRsa _ = False
 succeed _ _ _ _ _ _ = E.throwError "Network.PeyoTLS.Server.succeed: not implemented"
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
@@ -158,53 +183,6 @@ dhKeyExchange ha dp ssk rs mcs = do
 	return const
 		`ap` requestAndCertificate mcs
 		`ap` dhClientKeyExchange dp sv rs
-
-getRenegoInfo :: [CipherSuite] -> [Extension] -> Maybe BS.ByteString
-getRenegoInfo [] [] = Nothing
-getRenegoInfo (TLS_EMPTY_RENEGOTIATION_INFO_SCSV : _) _ = Just ""
-getRenegoInfo (_ : css) e = getRenegoInfo css e
-getRenegoInfo [] (ERenegoInfo rn : _) = Just rn
-getRenegoInfo [] (_ : es) = getRenegoInfo [] es
-
-clientHello :: (HandleLike h, CPRG g) =>
-	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
-clientHello cssv = do
-	cf0 <- getClientFinished
-	ch@(ClientHello cv cr _sid cscl cms me) <- readHandshake
-	let (cf, rn) = case me of
-		Nothing -> ("", False)
-		Just e -> case getRenegoInfo cscl e of
-			Nothing -> ("", False)
-			Just c -> (c, True)
-	debug "medium" ch
-	unless (cf == cf0) $ E.throwError "clientHello"
-	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
-	where
-	merge sv cl = case find (`elem` cl) sv of
-		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
-	chk cv _css cms
-		| cv < version = throwError ALFatal ADProtocolVersion $
-			pmsg ++ "client version should 3.3 or more"
-		| CompressionMethodNull `notElem` cms =
-			throwError ALFatal ADDecodeError $
-				pmsg ++ "compression method NULL must be supported"
-		| otherwise = return ()
-		where pmsg = "TlsServer.clientHello: "
-
-serverHello :: (HandleLike h, CPRG g) => CipherSuite ->
-	X509.CertificateChain -> X509.CertificateChain -> Bool ->
-	HandshakeM h g BS.ByteString
-serverHello cs@(CipherSuite ke _) rcc ecc rn = do
-	sr <- randomByteString 32
-	cf <- getClientFinished
-	sf <- getServerFinished
-	writeHandshake . ServerHello
-		version sr (SessionId "") cs CompressionMethodNull $ if rn
-			then Just [ERenegoInfo $ cf `BS.append` sf]
-			else Nothing
-	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
-	return sr
-serverHello _ _ _ _ = E.throwError "TlsServer.serverHello: never occur"
 
 serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
@@ -312,31 +290,26 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 	type HandleMonad (TlsHandleS h g) = HandleMonad (TlsHandle h g)
 	type DebugLevel (TlsHandleS h g) = DebugLevel (TlsHandle h g)
 	hlPut (TlsHandleS t) = hlPut t
-	hlGet = hlGet_
-	hlGetLine = hlGetLine_
-	hlGetContent = hlGetContent_
+	hlGet = hlGetRn rehandshake . tlsHandleS
+	hlGetLine = hlGetLineRn rehandshake . tlsHandleS
+	hlGetContent = hlGetContentRn rehandshake . tlsHandleS
 	hlDebug (TlsHandleS t) = hlDebug t
 	hlClose (TlsHandleS t) = hlClose t
 
-hlGet_ :: (ValidateHandle h, CPRG g) =>
-	TlsHandleS h g -> Int -> TlsM h g BS.ByteString
-hlGet_ = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet_ rehandshake
-	. (, undefined) . tlsHandleS
+type Version = (Word8, Word8)
 
-hlGetLine_, hlGetContent_ ::
-	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g BS.ByteString
-hlGetLine_ = ($) <$> checkAppData <*> tGetLine_ rehandshake . tlsHandleS
-hlGetContent_ = ($) <$> checkAppData <*> tGetContent_ rehandshake . tlsHandleS
+version :: Version
+version = (3, 3)
 
-checkAppData :: (ValidateHandle h, CPRG g) => TlsHandleS h g ->
-	TlsM h g (ContentType, BS.ByteString) -> TlsM h g BS.ByteString
-checkAppData (TlsHandleS t) m = m >>= \cp -> case cp of
-	(CTAppData, ad) -> return ad
-	(CTAlert, "\SOH\NUL") -> do
-		_ <- tlsPut_ (t, undefined) CTAlert "\SOH\NUL"
-		E.throwError "TlsHandle.checkAppData: EOF"
-	_ -> do	_ <- tlsPut_ (t, undefined) CTAlert "\2\10"
-		E.throwError "TlsHandle.checkAppData: not application data"
+filterCS :: [(CertSecretKey, X509.CertificateChain)] ->
+	[CipherSuite] -> [CipherSuite]
+filterCS crts cs = case find isEcdsa crts of
+	Just _ -> cs
+	_ -> filter (not . isEcdsaCS) cs
+	where
+	isEcdsaCS (CipherSuite ECDHE_ECDSA _) = True
+	isEcdsaCS _ = False
 
-rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
-rehandshake t = rerunHandshakeM t handshake
+isEcdsa :: (CertSecretKey, X509.CertificateChain) -> Bool
+isEcdsa (EcdsaKey _, _) = True
+isEcdsa _ = False
