@@ -7,7 +7,7 @@ module Network.PeyoTLS.Server (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ValidateHandle(..), CertSecretKey ) where
 
-import Control.Monad (unless, liftM, ap)
+import Control.Monad (when, unless, liftM, ap)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
@@ -68,15 +68,13 @@ open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 	succeed cs cr cv crts mcs rn
 
 renegotiate ::
-	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g BS.ByteString
+	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
 	writeHandshakeNoHash HB.HHelloRequest
-	E.lift $ hlGet t 0
-	{-
-	ret <- HB.flushAppData
-	handshake
-	return ret
-	-}
+	(ret, ne) <- HB.flushAppData
+	bf <- HB.getAdBufH
+	HB.setAdBufH $ bf `BS.append` ret
+	when ne $ handshake
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t handshake
@@ -297,11 +295,40 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 	type HandleMonad (TlsHandleS h g) = HandleMonad (TlsHandle h g)
 	type DebugLevel (TlsHandleS h g) = DebugLevel (TlsHandle h g)
 	hlPut (TlsHandleS t) = hlPut t
-	hlGet = hlGetRn rehandshake . tlsHandleS
-	hlGetLine = hlGetLineRn rehandshake . tlsHandleS
-	hlGetContent = hlGetContentRn rehandshake . tlsHandleS
+	hlGet = hlGet_ -- hlGetRn rehandshake . tlsHandleS
+	hlGetLine = hlGetLine_ -- hlGetLineRn rehandshake . tlsHandleS
+	hlGetContent = hlGetContent_ -- hlGetContentRn rehandshake . tlsHandleS
 	hlDebug (TlsHandleS t) = hlDebug t
 	hlClose (TlsHandleS t) = hlClose t
+
+hlGet_ :: (ValidateHandle h, CPRG g) =>
+	TlsHandleS h g -> Int -> TlsM h g BS.ByteString
+hlGet_ (TlsHandleS t) n = do
+	bf <- HB.getAdBuf t
+	if (BS.length bf >= 0)
+	then do	let (ret, rest) = BS.splitAt n bf
+		HB.setAdBuf t rest
+		return ret
+	else (bf `BS.append`) `liftM` hlGetRn rehandshake t (n - BS.length bf)
+
+hlGetLine_ :: (ValidateHandle h, CPRG g) =>
+	TlsHandleS h g -> TlsM h g BS.ByteString
+hlGetLine_ (TlsHandleS t) = do
+	bf <- HB.getAdBuf t
+	if (10 `BS.elem` bf)
+	then do	let (ret, rest) = BS.span (/= 10) bf
+		HB.setAdBuf t $ BS.tail rest
+		return ret
+	else (bf `BS.append`) `liftM` hlGetLineRn rehandshake t
+
+hlGetContent_ :: (ValidateHandle h, CPRG g) =>
+	TlsHandleS h g -> TlsM h g BS.ByteString
+hlGetContent_ (TlsHandleS t) = do
+	bf <- HB.getAdBuf t
+	if BS.null bf
+	then hlGetContentRn rehandshake t
+	else do	HB.setAdBuf t ""
+		return bf
 
 type Version = (Word8, Word8)
 
