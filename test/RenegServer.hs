@@ -21,11 +21,13 @@ server :: (ValidateHandle h, CPRG g)  => g -> h ->
 	(CertSecretKey, X509.CertificateChain) ->
 	(CertSecretKey, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
-server g h css rsa ec mcs = (`run` g) $ do
+server g h css rsa ec _mcs = (`run` g) $ do
+	let mcs = Nothing
 	cl <- open h css [rsa, ec] mcs
-	const () `liftM` doUntil BS.null (hlGetLine cl)
+	doUntil BS.null (hlGetLine cl) >>= mapM_ (hlDebug cl "critical")
 	_ <- renegotiate cl
 	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe $ names cl
+	hlGet cl 2 >>= hlDebug cl "critical"
 	hlClose cl
 
 answer :: String -> BS.ByteString

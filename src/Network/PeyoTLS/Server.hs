@@ -36,6 +36,7 @@ import Network.PeyoTLS.HandshakeBase (
 	TlsHandle, CertSecretKey(..),
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
+		writeHandshakeNoHash,
 	AlertLevel(..), AlertDesc(..),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -69,10 +70,13 @@ open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 renegotiate ::
 	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g BS.ByteString
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
-	writeHandshake HB.HHelloRequest
+	writeHandshakeNoHash HB.HHelloRequest
+	E.lift $ hlGet t 0
+	{-
 	ret <- HB.flushAppData
 	handshake
 	return ret
+	-}
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t handshake
@@ -138,20 +142,23 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> E.throwError
-			"TlsServer.open: not implemented bulk encryption type"
+			"TlsServer.succeed: not implemented bulk encryption type"
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
 		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
 		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> E.throwError
-			"TlsServer.open: not implemented key exchange type"
+			"TlsServer.succeed: not implemented key exchange type"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
 	cf@(Finished cfb) <- finishedHash Client
 	rcf <- readHandshake
+	debug "low" ("client finished hash" :: String)
+	debug "low" cf
+	debug "low" rcf
 	unless (cf == rcf) $ throwError ALFatal ADDecryptError
-		"TlsServer.open: wrong finished hash"
+		"TlsServer.succeed: wrong finished hash"
 	setClientFinished cfb
 	putChangeCipherSpec >> flushCipherSuite Write
 	sf@(Finished sfb) <- finishedHash Server

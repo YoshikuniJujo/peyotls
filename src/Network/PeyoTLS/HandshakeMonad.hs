@@ -6,7 +6,7 @@ module Network.PeyoTLS.HandshakeMonad (
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut,
+		tlsGetContentType, tlsGet, tlsPut, tlsPutNoHash,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
 	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError,
@@ -72,19 +72,10 @@ tlsGet_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
 	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
 tlsGet_ = TH.tlsGet_
-	{-
-tlsGet_ rn th@(t, _) n = do
-	ct <- TH.getContentType t
-	case ct of
-		TH.CTHandshake -> do
-			rn t
-			tlsGet_ rn th n
-		_ -> TH.tlsGet th n
-		-}
 
 tlsGet__ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
-tlsGet__ = TH.tlsGet
+tlsGet__ = TH.tlsGet True
 
 tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
@@ -102,7 +93,7 @@ tGetContent_ rn t = do
 
 tlsPut_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandle h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandle h g, SHA256.Ctx)
-tlsPut_ = TH.tlsPut
+tlsPut_ = TH.tlsPut True
 
 throwError :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
@@ -173,12 +164,13 @@ debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
 tlsGetContentType = gets fst >>= lift . TH.getContentType
 
-tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-tlsGet n = do ((_, bs), t') <- lift . flip TH.tlsGet n =<< get; put t'; return bs
+tlsGet :: (HandleLike h, CPRG g) => Bool -> Int -> HandshakeM h g BS.ByteString
+tlsGet b n = do ((_, bs), t') <- lift . flip (TH.tlsGet b) n =<< get; put t'; return bs
 
-tlsPut :: (HandleLike h, CPRG g) =>
+tlsPut, tlsPutNoHash :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
-tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
+tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut True t ct bs) >>= put
+tlsPutNoHash ct bs = get >>= lift . (\t -> TH.tlsPut False t ct bs) >>= put
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()

@@ -4,7 +4,7 @@ import Control.Applicative
 import Control.Concurrent
 import "crypto-random" Crypto.Random
 
-import TestClient
+import RenegClient
 import Data.HandleLike
 
 import Control.Concurrent.STM
@@ -40,7 +40,7 @@ randomFrom (x : xs) = do
 main :: IO ()
 main = do
 	b <- randomIO
-	(if b then runRsa "high" else ecdsa "high") =<< randomFrom cipherSuites
+	(if b then runRsa "low" else ecdsa "low") =<< randomFrom cipherSuites
 
 runRsa :: Priority -> [CipherSuite] -> IO ()
 runRsa p cs = do

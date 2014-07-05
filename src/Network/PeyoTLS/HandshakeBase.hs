@@ -9,7 +9,9 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.names,
 		readHandshake, getChangeCipherSpec,
+		readHandshakeNoHash,
 		writeHandshake, putChangeCipherSpec,
+		writeHandshakeNoHash,
 	HM.ValidateHandle(..), HM.handshakeValidate,
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDesc(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
@@ -81,7 +83,7 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	TlsHandle(..), ContentType(..),
 		names,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut,
+		tlsGetContentType, tlsGet, tlsPut, tlsPutNoHash,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
@@ -109,21 +111,37 @@ debug p x = do
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
-	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
+	cnt <- readContent (HM.tlsGet True) =<< HM.tlsGetContentType
 	hs <- case cnt of
 		CHandshake hs -> return hs
 		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage
-			"HandshakeBase.readHandshake: not handshake"
+			HM.ALFatal HM.ADUnexpectedMessage $
+			"HandshakeBase.readHandshake: not handshake: " ++ show cnt
 	case fromHandshake hs of
 		Just i -> return i
 		_ -> HM.throwError
 			HM.ALFatal HM.ADUnexpectedMessage $
 			"HandshakeBase.readHandshake: type mismatch " ++ show hs
 
-writeHandshake ::
+readHandshakeNoHash :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
+readHandshakeNoHash = do
+	cnt <- readContent (HM.tlsGet False) =<< HM.tlsGetContentType
+	hs <- case cnt of
+		CHandshake hs -> return hs
+		_ -> HM.throwError
+			HM.ALFatal HM.ADUnexpectedMessage $
+			"HandshakeBase.readHandshake: not handshake: " ++ show cnt
+	case fromHandshake hs of
+		Just i -> return i
+		_ -> HM.throwError
+			HM.ALFatal HM.ADUnexpectedMessage $
+			"HandshakeBase.readHandshake: type mismatch " ++ show hs
+
+writeHandshake, writeHandshakeNoHash ::
 	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
 writeHandshake = uncurry HM.tlsPut . encodeContent . CHandshake . toHandshake
+writeHandshakeNoHash =
+	uncurry HM.tlsPutNoHash . encodeContent . CHandshake . toHandshake
 
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
@@ -137,7 +155,7 @@ instance B.Bytable ChangeCipherSpec where
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
-	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
+	cnt <- readContent (HM.tlsGet True) =<< HM.tlsGetContentType
 	case cnt of
 		CCCSpec ChangeCipherSpec -> return ()
 		_ -> HM.throwError

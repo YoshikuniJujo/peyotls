@@ -19,6 +19,7 @@ module Network.PeyoTLS.TlsHandle (
 	resetSequenceNumber,
 	tlsGet_,
 	flushAppData,
+
 	) where
 
 import Prelude hiding (read)
@@ -94,12 +95,12 @@ flushAppData t = do
 			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
 		_ -> return ""
 
-tlsGet :: (HandleLike h, CPRG g) => HandleHash h g ->
+tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
 	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
-tlsGet hh@(t, _) n = do
+tlsGet b hh@(t, _) n = do
 	r@(ct, bs) <- buffered t n
-	(r ,) `liftM` case ct of
-		CTHandshake -> updateHash hh bs
+	(r ,) `liftM` case (ct, b) of
+		(CTHandshake, True) -> updateHash hh bs
 		_ -> return hh
 
 tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
@@ -189,17 +190,17 @@ decrypt_ t ks ct e = do
 	either (throwError . strMsg) return $
 		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
-tlsPut :: (HandleLike h, CPRG g) =>
+tlsPut :: (HandleLike h, CPRG g) => Bool ->
 	HandleHash h g -> ContentType -> BS.ByteString -> TlsM h g (HandleHash h g)
-tlsPut hh@(t, _) ct p = do
+tlsPut b hh@(t, _) ct p = do
 	(bct, bp) <- getWBuf $ clientId t
 	case ct of
 		CTCCSpec -> flush t >> setWBuf (clientId t) (ct, p) >> flush t
 		_	| bct /= CTNull && ct /= bct ->
 				flush t >> setWBuf (clientId t) (ct, p)
 			| otherwise -> setWBuf (clientId t) (ct, bp `BS.append` p)
-	case ct of
-		CTHandshake -> updateHash hh p
+	case (ct, b) of
+		(CTHandshake, True) -> updateHash hh p
 		_ -> return hh
 
 flush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
@@ -301,14 +302,14 @@ finishedHash (t, ctx) partner = do
 	return $ CT.finishedHash (partner == Client) ms sha256
 
 hlPut_ :: (HandleLike h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
-hlPut_ = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
+hlPut_ = ((>> return ()) .) . flip (tlsPut True) CTAppData . (, undefined)
 
 hlDebug_ :: HandleLike h =>
 	TlsHandle h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
 hlDebug_ t l = lift . lift . hlDebug (tlsHandle t) l
 
 hlClose_ :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
-hlClose_ t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
+hlClose_ t = tlsPut True (t, undefined) CTAlert "\SOH\NUL" >>
 	flush t >> thlClose (tlsHandle t)
 
 tGetLine :: (HandleLike h, CPRG g) =>

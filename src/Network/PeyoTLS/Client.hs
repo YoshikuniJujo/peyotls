@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
+	UndecidableInstances, PackageImports, ScopedTypeVariables #-}
 
 module Network.PeyoTLS.Client (
 	run, open, renegotiate, names,
@@ -10,7 +11,7 @@ module Network.PeyoTLS.Client (
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM)
 import Data.List (find, intersect)
-import Data.HandleLike (HandleLike)
+import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified "monads-tf" Control.Monad.Error as E
@@ -30,17 +31,19 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
+import qualified Network.PeyoTLS.HandshakeBase as HB
 import Network.PeyoTLS.HandshakeBase ( flushAppData,
 	Extension(..), getClientFinished, Finished(..),
 	getInitSet, setInitSet,
 	setClientFinished, getClientFinished,
 	setServerFinished, getServerFinished,
-	PeyotlsM, PeyotlsHandle, names,
+	PeyotlsM, PeyotlsHandle,
 	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 		CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,
 		readHandshake, getChangeCipherSpec,
+		readHandshakeNoHash,
 		writeHandshake, putChangeCipherSpec,
 	ValidateHandle(..), handshakeValidate,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), ServerHelloDone(..),
@@ -53,23 +56,38 @@ import Network.PeyoTLS.HandshakeBase ( flushAppData,
 		generateKeys, encryptRsa, rsaPadding,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Side(..), RW(..), finishedHash,
-	DhParam(..), generateKs, blindSign )
+	DhParam(..), generateKs, blindSign,
+
+	hlGetRn, hlGetLineRn, hlGetContentRn,
+	)
+
+names :: TlsHandleC h g -> [String]
+names = HB.names . tlsHandleC
 
 open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
-	TlsM h g (TlsHandle h g)
-open h cscl crts ca = execHandshakeM h $ do
+	TlsM h g (TlsHandleC h g)
+open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 	setInitSet (cscl, crts, Just ca)
 	cr <- clientHello cscl
 	handshake crts ca cr
 
-renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-renegotiate t = rerunHandshakeM t $ do
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g BS.ByteString
+renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, Just ca) <- getInitSet
 	cr <- clientHello cscl
 	ret <- flushAppData
 	handshake crts ca cr
 	return ret
+
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+rehandshake t = rerunHandshakeM t $ do
+	(_ :: HB.Handshake) <- readHandshakeNoHash
+	(cscl, crts, Just ca) <- getInitSet
+	cr <- clientHello cscl
+	ret <- flushAppData
+	handshake crts ca cr
+	return ()
 
 handshake :: (ValidateHandle h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->
@@ -290,3 +308,15 @@ instance SecretKey ECDSA.PrivateKey where
 				ASN1.IntVal r, ASN1.IntVal s,
 				ASN1.End ASN1.Sequence]
 	algorithm _ = (Sha256, Ecdsa)
+
+newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g }
+
+instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
+	type HandleMonad (TlsHandleC h g) = HandleMonad (TlsHandle h g)
+	type DebugLevel (TlsHandleC h g) = DebugLevel (TlsHandle h g)
+	hlPut (TlsHandleC t) = hlPut t
+	hlGet = hlGetRn rehandshake . tlsHandleC
+	hlGetLine = hlGetLineRn rehandshake . tlsHandleC
+	hlGetContent = hlGetContentRn rehandshake . tlsHandleC
+	hlDebug (TlsHandleC t) = hlDebug t
+	hlClose (TlsHandleC t) = hlClose t
