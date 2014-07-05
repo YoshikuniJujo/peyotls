@@ -83,6 +83,8 @@ handshake :: (ValidateHandle h, CPRG g) => HandshakeM h g ()
 handshake = do
 	(cssv, crts, mcs) <- HB.getInitSet
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
+	debug "critical" ("SERVER HASH AFTER CLIENTHELLO" :: String)
+	debug "critical" =<< handshakeHash
 	succeed cs cr cv crts mcs rn
 
 clientHello :: (HandleLike h, CPRG g) =>
@@ -126,6 +128,8 @@ serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 		version sr (SessionId "") cs CompressionMethodNull $ if rn
 			then Just [ERenegoInfo $ cf `BS.append` sf]
 			else Nothing
+	debug "critical" ("SERVER HASH AFTER SERVERHELLO" :: String)
+	debug "critical" =<< handshakeHash
 	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	return sr
 serverHello _ _ _ _ = E.throwError "TlsServer.serverHello: never occur"
@@ -208,6 +212,8 @@ requestAndCertificate mcs = do
 	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
 		[CTRsaSign, CTEcdsaSign] [(Sha256, Rsa), (Sha256, Ecdsa)]
 	writeHandshake ServerHelloDone
+	debug "high" ("SERVER HASH AFTER SERVERHELLODONE" :: String)
+	debug "high" =<< handshakeHash
 	maybe (return Nothing) (liftM Just . clientCertificate) mcs
 
 clientCertificate :: (ValidateHandle h, CPRG g) =>

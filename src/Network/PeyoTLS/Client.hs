@@ -77,6 +77,8 @@ renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, Just ca) <- getInitSet
 	cr <- clientHello cscl
+	HB.debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
+	HB.debug "critical" =<< handshakeHash
 	(ret, ne) <- flushAppData
 	bf <- HB.getAdBufH
 	HB.setAdBufH $ bf `BS.append` ret
@@ -87,7 +89,6 @@ rehandshake t = rerunHandshakeM t $ do
 	(cscl, crts, Just ca) <- getInitSet
 	cr <- clientHello cscl
 	handshake crts ca cr
-	return ()
 
 handshake :: (ValidateHandle h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->
@@ -95,6 +96,8 @@ handshake :: (ValidateHandle h, CPRG g) =>
 handshake crts ca cr = do
 	(sr, cs@(CipherSuite ke _)) <- serverHello
 	setCipherSuite cs
+	HB.debug "critical" ("CLIENT HASH AFTER SERVERHELLO" :: String)
+	HB.debug "critical" =<< handshakeHash
 	case ke of
 		RSA -> rsaHandshake cr sr crts ca
 		DHE_RSA -> dheHandshake dhType cr sr crts ca

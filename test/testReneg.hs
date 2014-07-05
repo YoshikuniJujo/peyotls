@@ -40,7 +40,7 @@ randomFrom (x : xs) = do
 main :: IO ()
 main = do
 	b <- randomIO
-	(if b then runRsa "low" else ecdsa "low") =<< randomFrom cipherSuites
+	(if b then runRsa "critical" else ecdsa "critical") =<< randomFrom cipherSuites
 
 runRsa :: Priority -> [CipherSuite] -> IO ()
 runRsa p cs = do

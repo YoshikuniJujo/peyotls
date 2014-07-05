@@ -119,7 +119,7 @@ debug p x = do
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
-	cnt <- readContent (HM.tlsGet True) =<< HM.tlsGetContentType
+	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
 		CHandshake HHelloRequest -> readHandshake
 		CHandshake hs -> return hs
@@ -134,7 +134,7 @@ readHandshake = do
 
 readHandshakeNoHash :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshakeNoHash = do
-	cnt <- readContent (HM.tlsGet False) =<< HM.tlsGetContentType
+	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
 		CHandshake hs -> return hs
 		_ -> HM.throwError
@@ -164,7 +164,7 @@ instance B.Bytable ChangeCipherSpec where
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
-	cnt <- readContent (HM.tlsGet True) =<< HM.tlsGetContentType
+	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	case cnt of
 		CCCSpec ChangeCipherSpec -> return ()
 		_ -> HM.throwError
@@ -182,12 +182,16 @@ putChangeCipherSpec = do
 data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
 	deriving Show
 
-readContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
-readContent rd HM.CTCCSpec = (CCCSpec . either error id . B.decode) `liftM` rd 1
-readContent rd HM.CTAlert = ((\[al, ad] -> CAlert al ad) . BS.unpack) `liftM` rd 2
+readContent :: Monad m => (Bool -> Int -> m BS.ByteString) -> HM.ContentType -> m Content
+readContent rd HM.CTCCSpec =
+	(CCCSpec . either error id . B.decode) `liftM` rd True 1
+readContent rd HM.CTAlert =
+	((\[al, ad] -> CAlert al ad) . BS.unpack) `liftM` rd True 2
 readContent rd HM.CTHandshake = CHandshake `liftM` do
-	(t, len) <- (,) `liftM` rd 1 `ap` rd 3
-	body <- rd . either error id $ B.decode len
+	t <- rd True 1
+	len <- rd (t /= "\0") 3
+--	(t, len) <- (,) `liftM` rd True 1 `ap` rd True 3
+	body <- rd True . either error id $ B.decode len
 	return . either error id . B.decode $ BS.concat [t, len, body]
 readContent _ _ = undefined
 
