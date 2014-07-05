@@ -20,6 +20,9 @@ module Network.PeyoTLS.HandshakeMonad (
 
 	getInitSet, setInitSet,
 	flushAppData,
+
+	getAdBuf, setAdBuf,
+	getAdBufH, setAdBufH,
 	) where
 
 import Prelude hiding (read)
@@ -63,6 +66,8 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 	getInitSetT, setInitSetT, InitialSettings,
 	tlsGet_,
 	flushAppData,
+	getAdBufT,
+	setAdBufT,
 	)
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
@@ -215,3 +220,18 @@ getInitSet = gets fst >>= lift . TH.getInitSetT
 
 setInitSet :: HandleLike h => TH.InitialSettings -> HandshakeM h g ()
 setInitSet is = gets fst >>= lift . flip TH.setInitSetT is
+
+-- getAdBuf :: HandleLike h => HandshakeM h g BS.ByteString
+getAdBuf :: HandleLike h => TH.TlsHandle h g -> TH.TlsM h g BS.ByteString
+getAdBuf = TH.getAdBufT -- = gets fst >>= lift . TH.getAdBufT
+
+-- setAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+setAdBuf :: HandleLike h =>
+	TH.TlsHandle h g -> BS.ByteString -> TH.TlsM h g ()
+setAdBuf = TH.setAdBufT -- bs = gets fst >>= lift . flip TH.setAdBufT bs
+
+getAdBufH :: HandleLike h => HandshakeM h g BS.ByteString
+getAdBufH = gets fst >>= lift . TH.getAdBufT
+
+setAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+setAdBufH bs = gets fst >>= lift . flip TH.setAdBufT bs

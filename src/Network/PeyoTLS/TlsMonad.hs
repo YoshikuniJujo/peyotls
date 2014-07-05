@@ -3,7 +3,9 @@
 module Network.PeyoTLS.TlsMonad (
 	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
-		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
+		withRandom, randomByteString,
+		getBuf, setBuf, getWBuf, setWBuf,
+		getAdBuf, setAdBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
 		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
@@ -34,6 +36,7 @@ import qualified Network.PeyoTLS.State as S (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
+	setAdBuf, getAdBuf,
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite,
 	flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
@@ -53,6 +56,12 @@ evalTlsM = evalStateT . runErrorT
 getBuf, getWBuf ::  HandleLike h =>
 	S.PartnerId -> TlsM h g (S.ContentType, BS.ByteString)
 getBuf = gets . S.getBuf; getWBuf = gets . S.getWBuf
+
+getAdBuf :: HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
+getAdBuf = gets . S.getAdBuf
+
+setAdBuf :: HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
+setAdBuf = (modify .) . S.setAdBuf
 
 setBuf, setWBuf :: HandleLike h =>
 	S.PartnerId -> (S.ContentType, BS.ByteString) -> TlsM h g ()

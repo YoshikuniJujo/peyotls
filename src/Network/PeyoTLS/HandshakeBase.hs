@@ -37,6 +37,10 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 
 	HM.getInitSet, HM.setInitSet,
 	HM.flushAppData,
+	HM.getAdBuf,
+	HM.setAdBuf,
+	HM.getAdBufH,
+	HM.setAdBufH,
 	) where
 
 import Control.Applicative
@@ -96,6 +100,10 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 
 	getInitSet, setInitSet,
 	flushAppData,
+	getAdBuf,
+	setAdBuf,
+	getAdBufH,
+	setAdBufH,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 

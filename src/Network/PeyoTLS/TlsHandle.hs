@@ -20,6 +20,7 @@ module Network.PeyoTLS.TlsHandle (
 	tlsGet_,
 	flushAppData,
 
+	getAdBufT, setAdBufT,
 	) where
 
 import Prelude hiding (read)
@@ -40,7 +41,9 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 import Network.PeyoTLS.TlsMonad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
-		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
+		withRandom, randomByteString,
+		getBuf, setBuf, getWBuf, setWBuf,
+		getAdBuf, setAdBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
 		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
@@ -373,3 +376,9 @@ getInitSetT = getInitSet . clientId
 
 setInitSetT :: HandleLike h => TlsHandle h g -> InitialSettings -> TlsM h g ()
 setInitSetT = setInitSet . clientId
+
+getAdBufT :: HandleLike h => TlsHandle h g -> TlsM h g BS.ByteString
+getAdBufT = getAdBuf . clientId
+
+setAdBufT :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+setAdBufT = setAdBuf . clientId

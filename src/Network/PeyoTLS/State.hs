@@ -6,6 +6,7 @@ module Network.PeyoTLS.State (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	getBuf, setBuf, getWBuf, setWBuf,
+	getAdBuf, setAdBuf,
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite, flushCipherSuiteRead, flushCipherSuiteWrite,
 	getKeys, setKeys,
@@ -49,6 +50,7 @@ newPartnerId s = (PartnerId i ,) s{
 	so = StateOne {
 		sKeys = nullKeys,
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
+		radBuffer = "",
 		readSN = 0, writeSN = 0,
 		rnClientFinished = "", rnServerFinished = "",
 		initialSettings = ([], [], Nothing)
@@ -63,6 +65,7 @@ data StateOne g = StateOne {
 	sKeys :: Keys,
 	rBuffer :: (ContentType, BS.ByteString),
 	wBuffer :: (ContentType, BS.ByteString),
+	radBuffer :: BS.ByteString,
 	readSN :: Word64,
 	writeSN :: Word64,
 	rnClientFinished :: BS.ByteString,
@@ -148,6 +151,12 @@ getBuf i = rBuffer . fromJust' "getBuf" . lookup i . states
 
 setBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
 setBuf i = modifyState i . \bs st -> st { rBuffer = bs }
+
+getAdBuf :: PartnerId -> HandshakeState h g -> BS.ByteString
+getAdBuf i = radBuffer . fromJust' "getAdBuf" . lookup i . states
+
+setAdBuf :: PartnerId -> BS.ByteString -> Modify (HandshakeState h g)
+setAdBuf i = modifyState i . \bs st -> st { radBuffer = bs }
 
 getCipherSuite :: PartnerId -> HandshakeState h g -> CipherSuite
 getCipherSuite i =
