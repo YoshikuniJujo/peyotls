@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, FlexibleContexts,
-	UndecidableInstances, PackageImports #-}
+	PackageImports #-}
 
 module Network.PeyoTLS.Server (
 	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS,
@@ -298,8 +298,8 @@ certificateVerify p = throwError ALFatal ADUnsupportedCertificate $
 newtype TlsHandleS h g = TlsHandleS { tlsHandleS :: TlsHandle h g }
 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
-	type HandleMonad (TlsHandleS h g) = HandleMonad (TlsHandle h g)
-	type DebugLevel (TlsHandleS h g) = DebugLevel (TlsHandle h g)
+	type HandleMonad (TlsHandleS h g) = TlsM h g
+	type DebugLevel (TlsHandleS h g) = DebugLevel h
 	hlPut (TlsHandleS t) = hlPut t
 	hlGet = hlGet_ -- hlGetRn rehandshake . tlsHandleS
 	hlGetLine = hlGetLine_ -- hlGetLineRn rehandshake . tlsHandleS

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
-	UndecidableInstances, PackageImports, ScopedTypeVariables #-}
+	PackageImports, ScopedTypeVariables #-}
 
 module Network.PeyoTLS.Client (
 	PeyotlsM, PeyotlsHandleC,
@@ -314,8 +314,8 @@ instance SecretKey ECDSA.PrivateKey where
 newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g }
 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
-	type HandleMonad (TlsHandleC h g) = HandleMonad (TlsHandle h g)
-	type DebugLevel (TlsHandleC h g) = DebugLevel (TlsHandle h g)
+	type HandleMonad (TlsHandleC h g) = TlsM h g
+	type DebugLevel (TlsHandleC h g) = DebugLevel h
 	hlPut (TlsHandleC t) = hlPut t
 	hlGet = hlGet_ -- hlGetRn rehandshake . tlsHandleC
 	hlGetLine = hlGetLine_ -- hlGetLineRn rehandshake . tlsHandleC
