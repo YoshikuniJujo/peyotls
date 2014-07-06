@@ -21,6 +21,7 @@ module Network.PeyoTLS.TlsHandle (
 	flushAppData,
 
 	getAdBufT, setAdBufT,
+	CertSecretKey(..),
 	) where
 
 import Prelude hiding (read)
@@ -55,6 +56,7 @@ import Network.PeyoTLS.TlsMonad (
 	getServerFinished, setServerFinished,
 	InitialSettings,
 	getInitSet, setInitSet,
+	CertSecretKey(..),
 	)
 import qualified Network.PeyoTLS.CryptoTools as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )

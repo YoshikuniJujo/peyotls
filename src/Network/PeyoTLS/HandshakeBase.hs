@@ -4,7 +4,7 @@
 
 module Network.PeyoTLS.HandshakeBase ( Extension(..),
 	PeyotlsM,
-	debug, generateKs, blindSign, CertSecretKey(..),
+	debug, generateKs, blindSign, HM.CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.names,
@@ -103,10 +103,12 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	setAdBuf,
 	getAdBufH,
 	setAdBufH,
+
+	CertSecretKey(..),
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
-import Network.PeyoTLS.CertSecretKey
+-- import Network.PeyoTLS.CertSecretKey
 
 type PeyotlsM = HM.TlsM Handle SystemRNG
 

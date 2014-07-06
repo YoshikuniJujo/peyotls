@@ -23,6 +23,8 @@ module Network.PeyoTLS.HandshakeMonad (
 
 	getAdBuf, setAdBuf,
 	getAdBufH, setAdBufH,
+
+	TH.CertSecretKey(..)
 	) where
 
 import Prelude hiding (read)
@@ -68,6 +70,8 @@ import qualified Network.PeyoTLS.TlsHandle as TH (
 	flushAppData,
 	getAdBufT,
 	setAdBufT,
+
+	CertSecretKey(..),
 	)
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()

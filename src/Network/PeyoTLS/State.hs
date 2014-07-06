@@ -15,6 +15,7 @@ module Network.PeyoTLS.State (
 	getServerFinished, setServerFinished,
 
 	InitialSettings,
+	CertSecretKey(..),
 ) where
 
 import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
@@ -25,7 +26,7 @@ import Data.String (IsString(..))
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-import Network.PeyoTLS.CertSecretKey
+import Network.PeyoTLS.CertSecretKey (CertSecretKey(..))
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
