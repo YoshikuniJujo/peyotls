@@ -17,7 +17,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
-import Network.PeyoTLS.HashSignAlgorithm (HashAlg, SignAlg)
+import Network.PeyoTLS.HSAlg (HashAlg, SignAlg)
 
 instance B.Bytable X509.CertificateChain where
 	decode = B.evalBytableM B.parse

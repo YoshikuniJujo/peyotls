@@ -2,7 +2,7 @@
 	TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.HandshakeBase ( Extension(..),
+module Network.PeyoTLS.Base ( Extension(..),
 	PeyotlsM,
 	debug, generateKs, blindSign, HM.CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
@@ -69,7 +69,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
-import Network.PeyoTLS.HandshakeType ( Extension(..),
+import Network.PeyoTLS.Types ( Extension(..),
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -79,7 +79,7 @@ import Network.PeyoTLS.HandshakeType ( Extension(..),
 		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
-import qualified Network.PeyoTLS.HandshakeMonad as HM (
+import qualified Network.PeyoTLS.Run as HM (
 	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,

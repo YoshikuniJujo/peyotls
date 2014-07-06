@@ -27,8 +27,8 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Network.PeyoTLS.HandshakeBase as HB
-import Network.PeyoTLS.HandshakeBase (
+import qualified Network.PeyoTLS.Base as HB
+import Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		setCipherSuite, withRandom, randomByteString,

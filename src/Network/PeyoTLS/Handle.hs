@@ -58,7 +58,7 @@ import Network.PeyoTLS.Monad (
 	getInitSet, setInitSet,
 	CertSecretKey(..),
 	)
-import qualified Network.PeyoTLS.CryptoTools as CT (
+import qualified Network.PeyoTLS.Crypto as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
 data TlsHandle h g = TlsHandle {

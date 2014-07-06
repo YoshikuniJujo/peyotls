@@ -32,8 +32,8 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Network.PeyoTLS.HandshakeBase as HB
-import Network.PeyoTLS.HandshakeBase ( flushAppData,
+import qualified Network.PeyoTLS.Base as HB
+import Network.PeyoTLS.Base ( flushAppData,
 	Extension(..), getClientFinished, Finished(..),
 	getInitSet, setInitSet,
 	setClientFinished, getClientFinished,

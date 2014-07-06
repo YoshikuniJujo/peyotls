@@ -280,15 +280,15 @@ library
     exposed-modules:
         Network.PeyoTLS.Client, Network.PeyoTLS.Server, Network.PeyoTLS.ReadFile
     other-modules:
-        Network.PeyoTLS.HandshakeBase,
-        Network.PeyoTLS.HandshakeType,
+        Network.PeyoTLS.Base,
+        Network.PeyoTLS.Types,
             Network.PeyoTLS.Hello, Network.PeyoTLS.Extension,
-                Network.PeyoTLS.CipherSuite, Network.PeyoTLS.HashSignAlgorithm,
+                Network.PeyoTLS.CipherSuite, Network.PeyoTLS.HSAlg,
             Network.PeyoTLS.Certificate,
-        Network.PeyoTLS.HandshakeMonad,
+        Network.PeyoTLS.Run,
             Network.PeyoTLS.Handle,
                 Network.PeyoTLS.Monad, Network.PeyoTLS.State,
-                Network.PeyoTLS.CryptoTools,
+                Network.PeyoTLS.Crypto,
         Network.PeyoTLS.Ecdsa, Network.PeyoTLS.CertSecretKey
     build-depends:
         base == 4.*, word24 == 1.0.*, bytestring == 0.10.*, monads-tf == 0.1.*,
