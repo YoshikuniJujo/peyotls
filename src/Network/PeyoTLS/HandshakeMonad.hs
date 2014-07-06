@@ -51,7 +51,7 @@ import qualified Crypto.PubKey.HashDescr as HD
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
-import qualified Network.PeyoTLS.TlsHandle as TH (
+import qualified Network.PeyoTLS.Handle as TH (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandle(..), ContentType(..),

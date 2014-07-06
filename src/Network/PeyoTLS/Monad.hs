@@ -1,6 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
-module Network.PeyoTLS.TlsMonad (
+module Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom, randomByteString,

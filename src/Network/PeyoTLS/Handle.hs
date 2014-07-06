@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
-module Network.PeyoTLS.TlsHandle (
+module Network.PeyoTLS.Handle (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandle(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
@@ -40,7 +40,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import Network.PeyoTLS.TlsMonad (
+import Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString,
 		getBuf, setBuf, getWBuf, setWBuf,

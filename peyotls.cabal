@@ -286,8 +286,8 @@ library
                 Network.PeyoTLS.CipherSuite, Network.PeyoTLS.HashSignAlgorithm,
             Network.PeyoTLS.Certificate,
         Network.PeyoTLS.HandshakeMonad,
-            Network.PeyoTLS.TlsHandle,
-                Network.PeyoTLS.TlsMonad, Network.PeyoTLS.State,
+            Network.PeyoTLS.Handle,
+                Network.PeyoTLS.Monad, Network.PeyoTLS.State,
                 Network.PeyoTLS.CryptoTools,
         Network.PeyoTLS.Ecdsa, Network.PeyoTLS.CertSecretKey
     build-depends:
