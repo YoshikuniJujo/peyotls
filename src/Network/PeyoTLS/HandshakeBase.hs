@@ -3,13 +3,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.HandshakeBase ( Extension(..),
-	PeyotlsM, PeyotlsHandle,
+	PeyotlsM,
 	debug, generateKs, blindSign, CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.names,
 		readHandshake, getChangeCipherSpec,
-		readHandshakeNoHash,
 		writeHandshake, putChangeCipherSpec,
 		writeHandshakeNoHash,
 	HM.ValidateHandle(..), HM.handshakeValidate,
@@ -45,7 +44,7 @@ module Network.PeyoTLS.HandshakeBase ( Extension(..),
 
 import Control.Applicative
 import Control.Arrow (first)
-import Control.Monad (liftM, ap)
+import Control.Monad (liftM)
 import "monads-tf" Control.Monad.State (gets, lift)
 import qualified "monads-tf" Control.Monad.Error as E
 import Data.Word (Word8)
@@ -110,7 +109,6 @@ import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 import Network.PeyoTLS.CertSecretKey
 
 type PeyotlsM = HM.TlsM Handle SystemRNG
-type PeyotlsHandle = HM.TlsHandle Handle SystemRNG
 
 debug :: (HandleLike h, Show a) => DebugLevel h -> a -> HM.HandshakeM h g ()
 debug p x = do
@@ -122,20 +120,6 @@ readHandshake = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
 		CHandshake HHelloRequest -> readHandshake
-		CHandshake hs -> return hs
-		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage $
-			"HandshakeBase.readHandshake: not handshake: " ++ show cnt
-	case fromHandshake hs of
-		Just i -> return i
-		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage $
-			"HandshakeBase.readHandshake: type mismatch " ++ show hs
-
-readHandshakeNoHash :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
-readHandshakeNoHash = do
-	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
-	hs <- case cnt of
 		CHandshake hs -> return hs
 		_ -> HM.throwError
 			HM.ALFatal HM.ADUnexpectedMessage $

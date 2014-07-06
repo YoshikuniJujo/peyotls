@@ -23,12 +23,10 @@ module Network.PeyoTLS.TlsHandle (
 	getAdBufT, setAdBufT,
 	) where
 
-import Debug.Trace
-
 import Prelude hiding (read)
 
 import Control.Arrow (second)
-import Control.Monad (liftM, ap, when, unless)
+import Control.Monad (liftM, when, unless)
 import "monads-tf" Control.Monad.State (get, put, lift)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
@@ -114,14 +112,11 @@ tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
 tlsGet b hh@(t, _) n = do
 	r@(ct, bs) <- buffered t n
 	(r ,) `liftM` case (ct, b, bs) of
-		(CTHandshake, _, "\0") -> trace "GOOD DAY" $ return hh
---		(CTHandshake, _, "\0\0\0") -> trace "GOOD DAY" $ return hh
-		(CTHandshake, True, b)
-			| "\0\0\0\0" `BS.isPrefixOf` b ->
-				trace "HERE YOU ARE" $ updateHash hh $ BS.drop 4 b
-			| otherwise -> trace
-				(show (SHA256.finalize $ snd hh) ++ show b) $
-				updateHash hh bs
+		(CTHandshake, _, "\0") -> return hh
+		(CTHandshake, True, _)
+			| "\0\0\0\0" `BS.isPrefixOf` bs ->
+				updateHash hh $ BS.drop 4 bs
+			| otherwise -> updateHash hh bs
 		_ -> return hh
 
 tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->

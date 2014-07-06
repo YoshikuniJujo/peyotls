@@ -38,13 +38,12 @@ import Network.PeyoTLS.HandshakeBase ( flushAppData,
 	getInitSet, setInitSet,
 	setClientFinished, getClientFinished,
 	setServerFinished, getServerFinished,
-	PeyotlsM, PeyotlsHandle,
+	PeyotlsM,
 	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 		CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,
 		readHandshake, getChangeCipherSpec,
-		readHandshakeNoHash,
 		writeHandshake, putChangeCipherSpec,
 	ValidateHandle(..), handshakeValidate,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), ServerHelloDone(..),
@@ -328,7 +327,7 @@ hlGet_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleC h g -> Int -> TlsM h g BS.ByteString
 hlGet_ (TlsHandleC t) n = do
 	bf <- HB.getAdBuf t
-	if (BS.length bf >= 0)
+	if BS.length bf >= 0
 	then do	let (ret, rest) = BS.splitAt n bf
 		HB.setAdBuf t rest
 		return ret
@@ -338,7 +337,7 @@ hlGetLine_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleC h g -> TlsM h g BS.ByteString
 hlGetLine_ (TlsHandleC t) = do
 	bf <- HB.getAdBuf t
-	if (10 `BS.elem` bf)
+	if 10 `BS.elem` bf
 	then do	let (ret, rest) = BS.span (/= 10) bf
 		HB.setAdBuf t $ BS.tail rest
 		return ret

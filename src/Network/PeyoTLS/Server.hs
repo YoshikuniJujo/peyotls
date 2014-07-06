@@ -74,7 +74,7 @@ renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
 	(ret, ne) <- HB.flushAppData
 	bf <- HB.getAdBufH
 	HB.setAdBufH $ bf `BS.append` ret
-	when ne $ handshake
+	when ne handshake
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t handshake
@@ -311,7 +311,7 @@ hlGet_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> Int -> TlsM h g BS.ByteString
 hlGet_ (TlsHandleS t) n = do
 	bf <- HB.getAdBuf t
-	if (BS.length bf >= 0)
+	if BS.length bf >= 0
 	then do	let (ret, rest) = BS.splitAt n bf
 		HB.setAdBuf t rest
 		return ret
@@ -321,7 +321,7 @@ hlGetLine_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> TlsM h g BS.ByteString
 hlGetLine_ (TlsHandleS t) = do
 	bf <- HB.getAdBuf t
-	if (10 `BS.elem` bf)
+	if 10 `BS.elem` bf
 	then do	let (ret, rest) = BS.span (/= 10) bf
 		HB.setAdBuf t $ BS.tail rest
 		return ret
