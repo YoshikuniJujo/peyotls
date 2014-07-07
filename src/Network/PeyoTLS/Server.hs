@@ -75,7 +75,7 @@ type Settings = (
 	[CipherSuite],
 	Maybe (RSA.PrivateKey, X509.CertificateChain),
 	Maybe (ECDSA.PrivateKey, X509.CertificateChain),
-	Maybe X509.CertificateStore)
+	Maybe X509.CertificateStore )
 
 version :: Version
 version = (3, 3)
@@ -87,15 +87,15 @@ open :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
 open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
-	((>>) <$> setSettings <*> handshake) (cssv', rcrt, ecrt, mcs)
+	((>>) <$> setSettings <*> handshake) (cssv',
+		first rsaKey <$> find (isRsaKey . fst) crts,
+		first ecdsaKey <$> find (isEcdsaKey . fst) crts, mcs )
 	where
 	cssv' = filter iscs $ case find (isEcdsaKey . fst) crts of
 		Just _ -> cssv
 		_ -> flip filter cssv $ \cs -> case cs of
 			CipherSuite ECDHE_ECDSA _ -> False
 			_ -> True
-	rcrt = first rsaKey <$> find (isRsaKey . fst) crts
-	ecrt = first ecdsaKey <$> find (isEcdsaKey . fst) crts
 	iscs (CipherSuiteRaw _ _) = False
 	iscs TLS_EMPTY_RENEGOTIATION_INFO_SCSV = False
 	iscs _ = True
@@ -119,17 +119,18 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
-		_ -> throwError ALFatal ADHandshakeFailure $
+		_ -> throwError ALFatal ADInternalError $
 			"Network.PeyoTLS.Server.handshake: " ++
 				"not implemented bulk encryption type"
-	mpk <- (\kep -> kep (cr, sr) mcs) $ case (ke, rcrt, ecrt) of
+	mpk <- ($ mcs) . ($ (cr, sr)) $ case (ke, rcrt, ecrt) of
 		(RSA, Just (rsk, _), _) -> rsaKeyExchange rsk cv
 		(DHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha dh3072Modp rsk
 		(ECDHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha secp256r1 rsk
 		(ECDHE_ECDSA, _, Just (esk, _)) -> dhKeyExchange ha secp256r1 esk
-		_ -> \_ _ -> throwError ALFatal ADHandshakeFailure $
-			"Network.PeyoTLS.Server.succeed: " ++
-				"not implemented key exchange type"
+		_ -> \_ _ -> throwError ALFatal ADInternalError $
+			"Network.PeyoTLS.Server.handshake: " ++
+				"no implemented key exchange type or " ++
+				"no applicable certificate files"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
 	cf@(Finished cfb) <- finishedHash Client
