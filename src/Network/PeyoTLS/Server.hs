@@ -31,7 +31,7 @@ import qualified Network.PeyoTLS.Base as HB (names)
 import Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		throwError, debug, debugCipherSuite,
+		throwError, debugCipherSuite,
 		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle, CertSecretKey(..), isRsaKey, isEcdsaKey,
@@ -145,7 +145,7 @@ clientHello cssv = do
 		pre ++ "compression method NULL must be supported"
 	(ke, be) <- case find (`elem` cscl) cssv of
 		Just cs@(CipherSuite k b) -> setCipherSuite cs >> return (k, b)
-		_ -> throwError ALFatal ADHandshakeFailure $
+		_ -> throwError ALFatal ADHsFailure $
 			pre ++ "no acceptable set of security parameters: \n\t" ++
 			"cscl: " ++ show cscl ++ "\n\t" ++
 			"cssv: " ++ show cssv ++ "\n\t"
@@ -185,87 +185,32 @@ serverHello rcc ecc = do
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
-rsaKeyExchange rsk cv rs mcs = return const
-	`ap` requestAndCertificate mcs
-	`ap` rsaClientKeyExchange rsk cv rs
-
-dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk, Show (Secret dp),
-		Show (Public dp),
-		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
-	HashAlg -> dp -> sk ->
-	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
-	HandshakeM h g (Maybe X509.PubKey)
-dhKeyExchange ha dp ssk rs mcs = do
-	sv <- withRandom $ generateSecret dp
-	serverKeyExchange ha dp sv ssk rs
-	return const
-		`ap` requestAndCertificate mcs
-		`ap` dhClientKeyExchange dp sv rs
-
-serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
-		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
-	HashAlg -> dp -> Secret dp -> sk ->
-	(BS.ByteString, BS.ByteString) -> HandshakeM h g ()
-serverKeyExchange ha dp sv ssk (cr, sr) = do
-	bl <- withRandom $ generateBlinder ssk
-	writeHandshake
-		. ServerKeyEx edp pv ha (signatureAlgorithm ssk)
-		. sign ha bl ssk $ BS.concat [cr, sr, edp, pv]
-	where
-	edp = B.encode dp
-	pv = B.encode $ calculatePublic dp sv
-
-requestAndCertificate :: (ValidateHandle h, CPRG g) =>
-	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
-requestAndCertificate mcs = do
-	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
-		[CTRsaSign, CTEcdsaSign] [(Sha256, Rsa), (Sha256, Ecdsa)]
-	writeHandshake ServerHelloDone
-	debug "high" ("SERVER HASH AFTER SERVERHELLODONE" :: String)
-	debug "high" =<< handshakeHash
-	maybe (return Nothing) (liftM Just . clientCertificate) mcs
-
-clientCertificate :: (ValidateHandle h, CPRG g) =>
-	X509.CertificateStore -> HandshakeM h g X509.PubKey
-clientCertificate cs = do
-	cc@(X509.CertificateChain (c : _)) <- readHandshake
-	chk cc
-	return . X509.certPubKey $ X509.getCertificate c
-	where
-	chk cc = do
-		rs <- handshakeValidate cs cc
-		unless (null rs) . throwError ALFatal (selectAlert rs) $
-			"TlsServer.clientCertificate: " ++ show rs
-	selectAlert rs
-		| X509.UnknownCA `elem` rs = ADUnknownCa
-		| X509.Expired `elem` rs = ADCertificateExpired
-		| X509.InFuture `elem` rs = ADCertificateExpired
-		| otherwise = ADCertificateUnknown
-
-rsaClientKeyExchange :: (HandleLike h, CPRG g) => RSA.PrivateKey ->
-	Version -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
-rsaClientKeyExchange sk (cvj, cvn) rs = do
+rsaKeyExchange sk (vj, vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
 	Epms epms <- readHandshake
-	debug "low" ("EPMS" :: String)
-	debug "low" epms
 	generateKeys Server rs =<< mkpms epms `catchError` const
-		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
-	where
-	mkpms epms = do
+		((BS.cons vj . BS.cons vn) `liftM` randomByteString 46)
+	where mkpms epms = do
 		pms <- decryptRsa sk epms
-		unless (BS.length pms == 48) $
-			throwError ALFatal ADHandshakeFailure ""
-		case BS.unpack $ BS.take 2 pms of
-			[pvj, pvn] -> unless (pvj == cvj && pvn == cvn) $
-				throwError ALFatal ADHandshakeFailure ""
-			_ -> error $ "Network.PeyoTLS.Server." ++
-				"rsaClientKeyExchange: never occur"
-		debug "low" ("PMS" :: String)
-		debug "low" pms
+		unless (BS.length pms == 48) $ throwError ALFatal ADHsFailure ""
+		let [pvj, pvn] = BS.unpack $ BS.take 2 pms
+		unless (pvj == vj && pvn == vn) $ throwError ALFatal ADHsFailure ""
 		return pms
 
-dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp),
-	Show (Public dp)) =>
+dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
+		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
+	HashAlg -> dp -> sk -> (BS.ByteString, BS.ByteString) ->
+	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
+dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
+	sv <- withRandom $ generateSecret dp
+	bl <- withRandom $ generateBlinder sk
+	let pv = B.encode $ calculatePublic dp sv
+	writeHandshake
+		. ServerKeyEx edp pv ha (signatureAlgorithm sk)
+		. sign ha bl sk $ BS.concat [cr, sr, edp, pv]
+	const `liftM` reqAndCert mcs `ap` dhClientKeyExchange dp sv rs
+	where edp = B.encode dp
+
+dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp)) =>
 	dp -> Secret dp -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
@@ -274,6 +219,24 @@ dhClientKeyExchange dp sv rs = do
 		Left em -> throwError ALFatal ADInternalError $
 			"Network.PeyoTLS.Server.dhClientKeyExchange: " ++ em
 		Right sh -> return sh
+
+reqAndCert :: (ValidateHandle h, CPRG g) =>
+	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
+reqAndCert mcs = do
+	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
+		[CTRsaSign, CTEcdsaSign] [(Sha256, Rsa), (Sha256, Ecdsa)]
+	writeHandshake ServerHelloDone
+	flip (maybe $ return Nothing) mcs $ liftM Just . \cs -> do
+		cc@(X509.CertificateChain (c : _)) <- readHandshake
+		vr <- handshakeValidate cs cc
+		unless (null vr) . throwError ALFatal (selectAlert vr) $
+			"TlsServer.clientCertificate: " ++ show vr
+		return . X509.certPubKey $ X509.getCertificate c
+	where selectAlert vr
+		| X509.UnknownCA `elem` vr = ADUnknownCa
+		| X509.Expired `elem` vr = ADCertificateExpired
+		| X509.InFuture `elem` vr = ADCertificateExpired
+		| otherwise = ADCertificateUnknown
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pk) = do

@@ -389,7 +389,7 @@ eRenegoInfo _ = Nothing
 
 checkClientRenego :: HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
 checkClientRenego cf = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
-	E.unless ok . HM.throwError HM.ALFatal HM.ADHandshakeFailure $
+	E.unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
 
 makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension

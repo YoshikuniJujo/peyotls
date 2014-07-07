@@ -35,9 +35,9 @@ description:
     .
     And support client certificate with the following algorithms.
     .
-    * RSA (SHA1 or SHA256 depending on the agreed cipher suite)
+    * RSA with SHA256
     .
-    * ECDSA (SHA1 or SHA256 depending on the agreed cipher suite)
+    * ECDSA with SHA256
     .
     And support secure renegotiation (RFC 5746)
     .

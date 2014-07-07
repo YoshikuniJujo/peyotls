@@ -136,7 +136,7 @@ data AlertLevel = ALWarning | ALFatal | ALRaw Word8 deriving Show
 
 data AlertDesc
 	= ADCloseNotify            | ADUnexpectedMessage    | ADBadRecordMac
-	| ADRecordOverflow         | ADDecompressionFailure | ADHandshakeFailure
+	| ADRecordOverflow         | ADDecompressionFailure | ADHsFailure
 	| ADUnsupportedCertificate | ADCertificateExpired   | ADCertificateUnknown
 	| ADIllegalParameter       | ADUnknownCa            | ADDecodeError
 	| ADDecryptError           | ADProtocolVersion      | ADInsufficientSecurity
