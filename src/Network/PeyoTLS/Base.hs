@@ -27,6 +27,8 @@ module Network.PeyoTLS.Base ( Extension(..),
 	HM.Side(..), HM.RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError,
 	HM.getClientFinished, HM.getServerFinished,
+	checkClientRenego,
+	makeServerRenego,
 	Finished(..),
 	HM.ContentType(CTAlert, CTHandshake, CTAppData),
 	Handshake(..),
@@ -384,3 +386,12 @@ isRsaKey _ = False
 eRenegoInfo :: Extension -> Maybe BS.ByteString
 eRenegoInfo (ERenegoInfo ri) = Just ri
 eRenegoInfo _ = Nothing
+
+checkClientRenego :: HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
+checkClientRenego cf = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
+	E.unless ok . HM.throwError HM.ALFatal HM.ADHandshakeFailure $
+		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
+
+makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension
+makeServerRenego = ERenegoInfo `liftM`
+	(BS.append `liftM` HM.getClientFinished `E.ap` HM.getServerFinished)

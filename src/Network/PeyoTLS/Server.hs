@@ -43,7 +43,7 @@ import Network.PeyoTLS.Base (
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
-		getClientFinished, getServerFinished,
+		checkClientRenego, makeServerRenego,
 	ServerKeyExchange(..),
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ServerHelloDone(..),
@@ -110,8 +110,8 @@ rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
 
 handshake :: (ValidateHandle h, CPRG g) => Settings -> HandshakeM h g ()
 handshake (cssv, rcrt, ecrt, mcs) = do
-	(ke, be, cr, cv, rn) <- clientHello cssv
-	sr <- serverHello (snd <$> rcrt) (snd <$> ecrt) rn
+	(ke, be, cr, cv) <- clientHello cssv
+	sr <- serverHello (snd <$> rcrt) (snd <$> ecrt)
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
@@ -135,10 +135,10 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 	where pre = "Network.PeyoTLS.Server.handshake: "
 
 clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
-	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version, Bool)
+	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version)
 clientHello cssv = do
 	ClientHello cv cr _sid cscl cms me <- readHandshake
-	checkRenegotiation cscl me
+	checkRenegoInfo cscl me
 	unless (cv >= version) . throwError ALFatal ADProtocolVersion $
 		pre ++ "client version should 3.3 or more"
 	unless (CompMethodNull `elem` cms) . throwError ALFatal ADDecodeError $
@@ -146,49 +146,41 @@ clientHello cssv = do
 	(ke, be) <- case find (`elem` cscl) cssv of
 		Just cs@(CipherSuite k b) -> setCipherSuite cs >> return (k, b)
 		_ -> throwError ALFatal ADHandshakeFailure $
-			pre ++ "no acceptable set of security parameters"
-	return (ke, be, cr, cv, True)
+			pre ++ "no acceptable set of security parameters: \n\t" ++
+			"cscl: " ++ show cscl ++ "\n\t" ++
+			"cssv: " ++ show cssv ++ "\n\t"
+	return (ke, be, cr, cv)
 	where pre = "Network.PeyoTLS.Server.clientHello: "
 
-checkRenegotiation ::
+checkRenegoInfo ::
 	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
-checkRenegotiation cscl me = do
-	case mcf of
-		Just cf -> (cf ==) `liftM` getClientFinished >>= \ok -> unless ok .
-			throwError ALFatal ADHandshakeFailure $
-				pre ++ "bad renegotiation"
-		_ -> throwError ALFatal ADInsufficientSecurity $
-			pre ++ "require secure renegotiation"
-	where
-	pre = "Network.PeyoTLS.Server.checkRenegotiation: "
-	mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
+checkRenegoInfo cscl me = (\n -> maybe n checkClientRenego mcf) . throwError
+	ALFatal ADInsufficientSecurity $
+		"Network.PeyoTLS.Server.checkRenego: require secure renegotiation"
+	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
 		(True, _) -> Just ""
 		(_, Just e) -> listToMaybe $ mapMaybe eRenegoInfo e
 		(_, _) -> Nothing
 
 serverHello :: (HandleLike h, CPRG g) =>
-	Maybe X509.CertificateChain -> Maybe X509.CertificateChain -> Bool ->
+	Maybe X509.CertificateChain -> Maybe X509.CertificateChain ->
 	HandshakeM h g BS.ByteString
-serverHello rcc ecc rn = do
-	cs@(CipherSuite ke _) <- getCipherSuite
+serverHello rcc ecc = do
+	cs <- getCipherSuite
+	ke <- case cs of
+		CipherSuite k _ -> return k
+		_ -> throwError ALFatal ADInternalError $
+			"Network.PeyoTLS.serverHello: never occur"
 	sr <- randomByteString 32
-	cf <- getClientFinished
-	sf <- getServerFinished
-	writeHandshake . ServerHello
-		version sr (SessionId "") cs CompMethodNull $ if rn
-			then Just [ERenegoInfo $ cf `BS.append` sf]
-			else Nothing
-	debug "critical" ("SERVER HASH AFTER SERVERHELLO" :: String)
-	debug "critical" =<< handshakeHash
-	writeHandshake $ case (ke, rcc, ecc) of
-		(ECDHE_ECDSA, _, Just c) -> c
-		(_, Just c, _) -> c
-		_ -> error "serverHello"
+	writeHandshake
+		. ServerHello version sr (SessionId "") cs CompMethodNull
+		. Just . (: []) =<< makeServerRenego
+	writeHandshake =<< case (ke, rcc, ecc) of
+		(ECDHE_ECDSA, _, Just c) -> return c
+		(_, Just c, _) -> return c
+		_ -> throwError ALFatal ADInternalError $
+			"Network.PeyoTLS.Server.serverHello: cert files not match"
 	return sr
-	{-
-serverHello _ _ _ _ = throwError ALFatal ADInternalError
-	"Network.PeyoTLS.Server.serverHello: never occur"
-	-}
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
