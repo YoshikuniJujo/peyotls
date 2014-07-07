@@ -6,6 +6,7 @@ module Network.PeyoTLS.Server (
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey ) where
 
+import Control.Arrow (second)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
 import Data.List (find)
@@ -15,6 +16,7 @@ import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -52,11 +54,9 @@ import Network.PeyoTLS.Base (
 	Finished(..), Side(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1,
 
-	hlGetRn, hlGetLineRn, hlGetContentRn, flushAppData,
-	getAdBuf, setAdBuf,
-	pushAdBufH,
-	getInitSet, setInitSet,
 	Handshake(HHelloRequest),
+	hlGetRn, hlGetLineRn, hlGetContentRn, flushAppData,
+	getAdBuf, setAdBuf, pushAdBufH, getInitSet, setInitSet,
 	)
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
@@ -312,9 +312,9 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 	type HandleMonad (TlsHandleS h g) = TlsM h g
 	type DebugLevel (TlsHandleS h g) = DebugLevel h
 	hlPut (TlsHandleS t) = hlPut t
-	hlGet = hlGet_ -- hlGetRn rehandshake . tlsHandleS
-	hlGetLine = hlGetLine_ -- hlGetLineRn rehandshake . tlsHandleS
-	hlGetContent = hlGetContent_ -- hlGetContentRn rehandshake . tlsHandleS
+	hlGet = hlGet_
+	hlGetLine = hlGetLine_
+	hlGetContent = hlGetContent_
 	hlDebug (TlsHandleS t) = hlDebug t
 	hlClose (TlsHandleS t) = hlClose t
 
@@ -332,11 +332,23 @@ hlGetLine_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> TlsM h g BS.ByteString
 hlGetLine_ (TlsHandleS t) = do
 	bf <- getAdBuf t
-	if 10 `BS.elem` bf
-	then do	let (ret, rest) = BS.span (/= 10) bf
+	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
+	then do	let (ret, rest) = splitOneLine bf
 		setAdBuf t $ BS.tail rest
 		return ret
 	else (bf `BS.append`) `liftM` hlGetLineRn rehandshake t
+
+splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
+splitOneLine bs = case BSC.span (/= '\r') bs of
+	(_, "") -> second BS.tail $ BSC.span (/= '\n') bs
+	(l, ls) -> (l, dropRet ls)
+
+dropRet :: BS.ByteString -> BS.ByteString
+dropRet bs = case BSC.uncons bs of
+	Just ('\r', bs') -> case BSC.uncons bs' of
+		Just ('\n', bs'') -> bs''
+		_ -> bs'
+	_ -> bs
 
 hlGetContent_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> TlsM h g BS.ByteString
