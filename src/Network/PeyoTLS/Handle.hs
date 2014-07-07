@@ -50,7 +50,7 @@ import Network.PeyoTLS.Monad (
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
-	ContentType(..), CipherSuite(..), BulkEncryption(..),
+	ContentType(..), CipherSuite(..), BulkEnc(..),
 	PartnerId, newPartnerId, Keys(..),
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,

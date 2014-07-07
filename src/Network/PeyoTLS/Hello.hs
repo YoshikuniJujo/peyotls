@@ -2,8 +2,8 @@
 
 module Network.PeyoTLS.Hello ( Extension(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
-		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..),
+		CipherSuite(..), KeyEx(..), BulkEnc(..),
+		CompMethod(..),
 		SignAlg(..), HashAlg(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -15,11 +15,11 @@ import qualified Codec.Bytable.BigEndian as B
 
 import Network.PeyoTLS.Extension (Extension(..), SignAlg(..), HashAlg(..))
 import Network.PeyoTLS.CipherSuite (
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..))
+	CipherSuite(..), KeyEx(..), BulkEnc(..))
 
 data ClientHello
 	= ClientHello (Word8, Word8) BS.ByteString SessionId
-		[CipherSuite] [CompressionMethod] (Maybe [Extension])
+		[CipherSuite] [CompMethod] (Maybe [Extension])
 	| ClientHelloRaw BS.ByteString
 	deriving Show
 
@@ -46,7 +46,7 @@ encodeCh (ClientHelloRaw bs) = bs
 
 data ServerHello
 	= ServerHello (Word8, Word8) BS.ByteString SessionId
-		CipherSuite CompressionMethod (Maybe [Extension])
+		CipherSuite CompMethod (Maybe [Extension])
 	| ServerHelloRaw BS.ByteString
 	deriving Show
 
@@ -71,17 +71,17 @@ encodeSh (ServerHello (vmjr, vmnr) r sid cs cm mes) = BS.concat [
 	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.encode) mes ]
 encodeSh (ServerHelloRaw sh) = sh
 
-data CompressionMethod = CompressionMethodNull | CompressionMethodRaw Word8
+data CompMethod = CompMethodNull | CompMethodRaw Word8
 	deriving (Show, Eq)
 
-instance B.Bytable CompressionMethod where
+instance B.Bytable CompMethod where
 	decode bs = case BS.unpack bs of
 		[cm] -> Right $ case cm of
-			0 -> CompressionMethodNull
-			_ -> CompressionMethodRaw cm
+			0 -> CompMethodNull
+			_ -> CompMethodRaw cm
 		_ -> Left "Hello.decodeCm"
-	encode CompressionMethodNull = "\0"
-	encode (CompressionMethodRaw cm) = BS.pack [cm]
+	encode CompMethodNull = "\0"
+	encode (CompMethodRaw cm) = BS.pack [cm]
 
 data SessionId = SessionId BS.ByteString
 

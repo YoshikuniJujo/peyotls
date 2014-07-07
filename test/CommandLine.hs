@@ -16,7 +16,7 @@ import System.Exit (exitFailure)
 import Network (PortID(..), PortNumber)
 import Network.PeyoTLS.ReadFile ( CertSecretKey,
 	readKey, readCertificateChain, readCertificateStore)
-import Network.PeyoTLS.Server (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
+import Network.PeyoTLS.Server (CipherSuite(..), KeyEx(..), BulkEnc(..))
 
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509

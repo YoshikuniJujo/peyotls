@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module RenegClient ( CertSecretKey,
-	client, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	client, CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..) ) where
 
 import Network.PeyoTLS.Client

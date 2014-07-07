@@ -3,7 +3,7 @@
 module Network.PeyoTLS.State (
 	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
 	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	randomGen, setRandomGen,
 	getBuf, setBuf, getWBuf, setWBuf,
 	getAdBuf, setAdBuf,
@@ -31,7 +31,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
 import Network.PeyoTLS.CipherSuite (
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..))
+	CipherSuite(..), KeyEx(..), BulkEnc(..))
 
 data HandshakeState h g = HandshakeState {
 	randomGen :: g, nextPartnerId :: Int,
@@ -132,10 +132,13 @@ data Alert = Alert AlertLevel AlertDesc String | NotDetected String
 data AlertLevel = ALWarning | ALFatal | ALRaw Word8 deriving Show
 
 data AlertDesc
-	= ADCloseNotify            | ADUnexpectedMessage  | ADBadRecordMac
-	| ADUnsupportedCertificate | ADCertificateExpired | ADCertificateUnknown
-	| ADIllegalParameter       | ADUnknownCa          | ADDecodeError
-	| ADDecryptError           | ADProtocolVersion    | ADRaw Word8
+	= ADCloseNotify            | ADUnexpectedMessage    | ADBadRecordMac
+	| ADRecordOverflow         | ADDecompressionFailure | ADHandshakeFailure
+	| ADUnsupportedCertificate | ADCertificateExpired   | ADCertificateUnknown
+	| ADIllegalParameter       | ADUnknownCa            | ADDecodeError
+	| ADDecryptError           | ADProtocolVersion      | ADInsufficientSecurity
+	| ADInternalError
+	| ADRaw Word8
 	deriving Show
 
 instance Error Alert where

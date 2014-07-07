@@ -13,7 +13,7 @@ module Network.PeyoTLS.Monad (
 		getInitSet, setInitSet, S.InitialSettings,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
-	S.CipherSuite(..), S.KeyExchange(..), S.BulkEncryption(..),
+	S.CipherSuite(..), S.KeyEx(..), S.BulkEnc(..),
 	S.PartnerId, S.newPartnerId, S.Keys(..), S.nullKeys,
 
 	getClientFinished, setClientFinished,
@@ -34,7 +34,7 @@ import qualified Data.ByteString as BS
 import qualified Network.PeyoTLS.State as S (
 	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
 	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
 	setAdBuf, getAdBuf,

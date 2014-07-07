@@ -5,7 +5,7 @@ module Network.PeyoTLS.Client (
 	PeyotlsM, PeyotlsHandleC,
 	TlsM, TlsHandleC,
 	run, open, renegotiate, names,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -48,8 +48,8 @@ import Network.PeyoTLS.Base ( flushAppData,
 	ValidateHandle(..), handshakeValidate,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
-		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..), HashAlg(..), SignAlg(..),
+		CipherSuite(..), KeyEx(..), BulkEnc(..),
+		CompMethod(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
 	CertificateRequest(..), ClientCertificateType(..),
 	ClientKeyExchange(..), Epms(..),
@@ -79,8 +79,11 @@ renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	HB.debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
 	HB.debug "critical" =<< handshakeHash
 	(ret, ne) <- flushAppData
+	HB.pushAdBufH ret
+	{-
 	bf <- HB.getAdBufH
 	HB.setAdBufH $ bf `BS.append` ret
+	-}
 	when ne $ handshake crts ca cr
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
@@ -119,7 +122,7 @@ clientHello cscl = do
 	cr <- randomByteString 32
 	cf <- getClientFinished
 	writeHandshake . ClientHello (3, 3) cr (SessionId "") cscl
-		[CompressionMethodNull] $ Just [ERenegoInfo cf]
+		[CompMethodNull] $ Just [ERenegoInfo cf]
 	return cr
 
 serverHello :: (HandleLike h, CPRG g) =>

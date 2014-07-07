@@ -22,7 +22,7 @@ module Network.PeyoTLS.Run (
 	flushAppData,
 
 	getAdBuf, setAdBuf,
-	getAdBufH, setAdBufH,
+	pushAdBufH,
 
 	TH.CertSecretKey(..)
 	) where
@@ -239,3 +239,8 @@ getAdBufH = gets fst >>= lift . TH.getAdBufT
 
 setAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 setAdBufH bs = gets fst >>= lift . flip TH.setAdBufT bs
+
+pushAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+pushAdBufH bs = do
+	bf <- getAdBufH
+	setAdBufH $ bf `BS.append` bs

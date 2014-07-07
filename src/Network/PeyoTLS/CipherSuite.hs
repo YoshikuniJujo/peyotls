@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.PeyoTLS.CipherSuite (
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
+	CipherSuite(..), KeyEx(..), BulkEnc(..)) where
 
 import Control.Arrow (first, (***))
 import Data.Word (Word8)
@@ -11,12 +11,12 @@ import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
 data CipherSuite
-	= CipherSuite KeyExchange BulkEncryption
+	= CipherSuite KeyEx BulkEnc
 	| TLS_EMPTY_RENEGOTIATION_INFO_SCSV
 	| CipherSuiteRaw Word8 Word8
 	deriving (Show, Read, Eq)
 
-data KeyExchange
+data KeyEx
 	= RSA
 	| DHE_RSA
 	| ECDHE_RSA
@@ -25,7 +25,7 @@ data KeyExchange
 	| KE_NULL
 	deriving (Show, Read, Eq)
 
-data BulkEncryption
+data BulkEnc
 	= AES_128_CBC_SHA
 	| AES_128_CBC_SHA256
 --	| CAMELLIA_128_CBC_SHA

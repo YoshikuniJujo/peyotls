@@ -3,18 +3,17 @@
 module Network.PeyoTLS.Server (
 	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS,
 	run, open, renegotiate, names,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Monad (when, unless, liftM, ap)
+import "monads-tf" Control.Monad.Error (catchError)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
-import qualified "monads-tf" Control.Monad.Error as E
-import qualified "monads-tf" Control.Monad.Error.Class as E
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
@@ -26,11 +25,12 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Network.PeyoTLS.Base as HB
+import qualified Network.PeyoTLS.Base as HB (names)
 import Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		setCipherSuite, withRandom, randomByteString,
+		throwError, debug, debugCipherSuite,
+		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle, CertSecretKey(..),
 		readHandshake, getChangeCipherSpec,
@@ -38,20 +38,26 @@ import Network.PeyoTLS.Base (
 		writeHandshakeNoHash,
 	AlertLevel(..), AlertDesc(..),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
-		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..), HashAlg(..), SignAlg(..),
+		CipherSuite(..), KeyEx(..), BulkEnc(..), setCipherSuite,
+		CompMethod(..), HashAlg(..), SignAlg(..),
 		getClientFinished, setClientFinished,
 		getServerFinished, setServerFinished,
 	ServerKeyExchange(..),
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ServerHelloDone(..),
 	ClientKeyExchange(..), Epms(..),
-		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
-	DigitallySigned(..), handshakeHash, flushCipherSuite,
-	Finished(..), Side(..), RW(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1, throwError,
+		generateKeys, decryptRsa, rsaPadding,
+	DigitallySigned(..), handshakeHash,
+	RW(..), flushCipherSuite,
+	Finished(..), Side(..), finishedHash,
+	DhParam(..), dh3072Modp, secp256r1,
 
-	hlGetRn, hlGetLineRn, hlGetContentRn, debug )
+	hlGetRn, hlGetLineRn, hlGetContentRn, flushAppData,
+	getAdBuf, setAdBuf,
+	pushAdBufH,
+	getInitSet, setInitSet,
+	Handshake(HHelloRequest),
+	)
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
 
@@ -62,17 +68,16 @@ open :: (ValidateHandle h, CPRG g) =>
 	h -> [CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
 open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
-	HB.setInitSet (cssv, crts, mcs)
+	setInitSet (cssv, crts, mcs)
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	succeed cs cr cv crts mcs rn
 
 renegotiate ::
 	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
-	writeHandshakeNoHash HB.HHelloRequest
-	(ret, ne) <- HB.flushAppData
-	bf <- HB.getAdBufH
-	HB.setAdBufH $ bf `BS.append` ret
+	writeHandshakeNoHash HHelloRequest
+	(ret, ne) <- flushAppData
+	pushAdBufH ret
 	when ne handshake
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
@@ -80,7 +85,7 @@ rehandshake t = rerunHandshakeM t handshake
 
 handshake :: (ValidateHandle h, CPRG g) => HandshakeM h g ()
 handshake = do
-	(cssv, crts, mcs) <- HB.getInitSet
+	(cssv, crts, mcs) <- getInitSet
 	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
 	debug "critical" ("SERVER HASH AFTER CLIENTHELLO" :: String)
 	debug "critical" =<< handshakeHash
@@ -97,7 +102,8 @@ clientHello cssv = do
 			Nothing -> ("", False)
 			Just c -> (c, True)
 	debug "medium" ch
-	unless (cf == cf0) $ E.throwError "clientHello"
+	unless (cf == cf0) $ throwError ALFatal ADHandshakeFailure
+		"Network.PeyoTLS.Server.clientHello: bad renegotiation"
 	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
 	where
 	merge sv cl = case find (`elem` cl) sv of
@@ -105,7 +111,7 @@ clientHello cssv = do
 	chk cv _css cms
 		| cv < version = throwError ALFatal ADProtocolVersion $
 			pmsg ++ "client version should 3.3 or more"
-		| CompressionMethodNull `notElem` cms =
+		| CompMethodNull `notElem` cms =
 			throwError ALFatal ADDecodeError $
 				pmsg ++ "compression method NULL must be supported"
 		| otherwise = return ()
@@ -124,14 +130,15 @@ serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 	cf <- getClientFinished
 	sf <- getServerFinished
 	writeHandshake . ServerHello
-		version sr (SessionId "") cs CompressionMethodNull $ if rn
+		version sr (SessionId "") cs CompMethodNull $ if rn
 			then Just [ERenegoInfo $ cf `BS.append` sf]
 			else Nothing
 	debug "critical" ("SERVER HASH AFTER SERVERHELLO" :: String)
 	debug "critical" =<< handshakeHash
 	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	return sr
-serverHello _ _ _ _ = E.throwError "TlsServer.serverHello: never occur"
+serverHello _ _ _ _ = throwError ALFatal ADInternalError
+	"Network.PeyoTLS.Server.serverHello: never occur"
 
 succeed :: (ValidateHandle h, CPRG g) => CipherSuite -> BS.ByteString ->
 	Version -> [(CertSecretKey, X509.CertificateChain)] ->
@@ -142,15 +149,17 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
-		_ -> E.throwError
-			"TlsServer.succeed: not implemented bulk encryption type"
+		_ -> throwError ALFatal ADHandshakeFailure $
+			"Network.PeyoTLS.Server.succeed: " ++
+				"not implemented bulk encryption type"
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
 		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
 		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
-		_ -> \_ _ -> E.throwError
-			"TlsServer.succeed: not implemented key exchange type"
+		_ -> \_ _ -> throwError ALFatal ADHandshakeFailure $
+			"Network.PeyoTLS.Server.succeed: " ++
+				"not implemented key exchange type"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
 	cf@(Finished cfb) <- finishedHash Client
@@ -170,7 +179,8 @@ succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
 	Just (EcdsaKey esk, ecc) = find isEcdsa crts
 	isRsa (RsaKey _, _) = True
 	isRsa _ = False
-succeed _ _ _ _ _ _ = E.throwError "Network.PeyoTLS.Server.succeed: not implemented"
+succeed _ _ _ _ _ _ = throwError ALFatal ADHandshakeFailure
+	"Network.PeyoTLS.Server.succeed: not implemented"
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
@@ -238,16 +248,18 @@ rsaClientKeyExchange sk (cvj, cvn) rs = do
 	Epms epms <- readHandshake
 	debug "low" ("EPMS" :: String)
 	debug "low" epms
-	generateKeys Server rs =<< mkpms epms `E.catchError` const
+	generateKeys Server rs =<< mkpms epms `catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
 	mkpms epms = do
 		pms <- decryptRsa sk epms
-		unless (BS.length pms == 48) $ E.throwError "mkpms: length"
+		unless (BS.length pms == 48) $
+			throwError ALFatal ADHandshakeFailure ""
 		case BS.unpack $ BS.take 2 pms of
 			[pvj, pvn] -> unless (pvj == cvj && pvn == cvn) $
-				E.throwError "mkpms: version"
-			_ -> E.throwError "mkpms: never occur"
+				throwError ALFatal ADHandshakeFailure ""
+			_ -> error $ "Network.PeyoTLS.Server." ++
+				"rsaClientKeyExchange: never occur"
 		debug "low" ("PMS" :: String)
 		debug "low" pms
 		return pms
@@ -259,8 +271,8 @@ dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
 	let Right pv = B.decode cke
 	generateKeys Server rs =<< case Right $ calculateShared dp sv pv of
-		Left em -> E.throwError . E.strMsg $
-			"TlsServer.dhClientKeyExchange: " ++ em
+		Left em -> throwError ALFatal ADInternalError $
+			"Network.PeyoTLS.Server.dhClientKeyExchange: " ++ em
 		Right sh -> return sh
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
@@ -309,30 +321,30 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 hlGet_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> Int -> TlsM h g BS.ByteString
 hlGet_ (TlsHandleS t) n = do
-	bf <- HB.getAdBuf t
-	if BS.length bf >= 0
+	bf <- getAdBuf t
+	if BS.length bf >= n
 	then do	let (ret, rest) = BS.splitAt n bf
-		HB.setAdBuf t rest
+		setAdBuf t rest
 		return ret
 	else (bf `BS.append`) `liftM` hlGetRn rehandshake t (n - BS.length bf)
 
 hlGetLine_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> TlsM h g BS.ByteString
 hlGetLine_ (TlsHandleS t) = do
-	bf <- HB.getAdBuf t
+	bf <- getAdBuf t
 	if 10 `BS.elem` bf
 	then do	let (ret, rest) = BS.span (/= 10) bf
-		HB.setAdBuf t $ BS.tail rest
+		setAdBuf t $ BS.tail rest
 		return ret
 	else (bf `BS.append`) `liftM` hlGetLineRn rehandshake t
 
 hlGetContent_ :: (ValidateHandle h, CPRG g) =>
 	TlsHandleS h g -> TlsM h g BS.ByteString
 hlGetContent_ (TlsHandleS t) = do
-	bf <- HB.getAdBuf t
+	bf <- getAdBuf t
 	if BS.null bf
 	then hlGetContentRn rehandshake t
-	else do	HB.setAdBuf t ""
+	else do	setAdBuf t ""
 		return bf
 
 type Version = (Word8, Word8)

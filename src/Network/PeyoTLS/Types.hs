@@ -4,8 +4,8 @@
 module Network.PeyoTLS.Types ( Extension(..),
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
-		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..),
+		CipherSuite(..), KeyEx(..), BulkEnc(..),
+		CompMethod(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 		SignAlg(..), HashAlg(..),
@@ -25,8 +25,8 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 
 import Network.PeyoTLS.Hello ( Extension(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	CompressionMethod(..), HashAlg(..), SignAlg(..) )
+	CipherSuite(..), KeyEx(..), BulkEnc(..),
+	CompMethod(..), HashAlg(..), SignAlg(..) )
 import Network.PeyoTLS.Certificate (
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..) )
