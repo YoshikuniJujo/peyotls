@@ -136,34 +136,32 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
 	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version, Bool)
 clientHello cssv = do
+	ClientHello cv cr _sid cscl cms me <- readHandshake
+	rn <- checkRenegotiation cscl me
+	unless (cv >= version) $ throwError ALFatal ADProtocolVersion $
+		pre ++ "client version should 3.3 or more"
+	unless (CompMethodNull `elem` cms) $ throwError ALFatal ADDecodeError $
+		pre ++ "compression method NULL must be supported"
+	(ke, be) <- case find (`elem` cscl) cssv of
+		Just cs@(CipherSuite k b) -> setCipherSuite cs >> return (k, b)
+		_ -> throwError ALFatal ADHandshakeFailure $
+			pre ++ "no acceptable set of security parameters"
+	return (ke, be, cr, cv, rn)
+	where pre = "Network.PeyoTLS.Server.clientHello: "
+
+checkRenegotiation :: HandleLike h =>
+	[CipherSuite] -> Maybe [Extension] -> HandshakeM h g Bool
+checkRenegotiation cscl me = do
 	cf0 <- getClientFinished
-	ch@(ClientHello cv cr _sid cscl cms me) <- readHandshake
 	let (cf, rn) = case me of
 		Nothing -> ("", False)
 		Just e -> case getRenegoInfo cscl e of
 			Nothing -> ("", False)
 			Just c -> (c, True)
-	debug "medium" ch
 	unless (cf == cf0) $ throwError ALFatal ADHandshakeFailure
-		"Network.PeyoTLS.Server.clientHello: bad renegotiation"
-	chk cv cscl cms
-	setCipherSuite $ merge cssv cscl
-	(ke, be) <- case merge cssv cscl of
-		CipherSuite k b -> return (k, b)
-		_ -> throwError ALFatal ADInternalError $ pre ++ "never occur"
-	return (ke, be, cr, cv, rn)
+		"Network.PeyoTLS.Server.checkRenegotiation: bad renegotiation"
+	return rn
 	where
-	pre = "Network.PeyoTLS.Server.clientHello: "
-	merge sv cl = case find (`elem` cl) sv of
-		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
-	chk cv _css cms
-		| cv < version = throwError ALFatal ADProtocolVersion $
-			pmsg ++ "client version should 3.3 or more"
-		| CompMethodNull `notElem` cms =
-			throwError ALFatal ADDecodeError $
-				pmsg ++ "compression method NULL must be supported"
-		| otherwise = return ()
-		where pmsg = "TlsServer.clientHello: "
 	getRenegoInfo [] [] = Nothing
 	getRenegoInfo (TLS_EMPTY_RENEGOTIATION_INFO_SCSV : _) _ = Just ""
 	getRenegoInfo (_ : css) e = getRenegoInfo css e
