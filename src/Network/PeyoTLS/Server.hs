@@ -6,6 +6,7 @@ module Network.PeyoTLS.Server (
 	) where
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Arrow (first)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
 import Data.List (find)
@@ -70,7 +71,10 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 	hlClose (TlsHandleS t) = hlClose t
 
 type Version = (Word8, Word8)
-type Settings = ([CipherSuite], [(CertSecretKey, X509.CertificateChain)],
+type Settings = (
+	[CipherSuite],
+	Maybe (RSA.PrivateKey, X509.CertificateChain),
+	Maybe (ECDSA.PrivateKey, X509.CertificateChain),
 	Maybe X509.CertificateStore)
 
 version :: Version
@@ -83,12 +87,18 @@ open :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
 open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
-	((>>) <$> setSettings <*> handshake) (cssv', crts, mcs)
-	where cssv' = case find (isEcdsaKey . fst) crts of
+	((>>) <$> setSettings <*> handshake) (cssv', rcrt, ecrt, mcs)
+	where
+	cssv' = filter iscs $ case find (isEcdsaKey . fst) crts of
 		Just _ -> cssv
 		_ -> flip filter cssv $ \cs -> case cs of
 			CipherSuite ECDHE_ECDSA _ -> False
 			_ -> True
+	rcrt = first rsaKey <$> find (isRsaKey . fst) crts
+	ecrt = first ecdsaKey <$> find (isEcdsaKey . fst) crts
+	iscs (CipherSuiteRaw _ _) = False
+	iscs TLS_EMPTY_RENEGOTIATION_INFO_SCSV = False
+	iscs _ = True
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshakeNH HHelloReq >>
@@ -98,25 +108,25 @@ rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
 
 handshake :: (ValidateHandle h, CPRG g) => Settings -> HandshakeM h g ()
-handshake (cssv, crts, mcs) = do
+handshake (cssv, rcrt, ecrt, mcs) = do
 	(cs, cr, cv, rn) <- clientHello cssv
 	(ke, be) <- case cs of
 		CipherSuite k b -> return (k, b)
-		_ -> throwError ALFatal ADHandshakeFailure
-			"Network.PeyoTLS.Server.succeed: not implemented"
+		_ -> throwError ALFatal ADInternalError
+			"Network.PeyoTLS.Server.handshake: never occur"
 	setCipherSuite cs
-	sr <- serverHello cs rcc ecc rn
+	sr <- serverHello cs (snd <$> rcrt) (snd <$> ecrt) rn
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> throwError ALFatal ADHandshakeFailure $
-			"Network.PeyoTLS.Server.succeed: " ++
+			"Network.PeyoTLS.Server.handshake: " ++
 				"not implemented bulk encryption type"
-	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
-		RSA -> rsaKeyExchange rsk cv
-		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
-		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
-		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
+	mpk <- (\kep -> kep (cr, sr) mcs) $ case (ke, rcrt, ecrt) of
+		(RSA, Just (rsk, _), _) -> rsaKeyExchange rsk cv
+		(DHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha dh3072Modp rsk
+		(ECDHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha secp256r1 rsk
+		(ECDHE_ECDSA, _, Just (esk, _)) -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> throwError ALFatal ADHandshakeFailure $
 			"Network.PeyoTLS.Server.succeed: " ++
 				"not implemented key exchange type"
@@ -134,9 +144,6 @@ handshake (cssv, crts, mcs) = do
 	sf@(Finished sfb) <- finishedHash Server
 	setServerFinished sfb
 	writeHandshake sf
-	where
-	Just (RsaKey rsk, rcc) = find (isRsaKey . fst) crts
-	Just (EcdsaKey esk, ecc) = find (isEcdsaKey . fst) crts
 
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
@@ -170,7 +177,7 @@ clientHello cssv = do
 	getRenegoInfo [] (_ : es) = getRenegoInfo [] es
 
 serverHello :: (HandleLike h, CPRG g) => CipherSuite ->
-	X509.CertificateChain -> X509.CertificateChain -> Bool ->
+	Maybe X509.CertificateChain -> Maybe X509.CertificateChain -> Bool ->
 	HandshakeM h g BS.ByteString
 serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 	sr <- randomByteString 32
@@ -182,7 +189,10 @@ serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 			else Nothing
 	debug "critical" ("SERVER HASH AFTER SERVERHELLO" :: String)
 	debug "critical" =<< handshakeHash
-	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
+	writeHandshake $ case (ke, rcc, ecc) of
+		(ECDHE_ECDSA, _, Just c) -> c
+		(_, Just c, _) -> c
+		_ -> error "serverHello"
 	return sr
 serverHello _ _ _ _ = throwError ALFatal ADInternalError
 	"Network.PeyoTLS.Server.serverHello: never occur"

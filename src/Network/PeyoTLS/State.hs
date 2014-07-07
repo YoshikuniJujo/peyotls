@@ -33,6 +33,9 @@ import qualified Data.X509.CertificateStore as X509
 import Network.PeyoTLS.CipherSuite (
 	CipherSuite(..), KeyEx(..), BulkEnc(..))
 
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+
 data HandshakeState h g = HandshakeState {
 	randomGen :: g, nextPartnerId :: Int,
 	states :: [(PartnerId, StateOne g)] }
@@ -54,12 +57,14 @@ newPartnerId s = (PartnerId i ,) s{
 		radBuffer = "",
 		readSN = 0, writeSN = 0,
 		rnClientFinished = "", rnServerFinished = "",
-		initialSettings = ([], [], Nothing)
+		initialSettings = ([], Nothing, Nothing, Nothing)
 		}
 	sos = states s
 
 type InitialSettings = (
-	[CipherSuite], [(CertSecretKey, X509.CertificateChain)],
+	[CipherSuite],
+	Maybe (RSA.PrivateKey, X509.CertificateChain),
+	Maybe (ECDSA.PrivateKey, X509.CertificateChain),
 	Maybe X509.CertificateStore)
 
 data StateOne g = StateOne {
@@ -71,9 +76,7 @@ data StateOne g = StateOne {
 	writeSN :: Word64,
 	rnClientFinished :: BS.ByteString,
 	rnServerFinished :: BS.ByteString,
-	initialSettings :: (
-		[CipherSuite], [(CertSecretKey, X509.CertificateChain)],
-		Maybe X509.CertificateStore)
+	initialSettings :: InitialSettings
 	}
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g

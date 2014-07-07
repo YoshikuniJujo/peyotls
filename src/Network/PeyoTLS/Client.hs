@@ -9,6 +9,7 @@ module Network.PeyoTLS.Client (
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Arrow (first)
 import Control.Monad (when, unless, liftM)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
@@ -68,29 +69,33 @@ open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandleC h g)
 open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
-	setSettings (cscl, crts, Just ca)
+	setSettings (cscl, rcrt, ecrt, Just ca)
 	cr <- clientHello cscl
-	handshake crts ca cr
+	handshake rcrt ecrt ca cr
+	where
+	rcrt = first rsaKey <$> find (HB.isRsaKey . fst) crts
+	ecrt = first ecdsaKey <$> find (HB.isEcdsaKey . fst) crts
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
-	(cscl, crts, Just ca) <- getSettings
+	(cscl, rcrt, ecrt, Just ca) <- getSettings
 	cr <- clientHello cscl
 	HB.debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
 	HB.debug "critical" =<< handshakeHash
 	ne <- flushAppData
-	when ne $ handshake crts ca cr
+	when ne $ handshake rcrt ecrt ca cr
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
-	(cscl, crts, Just ca) <- getSettings
+	(cscl, rcrt, ecrt, Just ca) <- getSettings
 	cr <- clientHello cscl
-	handshake crts ca cr
+	handshake rcrt ecrt ca cr
 
 handshake :: (ValidateHandle h, CPRG g) =>
-	[(CertSecretKey, X509.CertificateChain)] ->
+	Maybe (RSA.PrivateKey, X509.CertificateChain) ->
+	Maybe (ECDSA.PrivateKey, X509.CertificateChain) ->
 	X509.CertificateStore -> BS.ByteString -> HandshakeM h g ()
-handshake crts ca cr = do
+handshake rcrt ecrt ca cr = do
 	(sr, cs@(CipherSuite ke _)) <- serverHello
 	setCipherSuite cs
 	HB.debug "critical" ("CLIENT HASH AFTER SERVERHELLO" :: String)
@@ -104,6 +109,12 @@ handshake crts ca cr = do
 	where
 	dhType :: DH.Params; dhType = undefined
 	curveType :: ECC.Curve; curveType = undefined
+	crts = case (rcrt, ecrt) of
+		(Just (rsk, rcc), Just (esk, ecc)) -> [
+			(RsaKey rsk, rcc), (EcdsaKey esk, ecc)]
+		(Just (rsk, rcc), _) -> [(RsaKey rsk, rcc)]
+		(_, Just (esk, ecc)) -> [(EcdsaKey esk, ecc)]
+		_ -> []
 
 getRenegoInfo :: Maybe [Extension] -> Maybe BS.ByteString
 getRenegoInfo Nothing = Nothing
