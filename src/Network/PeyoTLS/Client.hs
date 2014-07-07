@@ -78,12 +78,7 @@ renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	cr <- clientHello cscl
 	HB.debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
 	HB.debug "critical" =<< handshakeHash
-	(ret, ne) <- flushAppData
-	HB.pushAdBufH ret
-	{-
-	bf <- HB.getAdBufH
-	HB.setAdBufH $ bf `BS.append` ret
-	-}
+	ne <- flushAppData
 	when ne $ handshake crts ca cr
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()

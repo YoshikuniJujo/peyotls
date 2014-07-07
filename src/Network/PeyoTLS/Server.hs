@@ -52,9 +52,8 @@ import Network.PeyoTLS.Base (
 	Finished(..), Side(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1,
 
-	Handshake(HHelloRequest),
-	hlGetRn, hlGetLineRn, hlGetContentRn, flushAppData,
-	pushAdBufH, getInitSet, setInitSet,
+	Handshake(HHelloRequest), getInitSet, setInitSet, flushAppData,
+	hlGetRn, hlGetLineRn, hlGetContentRn,
 	)
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
@@ -72,11 +71,8 @@ open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
 
 renegotiate ::
 	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
-renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
-	writeHandshakeNoHash HHelloRequest
-	(ret, ne) <- flushAppData
-	pushAdBufH ret
-	when ne handshake
+renegotiate (TlsHandleS t) = rerunHandshakeM t $
+	writeHandshakeNoHash HHelloRequest >> flushAppData >>= flip when handshake
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t handshake

@@ -36,12 +36,13 @@ module Network.PeyoTLS.Base ( Extension(..),
 	hlGetContentRn,
 
 	HM.getInitSet, HM.setInitSet,
-	HM.flushAppData,
+	HM.flushAppData_,
+	flushAppData,
 	HM.pushAdBufH,
 	) where
 
 import Control.Applicative
-import Control.Arrow (first, second)
+import Control.Arrow (first, second, (***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.State (gets, lift)
 import qualified "monads-tf" Control.Monad.Error as E
@@ -96,7 +97,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	resetSequenceNumber,
 
 	getInitSet, setInitSet,
-	flushAppData,
+	flushAppData_,
 	getAdBuf,
 	setAdBuf,
 	pushAdBufH,
@@ -365,3 +366,6 @@ hlGetContentRn rn t = do
 	then hlGetContentRn_ rn t
 	else do	HM.setAdBuf t ""
 		return bf
+
+flushAppData :: (HandleLike h, CPRG g) => HM.HandshakeM h g Bool
+flushAppData = uncurry (>>) . (HM.pushAdBufH *** return) =<< HM.flushAppData_

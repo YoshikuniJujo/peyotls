@@ -19,7 +19,7 @@ module Network.PeyoTLS.Run (
 	resetSequenceNumber,
 
 	getInitSet, setInitSet,
-	flushAppData,
+	flushAppData_,
 
 	getAdBuf, setAdBuf,
 	pushAdBufH,
@@ -91,8 +91,8 @@ tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
 	TH.TlsHandle h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
 tGetLine_ = TH.tGetLine_
 
-flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, Bool)
-flushAppData = gets fst >>= lift . TH.flushAppData
+flushAppData_ :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, Bool)
+flushAppData_ = gets fst >>= lift . TH.flushAppData
 
 tGetContent_ rn t = do
 	ct <- TH.getContentType t
