@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports, TupleSections #-}
 
 module Network.PeyoTLS.Server (
 	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS, run, open, renegotiate, names,
@@ -9,6 +9,7 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
@@ -53,7 +54,7 @@ import Network.PeyoTLS.Base (
 	Side(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1,
 
-	Handshake(HHelloReq), getSettings, setSettings, flushAppData,
+	Handshake(HHelloReq), eRenegoInfo, getSettings, setSettings, flushAppData,
 	hlGetRn, hlGetLineRn, hlGetContentRn )
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
@@ -97,7 +98,7 @@ open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 			CipherSuite ECDHE_ECDSA _ -> False
 			_ -> True
 	iscs (CipherSuiteRaw _ _) = False
-	iscs TLS_EMPTY_RENEGOTIATION_INFO_SCSV = False
+	iscs EMPTY_RENEGOTIATION_INFO = False
 	iscs _ = True
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
@@ -127,7 +128,7 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
 	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok ->
-		unless ok $ throwError ALFatal ADDecryptError $
+		unless ok . throwError ALFatal ADDecryptError $
 			pre ++ "wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
@@ -137,36 +138,33 @@ clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
 	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version, Bool)
 clientHello cssv = do
 	ClientHello cv cr _sid cscl cms me <- readHandshake
-	rn <- checkRenegotiation cscl me
-	unless (cv >= version) $ throwError ALFatal ADProtocolVersion $
+	checkRenegotiation cscl me
+	unless (cv >= version) . throwError ALFatal ADProtocolVersion $
 		pre ++ "client version should 3.3 or more"
-	unless (CompMethodNull `elem` cms) $ throwError ALFatal ADDecodeError $
+	unless (CompMethodNull `elem` cms) . throwError ALFatal ADDecodeError $
 		pre ++ "compression method NULL must be supported"
 	(ke, be) <- case find (`elem` cscl) cssv of
 		Just cs@(CipherSuite k b) -> setCipherSuite cs >> return (k, b)
 		_ -> throwError ALFatal ADHandshakeFailure $
 			pre ++ "no acceptable set of security parameters"
-	return (ke, be, cr, cv, rn)
+	return (ke, be, cr, cv, True)
 	where pre = "Network.PeyoTLS.Server.clientHello: "
 
-checkRenegotiation :: HandleLike h =>
-	[CipherSuite] -> Maybe [Extension] -> HandshakeM h g Bool
+checkRenegotiation ::
+	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
 checkRenegotiation cscl me = do
-	cf0 <- getClientFinished
-	let (cf, rn) = case me of
-		Nothing -> ("", False)
-		Just e -> case getRenegoInfo cscl e of
-			Nothing -> ("", False)
-			Just c -> (c, True)
-	unless (cf == cf0) $ throwError ALFatal ADHandshakeFailure
-		"Network.PeyoTLS.Server.checkRenegotiation: bad renegotiation"
-	return rn
+	case mcf of
+		Just cf -> (cf ==) `liftM` getClientFinished >>= \ok -> unless ok .
+			throwError ALFatal ADHandshakeFailure $
+				pre ++ "bad renegotiation"
+		_ -> throwError ALFatal ADInsufficientSecurity $
+			pre ++ "require secure renegotiation"
 	where
-	getRenegoInfo [] [] = Nothing
-	getRenegoInfo (TLS_EMPTY_RENEGOTIATION_INFO_SCSV : _) _ = Just ""
-	getRenegoInfo (_ : css) e = getRenegoInfo css e
-	getRenegoInfo [] (ERenegoInfo rn : _) = Just rn
-	getRenegoInfo [] (_ : es) = getRenegoInfo [] es
+	pre = "Network.PeyoTLS.Server.checkRenegotiation: "
+	mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
+		(True, _) -> Just ""
+		(_, Just e) -> listToMaybe $ mapMaybe eRenegoInfo e
+		(_, _) -> Nothing
 
 serverHello :: (HandleLike h, CPRG g) =>
 	Maybe X509.CertificateChain -> Maybe X509.CertificateChain -> Bool ->

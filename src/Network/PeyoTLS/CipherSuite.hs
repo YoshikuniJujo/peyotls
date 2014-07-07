@@ -12,7 +12,7 @@ import qualified Codec.Bytable.BigEndian as B
 
 data CipherSuite
 	= CipherSuite KeyEx BulkEnc
-	| TLS_EMPTY_RENEGOTIATION_INFO_SCSV
+	| EMPTY_RENEGOTIATION_INFO
 	| CipherSuiteRaw Word8 Word8
 	deriving (Show, Read, Eq)
 
@@ -48,7 +48,7 @@ decodeCipherSuite bs = case BS.unpack bs of
 		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
 --		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
 		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
-		(0x00, 0xff) -> TLS_EMPTY_RENEGOTIATION_INFO_SCSV
+		(0x00, 0xff) -> EMPTY_RENEGOTIATION_INFO
 		(0xc0, 0x09) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
 		(0xc0, 0x23) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
@@ -64,7 +64,7 @@ encodeCipherSuite (CipherSuite DHE_RSA AES_128_CBC_SHA) = "\x00\x33"
 encodeCipherSuite (CipherSuite RSA AES_128_CBC_SHA256) = "\x00\x3c"
 -- encodeCipherSuite (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
 encodeCipherSuite (CipherSuite DHE_RSA AES_128_CBC_SHA256) = "\x00\x67"
-encodeCipherSuite TLS_EMPTY_RENEGOTIATION_INFO_SCSV = "\x00\xff"
+encodeCipherSuite EMPTY_RENEGOTIATION_INFO = "\x00\xff"
 encodeCipherSuite (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA) = "\xc0\x09"
 encodeCipherSuite (CipherSuite ECDHE_RSA AES_128_CBC_SHA) = "\xc0\x13"
 encodeCipherSuite (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256) = "\xc0\x23"

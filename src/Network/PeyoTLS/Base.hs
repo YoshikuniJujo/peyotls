@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Base ( Extension(..),
-	PeyotlsM,
+	PeyotlsM, eRenegoInfo,
 	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 	HM.withRandom, HM.randomByteString,
@@ -380,3 +380,7 @@ isEcdsaKey _ = False
 isRsaKey :: HM.CertSecretKey -> Bool
 isRsaKey (HM.RsaKey _) = True
 isRsaKey _ = False
+
+eRenegoInfo :: Extension -> Maybe BS.ByteString
+eRenegoInfo (ERenegoInfo ri) = Just ri
+eRenegoInfo _ = Nothing

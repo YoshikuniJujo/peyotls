@@ -165,7 +165,7 @@ setCipherSuite cs = do
 getCipherSuite :: HandleLike h => HandshakeM h g TH.CipherSuite
 getCipherSuite = do
 	t <- gets fst
-	lift $ TH.getCipherSuiteSt $ TH.clientId t
+	lift . TH.getCipherSuiteSt $ TH.clientId t
 
 flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
 flushCipherSuite p = do
