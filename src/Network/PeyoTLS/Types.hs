@@ -32,7 +32,7 @@ import Network.PeyoTLS.Certificate (
 	ClientKeyExchange(..), DigitallySigned(..) )
 
 data Handshake
-	= HHelloRequest
+	= HHelloReq
 	| HClientHello ClientHello           | HServerHello ServerHello
 	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
 	| HCertificateReq CertificateRequest | HServerHelloDone
@@ -50,7 +50,7 @@ instance B.Parsable Handshake where
 		case t of
 			THelloRequest -> do
 				unless (len == 0) $ fail "parse Handshake"
-				return HHelloRequest
+				return HHelloReq
 			TClientHello -> HClientHello <$> B.take len
 			TServerHello -> HServerHello <$> B.take len
 			TCertificate -> HCertificate <$> B.take len
@@ -63,7 +63,7 @@ instance B.Parsable Handshake where
 			_ -> HRaw t <$> B.take len
 
 encodeH :: Handshake -> BS.ByteString
-encodeH HHelloRequest = encodeH $ HRaw THelloRequest ""
+encodeH HHelloReq = encodeH $ HRaw THelloRequest ""
 encodeH (HClientHello ch) = encodeH . HRaw TClientHello $ B.encode ch
 encodeH (HServerHello sh) = encodeH . HRaw TServerHello $ B.encode sh
 encodeH (HCertificate crts) = encodeH . HRaw TCertificate $ B.encode crts

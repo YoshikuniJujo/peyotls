@@ -253,6 +253,7 @@ extra-source-files:
     examples/eccServer.hs
     examples/eccClient.hs
     examples/debugServer.hs
+    examples/renegServer.hs
 
 data-dir: data
 data-files:

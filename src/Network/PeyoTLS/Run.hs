@@ -6,7 +6,7 @@ module Network.PeyoTLS.Run (
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut, tlsPutNoHash,
+		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
 	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError,
@@ -18,7 +18,7 @@ module Network.PeyoTLS.Run (
 
 	resetSequenceNumber,
 
-	getInitSet, setInitSet,
+	getSettings, setSettings,
 	flushAppData_,
 
 	getAdBuf, setAdBuf,
@@ -176,10 +176,10 @@ tlsGetContentType = gets fst >>= lift . TH.getContentType
 tlsGet :: (HandleLike h, CPRG g) => Bool -> Int -> HandshakeM h g BS.ByteString
 tlsGet b n = do ((_, bs), t') <- lift . flip (TH.tlsGet b) n =<< get; put t'; return bs
 
-tlsPut, tlsPutNoHash :: (HandleLike h, CPRG g) =>
+tlsPut, tlsPutNH :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
 tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut True t ct bs) >>= put
-tlsPutNoHash ct bs = get >>= lift . (\t -> TH.tlsPut False t ct bs) >>= put
+tlsPutNH ct bs = get >>= lift . (\t -> TH.tlsPut False t ct bs) >>= put
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
@@ -219,20 +219,18 @@ setClientFinished, setServerFinished ::
 setClientFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
 setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
 
-getInitSet :: HandleLike h => HandshakeM h g TH.InitialSettings
-getInitSet = gets fst >>= lift . TH.getInitSetT
+getSettings :: HandleLike h => HandshakeM h g TH.InitialSettings
+getSettings = gets fst >>= lift . TH.getInitSetT
 
-setInitSet :: HandleLike h => TH.InitialSettings -> HandshakeM h g ()
-setInitSet is = gets fst >>= lift . flip TH.setInitSetT is
+setSettings :: HandleLike h => TH.InitialSettings -> HandshakeM h g ()
+setSettings is = gets fst >>= lift . flip TH.setInitSetT is
 
--- getAdBuf :: HandleLike h => HandshakeM h g BS.ByteString
 getAdBuf :: HandleLike h => TH.TlsHandle h g -> TH.TlsM h g BS.ByteString
-getAdBuf = TH.getAdBufT -- = gets fst >>= lift . TH.getAdBufT
+getAdBuf = TH.getAdBufT
 
--- setAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 setAdBuf :: HandleLike h =>
 	TH.TlsHandle h g -> BS.ByteString -> TH.TlsM h g ()
-setAdBuf = TH.setAdBufT -- bs = gets fst >>= lift . flip TH.setAdBufT bs
+setAdBuf = TH.setAdBufT
 
 getAdBufH :: HandleLike h => HandshakeM h g BS.ByteString
 getAdBufH = gets fst >>= lift . TH.getAdBufT

@@ -4,13 +4,13 @@
 
 module Network.PeyoTLS.Base ( Extension(..),
 	PeyotlsM,
-	debug, generateKs, blindSign, HM.CertSecretKey(..),
+	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.names,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
-		writeHandshakeNoHash,
+		writeHandshakeNH,
 	HM.ValidateHandle(..), HM.handshakeValidate,
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDesc(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
@@ -35,7 +35,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 	hlGetRn, hlGetLineRn_, hlGetLineRn, hlGetContentRn_,
 	hlGetContentRn,
 
-	HM.getInitSet, HM.setInitSet,
+	HM.getSettings, HM.setSettings,
 	HM.flushAppData_,
 	flushAppData,
 	HM.pushAdBufH,
@@ -85,7 +85,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	TlsHandle(..), ContentType(..),
 		names,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut, tlsPutNoHash,
+		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
@@ -96,7 +96,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	getServerFinished, setServerFinished,
 	resetSequenceNumber,
 
-	getInitSet, setInitSet,
+	getSettings, setSettings,
 	flushAppData_,
 	getAdBuf,
 	setAdBuf,
@@ -119,7 +119,7 @@ readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g h
 readHandshake = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
-		CHandshake HHelloRequest -> readHandshake
+		CHandshake HHelloReq -> readHandshake
 		CHandshake hs -> return hs
 		_ -> HM.throwError
 			HM.ALFatal HM.ADUnexpectedMessage $
@@ -130,11 +130,10 @@ readHandshake = do
 			HM.ALFatal HM.ADUnexpectedMessage $
 			"HandshakeBase.readHandshake: type mismatch " ++ show hs
 
-writeHandshake, writeHandshakeNoHash ::
+writeHandshake, writeHandshakeNH ::
 	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
 writeHandshake = uncurry HM.tlsPut . encodeContent . CHandshake . toHandshake
-writeHandshakeNoHash =
-	uncurry HM.tlsPutNoHash . encodeContent . CHandshake . toHandshake
+writeHandshakeNH = uncurry HM.tlsPutNH . encodeContent . CHandshake . toHandshake
 
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
@@ -369,3 +368,11 @@ hlGetContentRn rn t = do
 
 flushAppData :: (HandleLike h, CPRG g) => HM.HandshakeM h g Bool
 flushAppData = uncurry (>>) . (HM.pushAdBufH *** return) =<< HM.flushAppData_
+
+isEcdsaKey :: HM.CertSecretKey -> Bool
+isEcdsaKey (HM.EcdsaKey _) = True
+isEcdsaKey _ = False
+
+isRsaKey :: HM.CertSecretKey -> Bool
+isRsaKey (HM.RsaKey _) = True
+isRsaKey _ = False

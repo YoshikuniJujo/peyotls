@@ -35,7 +35,7 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Network.PeyoTLS.Base as HB
 import Network.PeyoTLS.Base ( flushAppData,
 	Extension(..), getClientFinished, Finished(..),
-	getInitSet, setInitSet,
+	getSettings, setSettings,
 	setClientFinished, getClientFinished,
 	setServerFinished, getServerFinished,
 	PeyotlsM,
@@ -68,13 +68,13 @@ open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandleC h g)
 open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
-	setInitSet (cscl, crts, Just ca)
+	setSettings (cscl, crts, Just ca)
 	cr <- clientHello cscl
 	handshake crts ca cr
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
-	(cscl, crts, Just ca) <- getInitSet
+	(cscl, crts, Just ca) <- getSettings
 	cr <- clientHello cscl
 	HB.debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
 	HB.debug "critical" =<< handshakeHash
@@ -83,7 +83,7 @@ renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
-	(cscl, crts, Just ca) <- getInitSet
+	(cscl, crts, Just ca) <- getSettings
 	cr <- clientHello cscl
 	handshake crts ca cr
 

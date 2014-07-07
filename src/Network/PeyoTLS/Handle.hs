@@ -63,7 +63,9 @@ import qualified Network.PeyoTLS.Crypto as CT (
 
 data TlsHandle h g = TlsHandle {
 	clientId :: PartnerId,
-	tlsHandle :: h, names :: [String] }
+	tlsHandle :: h,
+	names :: [String] }
+	deriving Show
 
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
 

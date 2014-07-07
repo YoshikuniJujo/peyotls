@@ -1,11 +1,11 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Server (
-	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS,
-	run, open, renegotiate, names,
-	CipherSuite(..), KeyEx(..), BulkEnc(..),
-	ValidateHandle(..), CertSecretKey ) where
+	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS, run, open, renegotiate, names,
+	CipherSuite(..), KeyEx(..), BulkEnc(..), ValidateHandle(..), CertSecretKey
+	) where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
 import Data.List (find)
@@ -32,10 +32,10 @@ import Network.PeyoTLS.Base (
 		throwError, debug, debugCipherSuite,
 		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
-	TlsHandle, CertSecretKey(..),
+	TlsHandle, CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
-		writeHandshakeNoHash,
+		writeHandshakeNH,
 	AlertLevel(..), AlertDesc(..),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..), setCipherSuite,
@@ -52,38 +52,91 @@ import Network.PeyoTLS.Base (
 	Finished(..), Side(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1,
 
-	Handshake(HHelloRequest), getInitSet, setInitSet, flushAppData,
-	hlGetRn, hlGetLineRn, hlGetContentRn,
-	)
+	Handshake(HHelloReq), getSettings, setSettings, flushAppData,
+	hlGetRn, hlGetLineRn, hlGetContentRn )
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
+
+newtype TlsHandleS h g = TlsHandleS { tlsHandleS :: TlsHandle h g } deriving Show
+
+instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
+	type HandleMonad (TlsHandleS h g) = TlsM h g
+	type DebugLevel (TlsHandleS h g) = DebugLevel h
+	hlPut (TlsHandleS t) = hlPut t
+	hlGet = hlGetRn rehandshake . tlsHandleS
+	hlGetLine = hlGetLineRn rehandshake . tlsHandleS
+	hlGetContent = hlGetContentRn rehandshake . tlsHandleS
+	hlDebug (TlsHandleS t) = hlDebug t
+	hlClose (TlsHandleS t) = hlClose t
+
+type Version = (Word8, Word8)
+type Settings = ([CipherSuite], [(CertSecretKey, X509.CertificateChain)],
+	Maybe X509.CertificateStore)
+
+version :: Version
+version = (3, 3)
 
 names :: TlsHandleS h g -> [String]
 names = HB.names . tlsHandleS
 
-open :: (ValidateHandle h, CPRG g) =>
-	h -> [CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
+open :: (ValidateHandle h, CPRG g) => h ->
+	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
-open h cssv crts mcs = (TlsHandleS `liftM`) . execHandshakeM h $ do
-	setInitSet (cssv, crts, mcs)
-	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
-	succeed cs cr cv crts mcs rn
+open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
+	((>>) <$> setSettings <*> handshake) (cssv', crts, mcs)
+	where cssv' = case find (isEcdsaKey . fst) crts of
+		Just _ -> cssv
+		_ -> flip filter cssv $ \cs -> case cs of
+			CipherSuite ECDHE_ECDSA _ -> False
+			_ -> True
 
-renegotiate ::
-	(ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
-renegotiate (TlsHandleS t) = rerunHandshakeM t $
-	writeHandshakeNoHash HHelloRequest >> flushAppData >>= flip when handshake
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
+renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshakeNH HHelloReq >>
+		flushAppData >>= flip when (handshake =<< getSettings)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
-rehandshake t = rerunHandshakeM t handshake
+rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
 
-handshake :: (ValidateHandle h, CPRG g) => HandshakeM h g ()
-handshake = do
-	(cssv, crts, mcs) <- getInitSet
-	(cs, cr, cv, rn) <- clientHello $ filterCS crts cssv
-	debug "critical" ("SERVER HASH AFTER CLIENTHELLO" :: String)
-	debug "critical" =<< handshakeHash
-	succeed cs cr cv crts mcs rn
+handshake :: (ValidateHandle h, CPRG g) => Settings -> HandshakeM h g ()
+handshake (cssv, crts, mcs) = do
+	(cs, cr, cv, rn) <- clientHello cssv
+	(ke, be) <- case cs of
+		CipherSuite k b -> return (k, b)
+		_ -> throwError ALFatal ADHandshakeFailure
+			"Network.PeyoTLS.Server.succeed: not implemented"
+	setCipherSuite cs
+	sr <- serverHello cs rcc ecc rn
+	ha <- case be of
+		AES_128_CBC_SHA -> return Sha1
+		AES_128_CBC_SHA256 -> return Sha256
+		_ -> throwError ALFatal ADHandshakeFailure $
+			"Network.PeyoTLS.Server.succeed: " ++
+				"not implemented bulk encryption type"
+	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
+		RSA -> rsaKeyExchange rsk cv
+		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
+		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
+		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
+		_ -> \_ _ -> throwError ALFatal ADHandshakeFailure $
+			"Network.PeyoTLS.Server.succeed: " ++
+				"not implemented key exchange type"
+	maybe (return ()) certificateVerify mpk
+	getChangeCipherSpec >> flushCipherSuite Read
+	cf@(Finished cfb) <- finishedHash Client
+	rcf <- readHandshake
+	debug "low" ("client finished hash" :: String)
+	debug "low" cf
+	debug "low" rcf
+	unless (cf == rcf) $ throwError ALFatal ADDecryptError
+		"TlsServer.succeed: wrong finished hash"
+	setClientFinished cfb
+	putChangeCipherSpec >> flushCipherSuite Write
+	sf@(Finished sfb) <- finishedHash Server
+	setServerFinished sfb
+	writeHandshake sf
+	where
+	Just (RsaKey rsk, rcc) = find (isRsaKey . fst) crts
+	Just (EcdsaKey esk, ecc) = find (isEcdsaKey . fst) crts
 
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
@@ -133,48 +186,6 @@ serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 	return sr
 serverHello _ _ _ _ = throwError ALFatal ADInternalError
 	"Network.PeyoTLS.Server.serverHello: never occur"
-
-succeed :: (ValidateHandle h, CPRG g) => CipherSuite -> BS.ByteString ->
-	Version -> [(CertSecretKey, X509.CertificateChain)] ->
-	Maybe X509.CertificateStore -> Bool -> HandshakeM h g ()
-succeed cs@(CipherSuite ke be) cr cv crts mcs rn = do
-	sr <- serverHello cs rcc ecc rn
-	setCipherSuite cs
-	ha <- case be of
-		AES_128_CBC_SHA -> return Sha1
-		AES_128_CBC_SHA256 -> return Sha256
-		_ -> throwError ALFatal ADHandshakeFailure $
-			"Network.PeyoTLS.Server.succeed: " ++
-				"not implemented bulk encryption type"
-	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
-		RSA -> rsaKeyExchange rsk cv
-		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
-		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
-		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
-		_ -> \_ _ -> throwError ALFatal ADHandshakeFailure $
-			"Network.PeyoTLS.Server.succeed: " ++
-				"not implemented key exchange type"
-	maybe (return ()) certificateVerify mpk
-	getChangeCipherSpec >> flushCipherSuite Read
-	cf@(Finished cfb) <- finishedHash Client
-	rcf <- readHandshake
-	debug "low" ("client finished hash" :: String)
-	debug "low" cf
-	debug "low" rcf
-	unless (cf == rcf) $ throwError ALFatal ADDecryptError
-		"TlsServer.succeed: wrong finished hash"
-	setClientFinished cfb
-	putChangeCipherSpec >> flushCipherSuite Write
-	sf@(Finished sfb) <- finishedHash Server
-	setServerFinished sfb
-	writeHandshake sf
-	where
-	Just (RsaKey rsk, rcc) = find isRsa crts
-	Just (EcdsaKey esk, ecc) = find isEcdsa crts
-	isRsa (RsaKey _, _) = True
-	isRsa _ = False
-succeed _ _ _ _ _ _ = throwError ALFatal ADHandshakeFailure
-	"Network.PeyoTLS.Server.succeed: not implemented"
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
@@ -299,33 +310,3 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 		(either error id $ B.decode y)
 certificateVerify p = throwError ALFatal ADUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implement: " ++ show p
-
-newtype TlsHandleS h g = TlsHandleS { tlsHandleS :: TlsHandle h g }
-
-instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
-	type HandleMonad (TlsHandleS h g) = TlsM h g
-	type DebugLevel (TlsHandleS h g) = DebugLevel h
-	hlPut (TlsHandleS t) = hlPut t
-	hlGet = hlGetRn rehandshake . tlsHandleS
-	hlGetLine = hlGetLineRn rehandshake . tlsHandleS
-	hlGetContent = hlGetContentRn rehandshake . tlsHandleS
-	hlDebug (TlsHandleS t) = hlDebug t
-	hlClose (TlsHandleS t) = hlClose t
-
-type Version = (Word8, Word8)
-
-version :: Version
-version = (3, 3)
-
-filterCS :: [(CertSecretKey, X509.CertificateChain)] ->
-	[CipherSuite] -> [CipherSuite]
-filterCS crts cs = case find isEcdsa crts of
-	Just _ -> cs
-	_ -> filter (not . isEcdsaCS) cs
-	where
-	isEcdsaCS (CipherSuite ECDHE_ECDSA _) = True
-	isEcdsaCS _ = False
-
-isEcdsa :: (CertSecretKey, X509.CertificateChain) -> Bool
-isEcdsa (EcdsaKey _, _) = True
-isEcdsa _ = False
