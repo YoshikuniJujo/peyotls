@@ -320,39 +320,10 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
 	type HandleMonad (TlsHandleC h g) = TlsM h g
 	type DebugLevel (TlsHandleC h g) = DebugLevel h
 	hlPut (TlsHandleC t) = hlPut t
-	hlGet = hlGet_ -- hlGetRn rehandshake . tlsHandleC
-	hlGetLine = hlGetLine_ -- hlGetLineRn rehandshake . tlsHandleC
-	hlGetContent = hlGetContent_ -- hlGetContentRn rehandshake . tlsHandleC
+	hlGet = hlGetRn rehandshake . tlsHandleC
+	hlGetLine = hlGetLineRn rehandshake . tlsHandleC
+	hlGetContent = hlGetContentRn rehandshake . tlsHandleC
 	hlDebug (TlsHandleC t) = hlDebug t
 	hlClose (TlsHandleC t) = hlClose t
-
-hlGet_ :: (ValidateHandle h, CPRG g) =>
-	TlsHandleC h g -> Int -> TlsM h g BS.ByteString
-hlGet_ (TlsHandleC t) n = do
-	bf <- HB.getAdBuf t
-	if BS.length bf >= 0
-	then do	let (ret, rest) = BS.splitAt n bf
-		HB.setAdBuf t rest
-		return ret
-	else (bf `BS.append`) `liftM` hlGetRn rehandshake t (n - BS.length bf)
-
-hlGetLine_ :: (ValidateHandle h, CPRG g) =>
-	TlsHandleC h g -> TlsM h g BS.ByteString
-hlGetLine_ (TlsHandleC t) = do
-	bf <- HB.getAdBuf t
-	if 10 `BS.elem` bf
-	then do	let (ret, rest) = BS.span (/= 10) bf
-		HB.setAdBuf t $ BS.tail rest
-		return ret
-	else (bf `BS.append`) `liftM` hlGetLineRn rehandshake t
-
-hlGetContent_ :: (ValidateHandle h, CPRG g) =>
-	TlsHandleC h g -> TlsM h g BS.ByteString
-hlGetContent_ (TlsHandleC t) = do
-	bf <- HB.getAdBuf t
-	if BS.null bf
-	then hlGetContentRn rehandshake t
-	else do	HB.setAdBuf t ""
-		return bf
 
 type PeyotlsHandleC = TlsHandleC Handle SystemRNG

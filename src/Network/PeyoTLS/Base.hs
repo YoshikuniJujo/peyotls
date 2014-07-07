@@ -32,17 +32,16 @@ module Network.PeyoTLS.Base ( Extension(..),
 	HM.ContentType(CTAlert, CTHandshake, CTAppData),
 	Handshake(..),
 	HM.tlsHandle,
-	hlGetRn, hlGetLineRn, hlGetContentRn,
+	hlGetRn, hlGetLineRn_, hlGetLineRn, hlGetContentRn_,
+	hlGetContentRn,
 
 	HM.getInitSet, HM.setInitSet,
 	HM.flushAppData,
-	HM.getAdBuf,
-	HM.setAdBuf,
 	HM.pushAdBufH,
 	) where
 
 import Control.Applicative
-import Control.Arrow (first)
+import Control.Arrow (first, second)
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.State (gets, lift)
 import qualified "monads-tf" Control.Monad.Error as E
@@ -314,12 +313,55 @@ checkAppData t m = m >>= \cp -> case cp of
 	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"
 		E.throwError "TlsHandle.checkAppData: not application data"
 
-hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle h g -> HM.TlsM h g ()) ->
+hlGetRn_ :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle h g -> HM.TlsM h g ()) ->
 	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
-hlGetRn rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
+hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
 	. (, undefined)
 
-hlGetLineRn, hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
+hlGetLineRn_, hlGetContentRn_ :: (HM.ValidateHandle h, CPRG g) =>
 	(HM.TlsHandle h g -> HM.TlsM h g ()) -> HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
-hlGetLineRn rh = ($) <$> checkAppData <*> HM.tGetLine_ rh
-hlGetContentRn rh = ($) <$> checkAppData <*> HM.tGetContent_ rh
+hlGetLineRn_ rh = ($) <$> checkAppData <*> HM.tGetLine_ rh
+hlGetContentRn_ rh = ($) <$> checkAppData <*> HM.tGetContent_ rh
+
+hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle h g -> HM.TlsM h g ()) ->
+	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
+hlGetRn rn t n = do
+	bf <- HM.getAdBuf t
+	if BS.length bf >= n
+	then do	let (ret, rest) = BS.splitAt n bf
+		HM.setAdBuf t rest
+		return ret
+	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
+
+hlGetLineRn :: (HM.ValidateHandle h, CPRG g) =>
+	(HM.TlsHandle h g -> HM.TlsM h g ()) -> HM.TlsHandle h g ->
+	HM.TlsM h g BS.ByteString
+hlGetLineRn rn t = do
+	bf <- HM.getAdBuf t
+	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
+	then do	let (ret, rest) = splitOneLine bf
+		HM.setAdBuf t $ BS.tail rest
+		return ret
+	else (bf `BS.append`) `liftM` hlGetLineRn_ rn t
+
+splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
+splitOneLine bs = case BSC.span (/= '\r') bs of
+	(_, "") -> second BS.tail $ BSC.span (/= '\n') bs
+	(l, ls) -> (l, dropRet ls)
+
+dropRet :: BS.ByteString -> BS.ByteString
+dropRet bs = case BSC.uncons bs of
+	Just ('\r', bs') -> case BSC.uncons bs' of
+		Just ('\n', bs'') -> bs''
+		_ -> bs'
+	_ -> bs
+
+hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
+	(HM.TlsHandle h g -> HM.TlsM h g ()) ->
+	HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
+hlGetContentRn rn t = do
+	bf <- HM.getAdBuf t
+	if BS.null bf
+	then hlGetContentRn_ rn t
+	else do	HM.setAdBuf t ""
+		return bf
