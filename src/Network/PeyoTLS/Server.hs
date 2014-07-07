@@ -203,22 +203,18 @@ dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 	sv <- withRandom $ generateSecret dp
 	bl <- withRandom $ generateBlinder sk
-	let pv = B.encode $ calculatePublic dp sv
+	let pvs = B.encode $ calculatePublic dp sv
 	writeHandshake
-		. ServerKeyEx edp pv ha (signatureAlgorithm sk)
-		. sign ha bl sk $ BS.concat [cr, sr, edp, pv]
-	const `liftM` reqAndCert mcs `ap` dhClientKeyExchange dp sv rs
+		. ServerKeyEx edp pvs ha (signatureAlgorithm sk)
+		. sign ha bl sk $ BS.concat [cr, sr, edp, pvs]
+	const `liftM` reqAndCert mcs `ap` do
+		ClientKeyExchange cke <- readHandshake
+		let Right pvc = B.decode cke
+		generateKeys Server rs =<< case Right $ calculateShared dp sv pvc of
+			Left em -> throwError ALFatal ADInternalError $
+				"Network.PeyoTLS.Server.dhClientKeyExchange: " ++ em
+			Right sh -> return sh
 	where edp = B.encode dp
-
-dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp)) =>
-	dp -> Secret dp -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
-dhClientKeyExchange dp sv rs = do
-	ClientKeyExchange cke <- readHandshake
-	let Right pv = B.decode cke
-	generateKeys Server rs =<< case Right $ calculateShared dp sv pv of
-		Left em -> throwError ALFatal ADInternalError $
-			"Network.PeyoTLS.Server.dhClientKeyExchange: " ++ em
-		Right sh -> return sh
 
 reqAndCert :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
