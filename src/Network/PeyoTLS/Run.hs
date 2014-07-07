@@ -5,7 +5,7 @@ module Network.PeyoTLS.Run (
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
-		setCipherSuite, flushCipherSuite, debugCipherSuite,
+		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
@@ -161,6 +161,11 @@ setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite cs = do
 	t <- gets fst
 	lift $ TH.setCipherSuiteSt (TH.clientId t) cs
+
+getCipherSuite :: HandleLike h => HandshakeM h g TH.CipherSuite
+getCipherSuite = do
+	t <- gets fst
+	lift $ TH.getCipherSuiteSt $ TH.clientId t
 
 flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
 flushCipherSuite p = do

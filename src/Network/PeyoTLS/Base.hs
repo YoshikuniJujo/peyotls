@@ -18,7 +18,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
-		HM.setCipherSuite,
+		HM.getCipherSuite, HM.setCipherSuite,
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..), Epms(..),
 		HM.generateKeys,
@@ -26,8 +26,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
 	HM.Side(..), HM.RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError,
-	HM.getClientFinished, HM.setClientFinished,
-	HM.getServerFinished, HM.setServerFinished,
+	HM.getClientFinished, HM.getServerFinished,
 	Finished(..),
 	HM.ContentType(CTAlert, CTHandshake, CTAppData),
 	Handshake(..),
@@ -84,7 +83,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle(..), ContentType(..),
 		names,
-		setCipherSuite, flushCipherSuite, debugCipherSuite,
+		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
@@ -283,7 +282,12 @@ secp256r1 :: ECC.Curve
 secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
 
 finishedHash :: (HandleLike h, CPRG g) => HM.Side -> HM.HandshakeM h g Finished
-finishedHash = (Finished `liftM`) . HM.finishedHash
+finishedHash s = (Finished `liftM`) $ do
+	fh <- HM.finishedHash s
+	case s of
+		HM.Client -> HM.setClientFinished fh
+		HM.Server -> HM.setServerFinished fh
+	return fh
 
 instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
 	type HandleMonad (HM.TlsHandle h g) = HM.TlsM h g

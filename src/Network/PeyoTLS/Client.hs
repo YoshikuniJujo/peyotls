@@ -35,10 +35,9 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified Network.PeyoTLS.Base as HB
 import Network.PeyoTLS.Base ( flushAppData,
-	Extension(..), getClientFinished, Finished(..),
+	Extension(..), getClientFinished,
 	getSettings, setSettings,
-	setClientFinished, getClientFinished,
-	setServerFinished, getServerFinished,
+	getClientFinished, getServerFinished,
 	PeyotlsM,
 	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 		CertSecretKey(..),
@@ -282,12 +281,10 @@ finishHandshake crt = do
 			writeHandshake $ digitallySigned sk (pubKey sk c) hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
-	fc@(Finished fcb) <- finishedHash Client
+	fc <- finishedHash Client
 	writeHandshake fc
-	setClientFinished fcb
 	getChangeCipherSpec >> flushCipherSuite Read
-	fs@(Finished fsb) <- finishedHash Server
-	setServerFinished fsb
+	fs <- finishedHash Server
 	(fs ==) `liftM` readHandshake >>= flip unless
 		(E.throwError "TlsClient.finishHandshake: finished hash failure")
 	where

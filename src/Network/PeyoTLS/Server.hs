@@ -39,10 +39,10 @@ import Network.PeyoTLS.Base (
 		writeHandshakeNH,
 	AlertLevel(..), AlertDesc(..),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
-		CipherSuite(..), KeyEx(..), BulkEnc(..), setCipherSuite,
+		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
-		getClientFinished, setClientFinished,
-		getServerFinished, setServerFinished,
+		getCipherSuite, setCipherSuite,
+		getClientFinished, getServerFinished,
 	ServerKeyExchange(..),
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ServerHelloDone(..),
@@ -50,7 +50,7 @@ import Network.PeyoTLS.Base (
 		generateKeys, decryptRsa, rsaPadding,
 	DigitallySigned(..), handshakeHash,
 	RW(..), flushCipherSuite,
-	Finished(..), Side(..), finishedHash,
+	Side(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1,
 
 	Handshake(HHelloReq), getSettings, setSettings, flushAppData,
@@ -109,45 +109,32 @@ rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
 
 handshake :: (ValidateHandle h, CPRG g) => Settings -> HandshakeM h g ()
 handshake (cssv, rcrt, ecrt, mcs) = do
-	(cs, cr, cv, rn) <- clientHello cssv
-	(ke, be) <- case cs of
-		CipherSuite k b -> return (k, b)
-		_ -> throwError ALFatal ADInternalError
-			"Network.PeyoTLS.Server.handshake: never occur"
-	setCipherSuite cs
-	sr <- serverHello cs (snd <$> rcrt) (snd <$> ecrt) rn
+	(ke, be, cr, cv, rn) <- clientHello cssv
+	sr <- serverHello (snd <$> rcrt) (snd <$> ecrt) rn
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> throwError ALFatal ADInternalError $
-			"Network.PeyoTLS.Server.handshake: " ++
-				"not implemented bulk encryption type"
+			pre ++ "not implemented bulk encryption type"
 	mpk <- ($ mcs) . ($ (cr, sr)) $ case (ke, rcrt, ecrt) of
 		(RSA, Just (rsk, _), _) -> rsaKeyExchange rsk cv
 		(DHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha dh3072Modp rsk
 		(ECDHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha secp256r1 rsk
 		(ECDHE_ECDSA, _, Just (esk, _)) -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> throwError ALFatal ADInternalError $
-			"Network.PeyoTLS.Server.handshake: " ++
-				"no implemented key exchange type or " ++
+			pre ++ "no implemented key exchange type or " ++
 				"no applicable certificate files"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
-	cf@(Finished cfb) <- finishedHash Client
-	rcf <- readHandshake
-	debug "low" ("client finished hash" :: String)
-	debug "low" cf
-	debug "low" rcf
-	unless (cf == rcf) $ throwError ALFatal ADDecryptError
-		"TlsServer.succeed: wrong finished hash"
-	setClientFinished cfb
+	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok ->
+		unless ok $ throwError ALFatal ADDecryptError $
+			pre ++ "wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Write
-	sf@(Finished sfb) <- finishedHash Server
-	setServerFinished sfb
-	writeHandshake sf
+	writeHandshake =<< finishedHash Server
+	where pre = "Network.PeyoTLS.Server.handshake: "
 
-clientHello :: (HandleLike h, CPRG g) =>
-	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version, Bool)
+clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
+	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version, Bool)
 clientHello cssv = do
 	cf0 <- getClientFinished
 	ch@(ClientHello cv cr _sid cscl cms me) <- readHandshake
@@ -159,8 +146,14 @@ clientHello cssv = do
 	debug "medium" ch
 	unless (cf == cf0) $ throwError ALFatal ADHandshakeFailure
 		"Network.PeyoTLS.Server.clientHello: bad renegotiation"
-	chk cv cscl cms >> return (merge cssv cscl, cr, cv, rn)
+	chk cv cscl cms
+	setCipherSuite $ merge cssv cscl
+	(ke, be) <- case merge cssv cscl of
+		CipherSuite k b -> return (k, b)
+		_ -> throwError ALFatal ADInternalError $ pre ++ "never occur"
+	return (ke, be, cr, cv, rn)
 	where
+	pre = "Network.PeyoTLS.Server.clientHello: "
 	merge sv cl = case find (`elem` cl) sv of
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
 	chk cv _css cms
@@ -177,10 +170,11 @@ clientHello cssv = do
 	getRenegoInfo [] (ERenegoInfo rn : _) = Just rn
 	getRenegoInfo [] (_ : es) = getRenegoInfo [] es
 
-serverHello :: (HandleLike h, CPRG g) => CipherSuite ->
+serverHello :: (HandleLike h, CPRG g) =>
 	Maybe X509.CertificateChain -> Maybe X509.CertificateChain -> Bool ->
 	HandshakeM h g BS.ByteString
-serverHello cs@(CipherSuite ke _) rcc ecc rn = do
+serverHello rcc ecc rn = do
+	cs@(CipherSuite ke _) <- getCipherSuite
 	sr <- randomByteString 32
 	cf <- getClientFinished
 	sf <- getServerFinished
@@ -195,8 +189,10 @@ serverHello cs@(CipherSuite ke _) rcc ecc rn = do
 		(_, Just c, _) -> c
 		_ -> error "serverHello"
 	return sr
+	{-
 serverHello _ _ _ _ = throwError ALFatal ADInternalError
 	"Network.PeyoTLS.Server.serverHello: never occur"
+	-}
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
