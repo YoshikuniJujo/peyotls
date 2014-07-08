@@ -39,7 +39,7 @@ instance B.Parsable X509.CertificateChain where
 data CertificateRequest
 	= CertificateRequest [ClientCertificateType]
 		[(HashAlg, SignAlg)] [X509.DistinguishedName]
-	| CertificateRequestRaw BS.ByteString
+--	| CertificateRequestRaw BS.ByteString
 	deriving Show
 
 certificateRequest :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
@@ -55,7 +55,7 @@ instance B.Bytable CertificateRequest where
 			concatMap (\(h, s) -> [B.encode h, B.encode s]) a,
 		B.addLen w16 . flip cmap n $ B.addLen w16 .
 			ASN1.encodeASN1' ASN1.DER . flip ASN1.toASN1 [] ]
-	encode (CertificateRequestRaw bs) = bs
+--	encode (CertificateRequestRaw bs) = bs
 	decode = B.evalBytableM $ do
 		t <- flip B.list (B.take 1) =<< B.take 1
 		a <- flip B.list ((,) <$> B.take 1 <*> B.take 1) =<< B.take 2

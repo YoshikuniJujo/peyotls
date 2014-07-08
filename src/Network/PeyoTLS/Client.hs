@@ -4,7 +4,7 @@ module Network.PeyoTLS.Client (
 	PeyotlsM, PeyotlsHandleC, TlsM, TlsHandleC,
 	run, open, renegotiate, names,
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
-	ValidateHandle(..), CertSecretKey(..), ) where
+	ValidateHandle(..), CertSecretKey(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
@@ -14,8 +14,6 @@ import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
-import qualified "monads-tf" Control.Monad.Error as E
-import qualified "monads-tf" Control.Monad.Error.Class as E
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
@@ -31,33 +29,35 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Network.PeyoTLS.Base as HB
-import Network.PeyoTLS.Base ( flushAppData,
-	Extension(..), getClientFinished,
-	getSettings, setSettings,
-	getClientFinished, getServerFinished,
-	PeyotlsM,
-	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
-		CertSecretKey(..),
-		withRandom, randomByteString,
+import qualified Network.PeyoTLS.Base as HB (names)
+import Network.PeyoTLS.Base (
+	PeyotlsM, TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
+		AlertLevel(..), AlertDesc(..), throwError,
+		withRandom, randomByteString, debug,
+	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandle,
-		readHandshake, getChangeCipherSpec,
-		writeHandshake, putChangeCipherSpec,
-	ValidateHandle(..), handshakeValidate,
-	ServerKeyExEcdhe(..), ServerKeyExDhe(..), ServerHelloDone(..),
-	ClientHello(..), ServerHello(..), SessionId(..),
+		readHandshake, writeHandshake,
+		getChangeCipherSpec, putChangeCipherSpec,
+		getSettings, setSettings,
+	CertSecretKey(..), isRsaKey, isEcdsaKey,
+	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
-		setCipherSuite,
+		setCipherSuite, flushCipherSuite,
+	ServerKeyExEcdhe(..), ServerKeyExDhe(..),
 	CertificateRequest(..), ClientCertificateType(..),
+	ServerHelloDone(..),
 	ClientKeyExchange(..), Epms(..),
 		generateKeys, encryptRsa, rsaPadding,
-	DigitallySigned(..), handshakeHash, flushCipherSuite,
+	DigitallySigned(..), handshakeHash,
 	Side(..), RW(..), finishedHash,
 	DhParam(..), generateKs, blindSign,
 
-	hlGetRn, hlGetLineRn, hlGetContentRn,
-	)
+	getClientFinished, getServerFinished, flushAppData,
+	hlGetRn, hlGetLineRn, hlGetContentRn )
+
+moduleName :: String
+moduleName = "Network.PeyoTLS.Client"
 
 names :: TlsHandleC h g -> [String]
 names = HB.names . tlsHandleC
@@ -70,15 +70,15 @@ open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 	cr <- clientHello cscl
 	handshake rcrt ecrt ca cr
 	where
-	rcrt = first rsaKey <$> find (HB.isRsaKey . fst) crts
-	ecrt = first ecdsaKey <$> find (HB.isEcdsaKey . fst) crts
+	rcrt = first rsaKey <$> find (isRsaKey . fst) crts
+	ecrt = first ecdsaKey <$> find (isEcdsaKey . fst) crts
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, rcrt, ecrt, Just ca) <- getSettings
 	cr <- clientHello cscl
-	HB.debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
-	HB.debug "critical" =<< handshakeHash
+	debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
+	debug "critical" =<< handshakeHash
 	ne <- flushAppData
 	when ne $ handshake rcrt ecrt ca cr
 
@@ -95,8 +95,8 @@ handshake :: (ValidateHandle h, CPRG g) =>
 handshake rcrt ecrt ca cr = do
 	(sr, cs@(CipherSuite ke _)) <- serverHello
 	setCipherSuite cs
-	HB.debug "critical" ("CLIENT HASH AFTER SERVERHELLO" :: String)
-	HB.debug "critical" =<< handshakeHash
+	debug "critical" ("CLIENT HASH AFTER SERVERHELLO" :: String)
+	debug "critical" =<< handshakeHash
 	case ke of
 		RSA -> rsaHandshake cr sr crts ca
 		DHE_RSA -> dheHandshake dhType cr sr crts ca
@@ -136,7 +136,8 @@ serverHello = do
 	ServerHello _v sr _sid cs _cm e <- readHandshake
 	let	Just rn = getRenegoInfo e
 		rn0 = cf `BS.append` sf
-	unless (rn == rn0) $ E.throwError "Network.PeyoTLS.Client.hello"
+	unless (rn == rn0) . throwError ALFatal ADHsFailure $
+		moduleName ++ ".serverHello"
 	return (sr, cs)
 
 rsaHandshake :: (ValidateHandle h, CPRG g) =>
@@ -146,7 +147,8 @@ rsaHandshake :: (ValidateHandle h, CPRG g) =>
 rsaHandshake cr sr crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) $ E.throwError "TlsClient.rsaHandshake: validate failure"
+	unless (null vr) $ throwError ALFatal (validateAlert vr) $
+		moduleName ++ ".rsaHandshake: validate failure"
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned c
 	crt <- clientCertificate crts
@@ -167,7 +169,8 @@ dheHandshake t cr sr crts ca = do
 		X509.PubKeyRSA pk -> succeedHandshake t pk cr sr cc crts ca
 		X509.PubKeyECDSA cv pnt ->
 			succeedHandshake t (ek cv pnt) cr sr cc crts ca
-		_ -> E.throwError "TlsClient.dheHandshake: not implemented"
+		_ -> throwError ALFatal ADHsFailure $
+			moduleName ++ ".dheHandshake: not implemented"
 	where
 	ek cv pnt = ECDSA.PublicKey (ECC.getCurveByName cv) (point pnt)
 	point s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
@@ -182,12 +185,13 @@ succeedHandshake ::
 	HandshakeM h g ()
 succeedHandshake t pk cr sr cc crts ca = do
 	vr <- handshakeValidate ca cc
-	unless (null vr) $
-		E.throwError "TlsClient.succeedHandshake: validate failure"
+	unless (null vr) $ throwError ALFatal (validateAlert vr) $
+		moduleName ++ ".succeedHandshake: validate failure"
 	(ps, pv, ha, _sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
 	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) $
-		E.throwError "TlsClient.succeedHandshake: verify failure"
+		throwError ALFatal ADDecryptError $
+			moduleName ++ ".succeedHandshake: verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	generateKeys Client (cr, sr) $ calculateShared ps sv pv
@@ -245,11 +249,10 @@ clientCertificate crts = do
 				Just (sk, rcc) -> do
 					writeHandshake rcc
 					return $ Just (sk, rcc)
-				_ -> E.throwError . E.strMsg $
-					"TlsClient.clientCertificate: " ++
+				_ -> throwError ALFatal ADUnknownCa $
+					moduleName ++ ".clientCertificate: " ++
 						"no certificate"
 		Right ServerHelloDone -> return Nothing
-		_ -> E.throwError "TlsClient.clientCertificate"
 
 isMatchedCert :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
 	[X509.DistinguishedName] -> (CertSecretKey, X509.CertificateChain) -> Bool
@@ -284,7 +287,8 @@ finishHandshake crt = do
 	getChangeCipherSpec >> flushCipherSuite Read
 	fs <- finishedHash Server
 	(fs ==) `liftM` readHandshake >>= flip unless
-		(E.throwError "TlsClient.finishHandshake: finished hash failure")
+		(throwError ALFatal ADDecryptError $
+			moduleName ++ ".finishHandshake: finished hash failure")
 	where
 	digitallySigned sk pk hs = DigitallySigned (algorithm sk) $ sign sk pk hs
 

@@ -40,6 +40,8 @@ module Network.PeyoTLS.Base ( Extension(..),
 	HM.flushAppData_,
 	flushAppData,
 	HM.pushAdBufH,
+
+	validateAlert,
 	) where
 
 import Control.Applicative
@@ -68,6 +70,8 @@ import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
+
+import qualified Data.X509.Validation as X509
 
 import Network.PeyoTLS.Types ( Extension(..),
 	Handshake(..), HandshakeItem(..),
@@ -395,3 +399,10 @@ checkClientRenego cf = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
 makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension
 makeServerRenego = ERenegoInfo `liftM`
 	(BS.append `liftM` HM.getClientFinished `E.ap` HM.getServerFinished)
+
+validateAlert :: [X509.FailedReason] -> HM.AlertDesc
+validateAlert vr
+	| X509.UnknownCA `elem` vr = HM.ADUnknownCa
+	| X509.Expired `elem` vr = HM.ADCertificateExpired
+	| X509.InFuture `elem` vr = HM.ADCertificateExpired
+	| otherwise = HM.ADCertificateUnknown

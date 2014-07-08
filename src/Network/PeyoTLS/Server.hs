@@ -19,7 +19,6 @@ import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
-import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.RSA as RSA
@@ -34,7 +33,7 @@ import Network.PeyoTLS.Base (
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		throwError, debugCipherSuite,
 		withRandom, randomByteString,
-	ValidateHandle(..), handshakeValidate,
+	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandle, CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
@@ -232,14 +231,9 @@ reqAndCert mcs = do
 	flip (maybe $ return Nothing) mcs $ liftM Just . \cs -> do
 		cc@(X509.CertificateChain (c : _)) <- readHandshake
 		vr <- handshakeValidate cs cc
-		unless (null vr) . throwError ALFatal (sa vr) $
+		unless (null vr) . throwError ALFatal (validateAlert vr) $
 			"Network.PeyoTLS.Server.reqAndCert: " ++ show vr
 		return . X509.certPubKey $ X509.getCertificate c
-	where sa vr
-		| X509.UnknownCA `elem` vr = ADUnknownCa
-		| X509.Expired `elem` vr = ADCertificateExpired
-		| X509.InFuture `elem` vr = ADCertificateExpired
-		| otherwise = ADCertificateUnknown
 
 certVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certVerify (X509.PubKeyRSA pk) = do
