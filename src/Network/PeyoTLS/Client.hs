@@ -4,7 +4,7 @@ module Network.PeyoTLS.Client (
 	PeyotlsM, PeyotlsHandleC, TlsM, TlsHandleC,
 	run, open, renegotiate, names,
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
-	ValidateHandle(..), CertSecretKey ) where
+	ValidateHandle(..), CertSecretKey(..), ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)

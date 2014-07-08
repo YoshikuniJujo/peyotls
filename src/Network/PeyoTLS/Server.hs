@@ -3,8 +3,8 @@
 
 module Network.PeyoTLS.Server (
 	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS, run, open, renegotiate, names,
-	CipherSuite(..), KeyEx(..), BulkEnc(..), ValidateHandle(..), CertSecretKey
-	) where
+	CipherSuite(..), KeyEx(..), BulkEnc(..),
+	ValidateHandle(..), CertSecretKey(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
