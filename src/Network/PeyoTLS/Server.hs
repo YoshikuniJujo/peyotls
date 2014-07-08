@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports, TupleSections #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, TypeFamilies, FlexibleContexts,
+	PackageImports #-}
 
 module Network.PeyoTLS.Server (
 	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS, run, open, renegotiate, names,

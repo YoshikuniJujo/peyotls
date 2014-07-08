@@ -1,9 +1,7 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
-	PackageImports, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	PeyotlsM, PeyotlsHandleC,
-	TlsM, TlsHandleC,
+	PeyotlsM, PeyotlsHandleC, TlsM, TlsHandleC,
 	run, open, renegotiate, names,
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey ) where
@@ -317,7 +315,7 @@ instance SecretKey ECDSA.PrivateKey where
 				ASN1.End ASN1.Sequence]
 	algorithm _ = (Sha256, Ecdsa)
 
-newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g }
+newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g } deriving Show
 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
 	type HandleMonad (TlsHandleC h g) = TlsM h g
