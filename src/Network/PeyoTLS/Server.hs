@@ -81,6 +81,9 @@ type Settings = (
 version :: Version
 version = (3, 3)
 
+moduleName :: String
+moduleName = "Network.PeyoTLS.Server"
+
 names :: TlsHandleS h g -> [String]
 names = HB.names . tlsHandleS
 
@@ -125,14 +128,14 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 		_ -> \_ _ -> throwError ALFatal ADInternalError $
 			pre ++ "no implemented key exchange type or " ++
 				"no applicable certificate files"
-	maybe (return ()) certificateVerify mpk
+	maybe (return ()) certVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
 	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok ->
 		unless ok . throwError ALFatal ADDecryptError $
 			pre ++ "wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
-	where pre = "Network.PeyoTLS.Server.handshake: "
+	where pre = moduleName ++ ".handshake: "
 
 clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
 	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version)
@@ -150,13 +153,13 @@ clientHello cssv = do
 			"cscl: " ++ show cscl ++ "\n\t" ++
 			"cssv: " ++ show cssv ++ "\n\t"
 	return (ke, be, cr, cv)
-	where pre = "Network.PeyoTLS.Server.clientHello: "
+	where pre = moduleName ++ ".clientHello: "
 
 checkRenegoInfo ::
 	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
 checkRenegoInfo cscl me = (\n -> maybe n checkClientRenego mcf) . throwError
 	ALFatal ADInsufficientSecurity $
-		"Network.PeyoTLS.Server.checkRenego: require secure renegotiation"
+		moduleName ++ ".checkRenego: require secure renegotiation"
 	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
 		(True, _) -> Just ""
 		(_, Just e) -> listToMaybe $ mapMaybe eRenegoInfo e
@@ -170,7 +173,7 @@ serverHello rcc ecc = do
 	ke <- case cs of
 		CipherSuite k _ -> return k
 		_ -> throwError ALFatal ADInternalError $
-			"Network.PeyoTLS.serverHello: never occur"
+			moduleName ++ ".serverHello: never occur"
 	sr <- randomByteString 32
 	writeHandshake
 		. ServerHello version sr (SessionId "") cs CompMethodNull
@@ -179,7 +182,7 @@ serverHello rcc ecc = do
 		(ECDHE_ECDSA, _, Just c) -> return c
 		(_, Just c, _) -> return c
 		_ -> throwError ALFatal ADInternalError $
-			"Network.PeyoTLS.Server.serverHello: cert files not match"
+			moduleName ++ ".serverHello: cert files not match"
 	return sr
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
@@ -209,12 +212,15 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 		. sign ha bl sk $ BS.concat [cr, sr, edp, pvs]
 	const `liftM` reqAndCert mcs `ap` do
 		ClientKeyExchange cke <- readHandshake
-		let Right pvc = B.decode cke
+		pvc <- case B.decode cke of
+			Left em -> throwError ALFatal ADInternalError $ pre ++ em
+			Right pv -> return pv
 		generateKeys Server rs =<< case Right $ calculateShared dp sv pvc of
-			Left em -> throwError ALFatal ADInternalError $
-				"Network.PeyoTLS.Server.dhClientKeyExchange: " ++ em
+			Left em -> throwError ALFatal ADInternalError $ pre ++ em
 			Right sh -> return sh
-	where edp = B.encode dp
+	where
+	edp = B.encode dp
+	pre = "Network.PeyoTLS.Server.dhKeyExchange: "
 
 reqAndCert :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
@@ -225,42 +231,43 @@ reqAndCert mcs = do
 	flip (maybe $ return Nothing) mcs $ liftM Just . \cs -> do
 		cc@(X509.CertificateChain (c : _)) <- readHandshake
 		vr <- handshakeValidate cs cc
-		unless (null vr) . throwError ALFatal (selectAlert vr) $
-			"TlsServer.clientCertificate: " ++ show vr
+		unless (null vr) . throwError ALFatal (sa vr) $
+			"Network.PeyoTLS.Server.reqAndCert: " ++ show vr
 		return . X509.certPubKey $ X509.getCertificate c
-	where selectAlert vr
+	where sa vr
 		| X509.UnknownCA `elem` vr = ADUnknownCa
 		| X509.Expired `elem` vr = ADCertificateExpired
 		| X509.InFuture `elem` vr = ADCertificateExpired
 		| otherwise = ADCertificateUnknown
 
-certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
-certificateVerify (X509.PubKeyRSA pk) = do
+certVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
+certVerify (X509.PubKeyRSA pk) = do
 	debugCipherSuite "RSA"
 	hs0 <- rsaPadding pk `liftM` handshakeHash
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, Rsa) -> return ()
 		_ -> throwError ALFatal ADDecodeError $
-			"TlsServer.certificateVEerify: not implement: " ++ show a
-	unless (RSA.ep pk s == hs0) $ throwError ALFatal ADDecryptError
-		"TlsServer.certificateVerify: client auth failed "
-certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
+			moduleName ++ ".certVerify: not implement: " ++ show a
+	unless (RSA.ep pk s == hs0) $ throwError ALFatal ADDecryptError $
+		moduleName ++ ".certVerify: client auth failed "
+certVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 	debugCipherSuite "ECDSA"
 	hs0 <- handshakeHash
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, Ecdsa) -> return ()
 		_ -> throwError ALFatal ADDecodeError $
-			"TlsServer.certificateverify: not implement: " ++ show a
+			moduleName ++ ".certVerify: not implement: " ++ show a
 	unless (ECDSA.verify id
 		(ECDSA.PublicKey secp256r1 $ pnt xy)
 		(either error id $ B.decode s) hs0) $ throwError
-			ALFatal ADDecryptError
-			"TlsServer.certificateverify: client auth failed"
-	where
-	pnt s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
-		(either error id $ B.decode x)
-		(either error id $ B.decode y)
-certificateVerify p = throwError ALFatal ADUnsupportedCertificate $
-	"TlsServer.certificateVerify: not implement: " ++ show p
+			ALFatal ADDecryptError $
+			moduleName ++ ".certVerify: client auth failed"
+	where pnt s = case BS.uncons s of
+		Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
+			(either error id $ B.decode x)
+			(either error id $ B.decode y)
+		_ -> error $ moduleName ++ ".certVerify: not implemented point"
+certVerify pk = throwError ALFatal ADUnsupportedCertificate $
+	moduleName ++ ".certVerify: not implement: " ++ show pk

@@ -33,7 +33,7 @@ cipherSuites = [
  ]
 
 randomFrom :: [a] -> IO [a]
-randomFrom [] = return []
+randomFrom [x] = return [x]
 randomFrom (x : xs) = do
 	b <- randomIO
 	(if b then (x :) else id) <$> randomFrom xs
