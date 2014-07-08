@@ -3,6 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Base ( Extension(..),
+	decodePoint,
 	PeyotlsM, eRenegoInfo,
 	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
@@ -435,3 +436,13 @@ setSettingsC :: HandleLike h => (
 		[(HM.CertSecretKey, X509.CertificateChain)],
 		X509.CertificateStore ) -> HM.HandshakeM h g ()
 setSettingsC (css, crts, cs) = HM.setSettingsC (css, crts, Just cs)
+
+moduleName :: String
+moduleName = "Network.PeyoTLS.Base"
+
+decodePoint :: BS.ByteString -> ECC.Point
+decodePoint s = case BS.uncons s of
+	Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
+		(either error id $ B.decode x)
+		(either error id $ B.decode y)
+	_ -> error $ moduleName ++ ".decodePoint: not implemented point"

@@ -52,7 +52,7 @@ import Network.PeyoTLS.Base (
 		generateKeys, encryptRsa, rsaPadding,
 	DigitallySigned(..), handshakeHash,
 	Side(..), RW(..), finishedHash,
-	DhParam(..), generateKs, blindSign,
+	DhParam(..), generateKs, blindSign, decodePoint,
 
 	eRenegoInfo, flushAppData,
 	hlGetRn, hlGetLineRn, hlGetContentRn )
@@ -160,27 +160,21 @@ dheHandshake :: (ValidateHandle h, CPRG g,
 	HandshakeM h g ()
 dheHandshake t rs crts ca = do
 	cc@(X509.CertificateChain cs) <- readHandshake
-	case X509.certPubKey . X509.signedObject . X509.getSigned $ last cs of
-		X509.PubKeyRSA pk -> succeed t pk rs cc crts ca
-		X509.PubKeyECDSA cv pnt -> succeed t (ek cv pnt) rs cc crts ca
-		_ -> throwError ALFatal ADHsFailure $
-			moduleName ++ ".dheHandshake: not implemented"
-	where
-	ek cv pnt = ECDSA.PublicKey (ECC.getCurveByName cv) (point pnt)
-	point s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
-		(either error id $ B.decode x)
-		(either error id $ B.decode y)
-
-succeed ::
-	(ValidateHandle h, CPRG g, Verify pk, KeyExchangeClass ke, Show (Secret ke),
-		Show (Public ke)) =>
-	ke -> pk -> (BS.ByteString, BS.ByteString) -> X509.CertificateChain ->
-	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
-	HandshakeM h g ()
-succeed t pk rs@(cr, sr) cc crts ca = do
 	vr <- handshakeValidate ca cc
 	unless (null vr) $ throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
+	case X509.certPubKey . X509.signedObject . X509.getSigned $ last cs of
+		X509.PubKeyRSA pk -> succeed t pk rs crts
+		X509.PubKeyECDSA cv pt -> succeed t (ek cv pt) rs crts
+		_ -> throwError ALFatal ADHsFailure $
+			moduleName ++ ".dheHandshake: not implemented"
+	where ek cv pt = ECDSA.PublicKey (ECC.getCurveByName cv) (decodePoint pt)
+
+succeed :: (ValidateHandle h, CPRG g, Verify pk,
+		KeyExchangeClass ke, Show (Secret ke), Show (Public ke)) =>
+	ke -> pk -> (BS.ByteString, BS.ByteString) ->
+	[(CertSecretKey, X509.CertificateChain)] -> HandshakeM h g ()
+succeed t pk rs@(cr, sr) crts = do
 	(ps, pv, ha, _sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
 	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) $

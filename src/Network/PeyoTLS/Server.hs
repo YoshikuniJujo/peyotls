@@ -52,7 +52,7 @@ import Network.PeyoTLS.Base (
 	DigitallySigned(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1,
+	DhParam(..), dh3072Modp, secp256r1, decodePoint,
 
 	Handshake(HHelloReq), eRenegoInfo, getSettings, setSettings, flushAppData,
 	hlGetRn, hlGetLineRn, hlGetContentRn )
@@ -255,14 +255,9 @@ certVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 		_ -> throwError ALFatal ADDecodeError $
 			moduleName ++ ".certVerify: not implement: " ++ show a
 	unless (ECDSA.verify id
-		(ECDSA.PublicKey secp256r1 $ pnt xy)
+		(ECDSA.PublicKey secp256r1 $ decodePoint xy)
 		(either error id $ B.decode s) hs0) $ throwError
 			ALFatal ADDecryptError $
 			moduleName ++ ".certVerify: client auth failed"
-	where pnt s = case BS.uncons s of
-		Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
-			(either error id $ B.decode x)
-			(either error id $ B.decode y)
-		_ -> error $ moduleName ++ ".certVerify: not implemented point"
 certVerify pk = throwError ALFatal ADUnsupportedCertificate $
 	moduleName ++ ".certVerify: not implement: " ++ show pk
