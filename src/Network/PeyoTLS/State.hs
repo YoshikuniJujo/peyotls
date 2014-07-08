@@ -10,16 +10,20 @@ module Network.PeyoTLS.State (
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite, flushCipherSuiteRead, flushCipherSuiteWrite,
 	getKeys, setKeys,
+	getSettings, setSettings,
 	getInitSet, setInitSet,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 
-	InitialSettings,
+	InitialSettings, Settings,
 	CertSecretKey(..),
 ) where
 
+import Control.Applicative ((<$>))
+import Control.Arrow (first)
 import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, maybeToList)
+import Data.List (find)
 import Data.Word (Word8, Word64)
 import Data.String (IsString(..))
 
@@ -57,7 +61,7 @@ newPartnerId s = (PartnerId i ,) s{
 		radBuffer = "",
 		readSN = 0, writeSN = 0,
 		rnClientFinished = "", rnServerFinished = "",
-		initialSettings = ([], Nothing, Nothing, Nothing)
+		initialSettings = ([], [], Nothing)
 		}
 	sos = states s
 
@@ -65,7 +69,30 @@ type InitialSettings = (
 	[CipherSuite],
 	Maybe (RSA.PrivateKey, X509.CertificateChain),
 	Maybe (ECDSA.PrivateKey, X509.CertificateChain),
-	Maybe X509.CertificateStore)
+	Maybe X509.CertificateStore )
+
+type Settings = (
+	[CipherSuite],
+	[(CertSecretKey, X509.CertificateChain)],
+	Maybe X509.CertificateStore )
+
+convertSettings :: Settings -> InitialSettings
+convertSettings (cs, crts, mcs) = (cs,
+	first rsaKey <$> find (isRsaKey . fst) crts,
+	first ecdsaKey <$> find (isEcdsaKey . fst) crts, mcs)
+
+revertSettings :: InitialSettings -> Settings
+revertSettings (cs, rcrt, ecrt, mcs) = (cs,
+	maybeToList (first RsaKey <$> rcrt) ++
+	maybeToList (first EcdsaKey <$> ecrt), mcs)
+
+isEcdsaKey :: CertSecretKey -> Bool
+isEcdsaKey (EcdsaKey _) = True
+isEcdsaKey _ = False
+
+isRsaKey :: CertSecretKey -> Bool
+isRsaKey (RsaKey _) = True
+isRsaKey _ = False
 
 data StateOne g = StateOne {
 	sKeys :: Keys,
@@ -76,7 +103,7 @@ data StateOne g = StateOne {
 	writeSN :: Word64,
 	rnClientFinished :: BS.ByteString,
 	rnServerFinished :: BS.ByteString,
-	initialSettings :: InitialSettings
+	initialSettings :: Settings
 	}
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g
@@ -179,11 +206,19 @@ getKeys i = sKeys . fromJust' "getKeys" . lookup i . states
 setKeys :: PartnerId -> Keys -> Modify (HandshakeState h g)
 setKeys i = modifyState i . \k st -> st { sKeys = k }
 
+getSettings :: PartnerId -> HandshakeState h g -> Settings
+getSettings i = initialSettings . fromJust' "getSettings" . lookup i . states
+
 getInitSet :: PartnerId -> HandshakeState h g -> InitialSettings
-getInitSet i = initialSettings . fromJust' "getInitSet" . lookup i . states
+getInitSet i = convertSettings .
+	initialSettings . fromJust' "getInitSet" . lookup i . states
+
+setSettings :: PartnerId -> Settings -> Modify (HandshakeState h g)
+setSettings i = modifyState i . \is st -> st { initialSettings = is }
 
 setInitSet :: PartnerId -> InitialSettings -> Modify (HandshakeState h g)
-setInitSet i = modifyState i . \is st -> st { initialSettings = is }
+setInitSet i = modifyState i . \is st -> st
+	{ initialSettings = revertSettings is }
 
 getClientFinished, getServerFinished ::
 	PartnerId -> HandshakeState h g -> BS.ByteString

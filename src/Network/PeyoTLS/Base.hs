@@ -37,6 +37,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 	hlGetContentRn,
 
 	HM.getSettings, HM.setSettings,
+	getSettingsC, setSettingsC,
 	HM.flushAppData_,
 	flushAppData,
 	HM.pushAdBufH,
@@ -71,7 +72,9 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
+import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
+import qualified Data.X509.CertificateStore as X509
 
 import Network.PeyoTLS.Types ( Extension(..),
 	Handshake(..), HandshakeItem(..),
@@ -102,6 +105,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	resetSequenceNumber,
 
 	getSettings, setSettings,
+	getSettingsC, setSettingsC,
 	flushAppData_,
 	getAdBuf,
 	setAdBuf,
@@ -414,3 +418,20 @@ validateAlert vr
 	| X509.Expired `elem` vr = HM.ADCertificateExpired
 	| X509.InFuture `elem` vr = HM.ADCertificateExpired
 	| otherwise = HM.ADCertificateUnknown
+
+getSettingsC :: HandleLike h => HM.HandshakeM h g (
+	[CipherSuite],
+	[(HM.CertSecretKey, X509.CertificateChain)],
+	X509.CertificateStore )
+getSettingsC = do
+	(css, crts, mcs) <- HM.getSettingsC
+	case mcs of
+		Just cs -> return (css, crts, cs)
+		_ -> HM.throwError HM.ALFatal HM.ADInternalError
+			"Network.PeyoTLS.Base.getSettingsC"
+
+setSettingsC :: HandleLike h => (
+		[CipherSuite],
+		[(HM.CertSecretKey, X509.CertificateChain)],
+		X509.CertificateStore ) -> HM.HandshakeM h g ()
+setSettingsC (css, crts, cs) = HM.setSettingsC (css, crts, Just cs)

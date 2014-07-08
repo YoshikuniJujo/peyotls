@@ -19,6 +19,7 @@ module Network.PeyoTLS.Run (
 	resetSequenceNumber,
 
 	getSettings, setSettings,
+	getSettingsC, setSettingsC, TH.Settings,
 	flushAppData_,
 
 	getAdBuf, setAdBuf,
@@ -65,6 +66,7 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	resetSequenceNumber,
 
+	getSettingsT, setSettingsT, Settings,
 	getInitSetT, setInitSetT, InitialSettings,
 	tlsGet_,
 	flushAppData,
@@ -227,8 +229,14 @@ setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
 getSettings :: HandleLike h => HandshakeM h g TH.InitialSettings
 getSettings = gets fst >>= lift . TH.getInitSetT
 
+getSettingsC :: HandleLike h => HandshakeM h g TH.Settings
+getSettingsC = gets fst >>= lift . TH.getSettingsT
+
 setSettings :: HandleLike h => TH.InitialSettings -> HandshakeM h g ()
 setSettings is = gets fst >>= lift . flip TH.setInitSetT is
+
+setSettingsC :: HandleLike h => TH.Settings -> HandshakeM h g ()
+setSettingsC is = gets fst >>= lift . flip TH.setSettingsT is
 
 getAdBuf :: HandleLike h => TH.TlsHandle h g -> TH.TlsM h g BS.ByteString
 getAdBuf = TH.getAdBufT

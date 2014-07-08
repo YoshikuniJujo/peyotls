@@ -7,7 +7,6 @@ module Network.PeyoTLS.Client (
 	ValidateHandle(..), CertSecretKey(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Arrow (first)
 import Control.Monad (when, unless, liftM)
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.List (find, intersect)
@@ -39,8 +38,8 @@ import Network.PeyoTLS.Base (
 	TlsHandle,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
-		getSettings, setSettings,
-	CertSecretKey(..), isRsaKey, isEcdsaKey,
+		getSettingsC, setSettingsC,
+	CertSecretKey(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
@@ -82,29 +81,33 @@ open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandleC h g)
 open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
-	setSettings (cscl, rcrt, ecrt, Just ca)
-	cr <- clientHello cscl
-	handshake rcrt ecrt ca cr
-	where
-	rcrt = first rsaKey <$> find (isRsaKey . fst) crts
-	ecrt = first ecdsaKey <$> find (isEcdsaKey . fst) crts
+	setSettingsC (cscl, crts, ca)
+	handshake crts ca =<< clientHello cscl
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
-	(cscl, rcrt, ecrt, Just ca) <- getSettings
+	(cscl, crts, ca) <- getSettingsC
 	cr <- clientHello cscl
-	flushAppData >>= flip when (handshake rcrt ecrt ca cr)
+	flushAppData >>= flip when (handshake crts ca cr)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
-	(cscl, rcrt, ecrt, Just ca) <- getSettings
-	handshake rcrt ecrt ca =<< clientHello cscl
+	(cscl, crts, ca) <- getSettingsC
+	handshake crts ca =<< clientHello cscl
+
+clientHello :: (HandleLike h, CPRG g) =>
+	[CipherSuite] -> HandshakeM h g BS.ByteString
+clientHello cscl = do
+	cr <- randomByteString 32
+	writeHandshake
+		. ClientHello (3, 3) cr (SessionId "") cscl [CompMethodNull]
+		. Just . (: []) =<< makeClientRenego
+	return cr
 
 handshake :: (ValidateHandle h, CPRG g) =>
-	Maybe (RSA.PrivateKey, X509.CertificateChain) ->
-	Maybe (ECDSA.PrivateKey, X509.CertificateChain) ->
+	[(CertSecretKey, X509.CertificateChain)] ->
 	X509.CertificateStore -> BS.ByteString -> HandshakeM h g ()
-handshake rcrt ecrt ca cr = do
+handshake crts ca cr = do
 	(sr, ke) <- serverHello
 	case ke of
 		RSA -> rsaHandshake cr sr crts ca
@@ -116,21 +119,6 @@ handshake rcrt ecrt ca cr = do
 	where
 	dhType :: DH.Params; dhType = undefined
 	curveType :: ECC.Curve; curveType = undefined
-	crts = case (rcrt, ecrt) of
-		(Just (rsk, rcc), Just (esk, ecc)) -> [
-			(RsaKey rsk, rcc), (EcdsaKey esk, ecc)]
-		(Just (rsk, rcc), _) -> [(RsaKey rsk, rcc)]
-		(_, Just (esk, ecc)) -> [(EcdsaKey esk, ecc)]
-		_ -> []
-
-clientHello :: (HandleLike h, CPRG g) =>
-	[CipherSuite] -> HandshakeM h g BS.ByteString
-clientHello cscl = do
-	cr <- randomByteString 32
-	ri <- makeClientRenego
-	writeHandshake . ClientHello (3, 3) cr (SessionId "") cscl
-		[CompMethodNull] $ Just [ri]
-	return cr
 
 serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
 serverHello = do

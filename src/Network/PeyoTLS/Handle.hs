@@ -13,6 +13,8 @@ module Network.PeyoTLS.Handle (
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
 
+	Settings,
+	getSettingsT, setSettingsT,
 	getInitSetT, setInitSetT,
 	InitialSettings,
 
@@ -54,6 +56,7 @@ import Network.PeyoTLS.Monad (
 	PartnerId, newPartnerId, Keys(..),
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+	Settings, getSettings, setSettings,
 	InitialSettings,
 	getInitSet, setInitSet,
 	CertSecretKey(..),
@@ -388,8 +391,14 @@ setClientFinishedT, setServerFinishedT ::
 setClientFinishedT = setClientFinished . clientId
 setServerFinishedT = setServerFinished . clientId
 
+getSettingsT :: HandleLike h => TlsHandle h g -> TlsM h g Settings
+getSettingsT = getSettings . clientId
+
 getInitSetT :: HandleLike h => TlsHandle h g -> TlsM h g InitialSettings
 getInitSetT = getInitSet . clientId
+
+setSettingsT :: HandleLike h => TlsHandle h g -> Settings -> TlsM h g ()
+setSettingsT = setSettings . clientId
 
 setInitSetT :: HandleLike h => TlsHandle h g -> InitialSettings -> TlsM h g ()
 setInitSetT = setInitSet . clientId
