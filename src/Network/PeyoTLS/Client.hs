@@ -109,16 +109,13 @@ handshake :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> BS.ByteString -> HandshakeM h g ()
 handshake crts ca cr = do
 	(sr, ke) <- serverHello
-	case ke of
-		RSA -> rsaHandshake cr sr crts ca
-		DHE_RSA -> dheHandshake dhType cr sr crts ca
-		ECDHE_RSA -> dheHandshake curveType cr sr crts ca
-		ECDHE_ECDSA -> dheHandshake curveType cr sr crts ca
-		_ -> throwError ALFatal ADHsFailure $
+	($ ca) . ($ crts) . ($ (cr, sr)) $ case ke of
+		RSA -> rsaHandshake
+		DHE_RSA -> dheHandshake (undefined :: DH.Params)
+		ECDHE_RSA -> dheHandshake (undefined :: ECC.Curve)
+		ECDHE_ECDSA -> dheHandshake (undefined :: ECC.Curve)
+		_ -> \_ _ _ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".handshake: not implemented"
-	where
-	dhType :: DH.Params; dhType = undefined
-	curveType :: ECC.Curve; curveType = undefined
 
 serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
 serverHello = do
@@ -138,35 +135,34 @@ serverHello = do
 	setCipherSuite cs
 	return (sr, ke)
 
-rsaHandshake :: (ValidateHandle h, CPRG g) =>
- 	BS.ByteString -> BS.ByteString ->
+rsaHandshake :: (ValidateHandle h, CPRG g) => (BS.ByteString, BS.ByteString) ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
-rsaHandshake cr sr crts ca = do
+rsaHandshake rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
 	unless (null vr) $ throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".rsaHandshake: validate failure"
-	let X509.PubKeyRSA pk =
-		X509.certPubKey . X509.signedObject $ X509.getSigned c
+	pk <- case X509.certPubKey . X509.signedObject $ X509.getSigned c of
+		X509.PubKeyRSA k -> return k
+		_ -> throwError ALFatal ADIllegalParameter $
+			moduleName ++ ".rsaHandshake: require RSA public key"
 	crt <- clientCertificate crts
 	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
-	generateKeys Client (cr, sr) pms
+	generateKeys Client rs pms
 	writeHandshake . Epms =<< encryptRsa pk pms
 	finishHandshake crt
 
-dheHandshake :: (ValidateHandle h, CPRG g, KeyExchangeClass ke, Show (Secret ke),
-	Show (Public ke)) =>
-	ke -> BS.ByteString -> BS.ByteString ->
+dheHandshake :: (ValidateHandle h, CPRG g,
+		KeyExchangeClass ke, Show (Secret ke), Show (Public ke)) =>
+	ke -> (BS.ByteString, BS.ByteString) ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
-dheHandshake t cr sr crts ca = do
+dheHandshake t rs crts ca = do
 	cc@(X509.CertificateChain cs) <- readHandshake
-	let c = last cs
-	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
-		X509.PubKeyRSA pk -> succeed t pk cr sr cc crts ca
-		X509.PubKeyECDSA cv pnt ->
-			succeed t (ek cv pnt) cr sr cc crts ca
+	case X509.certPubKey . X509.signedObject . X509.getSigned $ last cs of
+		X509.PubKeyRSA pk -> succeed t pk rs cc crts ca
+		X509.PubKeyECDSA cv pnt -> succeed t (ek cv pnt) rs cc crts ca
 		_ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".dheHandshake: not implemented"
 	where
@@ -178,10 +174,10 @@ dheHandshake t cr sr crts ca = do
 succeed ::
 	(ValidateHandle h, CPRG g, Verify pk, KeyExchangeClass ke, Show (Secret ke),
 		Show (Public ke)) =>
-	ke -> pk -> BS.ByteString -> BS.ByteString -> X509.CertificateChain ->
+	ke -> pk -> (BS.ByteString, BS.ByteString) -> X509.CertificateChain ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
-succeed t pk cr sr cc crts ca = do
+succeed t pk rs@(cr, sr) cc crts ca = do
 	vr <- handshakeValidate ca cc
 	unless (null vr) $ throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
@@ -192,7 +188,7 @@ succeed t pk cr sr cc crts ca = do
 			moduleName ++ ".succeed: verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
-	generateKeys Client (cr, sr) $ calculateShared ps sv pv
+	generateKeys Client rs $ calculateShared ps sv pv
 	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic ps sv
 	finishHandshake crt
 
