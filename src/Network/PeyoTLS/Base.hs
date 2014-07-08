@@ -27,8 +27,8 @@ module Network.PeyoTLS.Base ( Extension(..),
 	HM.Side(..), HM.RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError,
 	HM.getClientFinished, HM.getServerFinished,
-	checkClientRenego,
-	makeServerRenego,
+	checkClientRenego, makeClientRenego,
+	checkServerRenego, makeServerRenego,
 	Finished(..),
 	HM.ContentType(CTAlert, CTHandshake, CTAppData),
 	Handshake(..),
@@ -391,12 +391,20 @@ eRenegoInfo :: Extension -> Maybe BS.ByteString
 eRenegoInfo (ERenegoInfo ri) = Just ri
 eRenegoInfo _ = Nothing
 
-checkClientRenego :: HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
+checkClientRenego, checkServerRenego ::
+	HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
 checkClientRenego cf = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
 	E.unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
+checkServerRenego ri = do
+	cf <- HM.getClientFinished
+	sf <- HM.getServerFinished
+	E.unless (ri == cf `BS.append` sf) $ HM.throwError
+		HM.ALFatal HM.ADHsFailure
+		"Network.PeyoTLS.Base.checkServerRenego: bad renegotiation"
 
-makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension
+makeClientRenego, makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension
+makeClientRenego = ERenegoInfo `liftM` HM.getClientFinished
 makeServerRenego = ERenegoInfo `liftM`
 	(BS.append `liftM` HM.getClientFinished `E.ap` HM.getServerFinished)
 

@@ -9,6 +9,7 @@ module Network.PeyoTLS.Client (
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
 import Control.Monad (when, unless, liftM)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -33,17 +34,18 @@ import qualified Network.PeyoTLS.Base as HB (names)
 import Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 		AlertLevel(..), AlertDesc(..), throwError,
-		withRandom, randomByteString, debug,
+		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandle,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 		getSettings, setSettings,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
-	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
+	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		setCipherSuite, flushCipherSuite,
+		checkServerRenego, makeClientRenego,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..),
 	CertificateRequest(..), ClientCertificateType(..),
 	ServerHelloDone(..),
@@ -53,8 +55,22 @@ import Network.PeyoTLS.Base (
 	Side(..), RW(..), finishedHash,
 	DhParam(..), generateKs, blindSign,
 
-	getClientFinished, getServerFinished, flushAppData,
+	eRenegoInfo, flushAppData,
 	hlGetRn, hlGetLineRn, hlGetContentRn )
+
+type PeyotlsHandleC = TlsHandleC Handle SystemRNG
+
+newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g } deriving Show
+
+instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
+	type HandleMonad (TlsHandleC h g) = TlsM h g
+	type DebugLevel (TlsHandleC h g) = DebugLevel h
+	hlPut (TlsHandleC t) = hlPut t
+	hlGet = hlGetRn rehandshake . tlsHandleC
+	hlGetLine = hlGetLineRn rehandshake . tlsHandleC
+	hlGetContent = hlGetContentRn rehandshake . tlsHandleC
+	hlDebug (TlsHandleC t) = hlDebug t
+	hlClose (TlsHandleC t) = hlClose t
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Client"
@@ -77,32 +93,26 @@ renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, rcrt, ecrt, Just ca) <- getSettings
 	cr <- clientHello cscl
-	debug "critical" ("CLIENT HASH AFTER CLIENTHELLO" :: String)
-	debug "critical" =<< handshakeHash
-	ne <- flushAppData
-	when ne $ handshake rcrt ecrt ca cr
+	flushAppData >>= flip when (handshake rcrt ecrt ca cr)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
 	(cscl, rcrt, ecrt, Just ca) <- getSettings
-	cr <- clientHello cscl
-	handshake rcrt ecrt ca cr
+	handshake rcrt ecrt ca =<< clientHello cscl
 
 handshake :: (ValidateHandle h, CPRG g) =>
 	Maybe (RSA.PrivateKey, X509.CertificateChain) ->
 	Maybe (ECDSA.PrivateKey, X509.CertificateChain) ->
 	X509.CertificateStore -> BS.ByteString -> HandshakeM h g ()
 handshake rcrt ecrt ca cr = do
-	(sr, cs@(CipherSuite ke _)) <- serverHello
-	setCipherSuite cs
-	debug "critical" ("CLIENT HASH AFTER SERVERHELLO" :: String)
-	debug "critical" =<< handshakeHash
+	(sr, ke) <- serverHello
 	case ke of
 		RSA -> rsaHandshake cr sr crts ca
 		DHE_RSA -> dheHandshake dhType cr sr crts ca
 		ECDHE_RSA -> dheHandshake curveType cr sr crts ca
 		ECDHE_ECDSA -> dheHandshake curveType cr sr crts ca
-		_ -> error "not implemented"
+		_ -> throwError ALFatal ADHsFailure $
+			moduleName ++ ".handshake: not implemented"
 	where
 	dhType :: DH.Params; dhType = undefined
 	curveType :: ECC.Curve; curveType = undefined
@@ -113,32 +123,32 @@ handshake rcrt ecrt ca cr = do
 		(_, Just (esk, ecc)) -> [(EcdsaKey esk, ecc)]
 		_ -> []
 
-getRenegoInfo :: Maybe [Extension] -> Maybe BS.ByteString
-getRenegoInfo Nothing = Nothing
-getRenegoInfo (Just []) = Nothing
-getRenegoInfo (Just (ERenegoInfo rn : _)) = Just rn
-getRenegoInfo (Just (_ : es)) = getRenegoInfo $ Just es
-
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g BS.ByteString
 clientHello cscl = do
 	cr <- randomByteString 32
-	cf <- getClientFinished
+	ri <- makeClientRenego
 	writeHandshake . ClientHello (3, 3) cr (SessionId "") cscl
-		[CompMethodNull] $ Just [ERenegoInfo cf]
+		[CompMethodNull] $ Just [ri]
 	return cr
 
-serverHello :: (HandleLike h, CPRG g) =>
-	HandshakeM h g (BS.ByteString, CipherSuite)
+serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
 serverHello = do
-	cf <- getClientFinished
-	sf <- getServerFinished
-	ServerHello _v sr _sid cs _cm e <- readHandshake
-	let	Just rn = getRenegoInfo e
-		rn0 = cf `BS.append` sf
-	unless (rn == rn0) . throwError ALFatal ADHsFailure $
-		moduleName ++ ".serverHello"
-	return (sr, cs)
+	ServerHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
+	case v of
+		(3, 3) -> return ()
+		_ -> throwError ALFatal ADProtocolVersion $
+			moduleName ++ ".serverHello: only TLS 1.2"
+	case cm of
+		CompMethodNull -> return ()
+		_ -> throwError ALFatal ADHsFailure $
+			moduleName ++ ".serverHello: only compression method null"
+	case listToMaybe . mapMaybe eRenegoInfo $ maybe [] id e of
+		Just ri -> checkServerRenego ri
+		_ -> throwError ALFatal ADInsufficientSecurity $
+			moduleName ++ ".serverHello: require secure renegotiation"
+	setCipherSuite cs
+	return (sr, ke)
 
 rsaHandshake :: (ValidateHandle h, CPRG g) =>
  	BS.ByteString -> BS.ByteString ->
@@ -166,9 +176,9 @@ dheHandshake t cr sr crts ca = do
 	cc@(X509.CertificateChain cs) <- readHandshake
 	let c = last cs
 	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
-		X509.PubKeyRSA pk -> succeedHandshake t pk cr sr cc crts ca
+		X509.PubKeyRSA pk -> succeed t pk cr sr cc crts ca
 		X509.PubKeyECDSA cv pnt ->
-			succeedHandshake t (ek cv pnt) cr sr cc crts ca
+			succeed t (ek cv pnt) cr sr cc crts ca
 		_ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".dheHandshake: not implemented"
 	where
@@ -177,21 +187,21 @@ dheHandshake t cr sr crts ca = do
 		(either error id $ B.decode x)
 		(either error id $ B.decode y)
 
-succeedHandshake ::
+succeed ::
 	(ValidateHandle h, CPRG g, Verify pk, KeyExchangeClass ke, Show (Secret ke),
 		Show (Public ke)) =>
 	ke -> pk -> BS.ByteString -> BS.ByteString -> X509.CertificateChain ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
-succeedHandshake t pk cr sr cc crts ca = do
+succeed t pk cr sr cc crts ca = do
 	vr <- handshakeValidate ca cc
 	unless (null vr) $ throwError ALFatal (validateAlert vr) $
-		moduleName ++ ".succeedHandshake: validate failure"
+		moduleName ++ ".succeed: validate failure"
 	(ps, pv, ha, _sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
 	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) $
 		throwError ALFatal ADDecryptError $
-			moduleName ++ ".succeedHandshake: verify failure"
+			moduleName ++ ".succeed: verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	generateKeys Client (cr, sr) $ calculateShared ps sv pv
@@ -302,7 +312,7 @@ instance SecretKey RSA.PrivateKey where
 	type PubKey RSA.PrivateKey = RSA.PublicKey
 	pubKey _ c = case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> pk
-		_ -> error "TlsClient: RSA.PrivateKey.pubKey"
+		_ -> error $ moduleName ++ ": RSA.PrivateKey.pubKey"
 	sign sk pk m = let pd = rsaPadding pk m in RSA.dp Nothing sk pd
 	algorithm _ = (Sha256, Rsa)
 
@@ -318,17 +328,3 @@ instance SecretKey ECDSA.PrivateKey where
 				ASN1.IntVal r, ASN1.IntVal s,
 				ASN1.End ASN1.Sequence]
 	algorithm _ = (Sha256, Ecdsa)
-
-newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g } deriving Show
-
-instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
-	type HandleMonad (TlsHandleC h g) = TlsM h g
-	type DebugLevel (TlsHandleC h g) = DebugLevel h
-	hlPut (TlsHandleC t) = hlPut t
-	hlGet = hlGetRn rehandshake . tlsHandleC
-	hlGetLine = hlGetLineRn rehandshake . tlsHandleC
-	hlGetContent = hlGetContentRn rehandshake . tlsHandleC
-	hlDebug (TlsHandleC t) = hlDebug t
-	hlClose (TlsHandleC t) = hlClose t
-
-type PeyotlsHandleC = TlsHandleC Handle SystemRNG
