@@ -205,10 +205,9 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 	const `liftM` reqAndCert mcs `ap` do
 		ClientKeyExchange cke <- readHandshake
 		generateKeys Server rs . calculateShared dp sv =<<
-			case B.decode cke of
-				Left em -> throwError ALFatal ADInternalError $
-					moduleName ++ ".dhKeyExchange: " ++ em
-				Right pv -> return pv
+			either (throwError ALFatal ADInternalError .
+					(moduleName ++) . (".dhKeyExchange: " ++))
+				return (B.decode cke)
 
 reqAndCert :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
@@ -220,19 +219,17 @@ reqAndCert mcs = do
 		cc@(X509.CertificateChain (c : _)) <- readHandshake
 		vr <- handshakeValidate cs cc
 		unless (null vr) . throwError ALFatal (validateAlert vr) $
-			"Network.PeyoTLS.Server.reqAndCert: " ++ show vr
+			moduleName ++ ".reqAndCert: " ++ show vr
 		return . X509.certPubKey $ X509.getCertificate c
 
-certVerify :: (HandleLike h, CPRG g, ClSignPublicKey pk) =>
-	pk -> HandshakeM h g ()
+certVerify :: (HandleLike h, CPRG g, ClSignPublicKey pk) => pk -> HandshakeM h g ()
 certVerify pk = do
-	debugCipherSuite . show $ clspAlgorithm pk
+	debugCipherSuite . show $ cspAlgorithm pk
 	hs0 <- handshakeHash
 	DigitallySigned a s <- readHandshake
 	case a of
-		(Sha256, sa)
-			| sa == clspAlgorithm pk -> return ()
+		(Sha256, sa) | sa == cspAlgorithm pk -> return ()
 		_ -> throwError ALFatal ADDecodeError $
 			moduleName ++ ".certVerify: not implement: " ++ show a
-	unless (clsVerify pk s hs0) . throwError ALFatal ADDecryptError $
+	unless (csVerify pk s hs0) . throwError ALFatal ADDecryptError $
 		moduleName ++ ".certVerify: client auth failed "

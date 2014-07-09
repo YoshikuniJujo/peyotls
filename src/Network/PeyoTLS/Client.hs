@@ -246,4 +246,4 @@ finishHandshake crt = do
 		(throwError ALFatal ADDecryptError $
 			moduleName ++ ".finishHandshake: finished hash failure")
 	where
-	digitallySigned sk hs = DigitallySigned (clsAlgorithm sk) $ clsSign sk hs
+	digitallySigned sk hs = DigitallySigned (csAlgorithm sk) $ clsSign sk hs

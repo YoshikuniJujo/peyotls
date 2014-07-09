@@ -478,11 +478,11 @@ instance SecretKey ECDSA.PrivateKey where
 
 class ClSignSecretKey sk where
 	clsSign :: sk -> BS.ByteString -> BS.ByteString
-	clsAlgorithm :: sk -> (HashAlg, SignAlg)
+	csAlgorithm :: sk -> (HashAlg, SignAlg)
 
 instance ClSignSecretKey RSA.PrivateKey where
 	clsSign sk m = let pd = HM.rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
-	clsAlgorithm _ = (Sha256, Rsa)
+	csAlgorithm _ = (Sha256, Rsa)
 
 instance ClSignSecretKey ECDSA.PrivateKey where
 	clsSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
@@ -493,19 +493,19 @@ instance ClSignSecretKey ECDSA.PrivateKey where
 			ASN1.Start ASN1.Sequence,
 				ASN1.IntVal r, ASN1.IntVal s,
 				ASN1.End ASN1.Sequence]
-	clsAlgorithm _ = (Sha256, Ecdsa)
+	csAlgorithm _ = (Sha256, Ecdsa)
 
 class ClSignPublicKey pk where
-	clspAlgorithm :: pk -> SignAlg
-	clsVerify :: pk -> BS.ByteString -> BS.ByteString -> Bool
+	cspAlgorithm :: pk -> SignAlg
+	csVerify :: pk -> BS.ByteString -> BS.ByteString -> Bool
 
 instance ClSignPublicKey RSA.PublicKey where
-	clspAlgorithm _ = Rsa
-	clsVerify k s h = RSA.ep k s == HM.rsaPadding k h
+	cspAlgorithm _ = Rsa
+	csVerify k s h = RSA.ep k s == HM.rsaPadding k h
 
 instance ClSignPublicKey ECDSA.PublicKey where
-	clspAlgorithm _ = Ecdsa
-	clsVerify k = ECDSA.verify id k . either error id . B.decode
+	cspAlgorithm _ = Ecdsa
+	csVerify k = ECDSA.verify id k . either error id . B.decode
 
 makeEcdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
 makeEcdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
