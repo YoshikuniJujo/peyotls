@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Certificate (
-	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
+	CertReq(..), certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..)) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -36,26 +36,23 @@ instance B.Parsable X509.CertificateChain where
 				return . X509.CertificateChain $ reverse cs
 			Left (n, err) -> fail $ show n ++ " " ++ err
 
-data CertificateRequest
-	= CertificateRequest [ClientCertificateType]
-		[(HashAlg, SignAlg)] [X509.DistinguishedName]
---	| CertificateRequestRaw BS.ByteString
+data CertReq = CertReq [ClientCertificateType] [(HashAlg, SignAlg)] [X509.DistinguishedName]
 	deriving Show
 
 certificateRequest :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
-	X509.CertificateStore -> CertificateRequest
-certificateRequest t a = CertificateRequest t a
+	X509.CertificateStore -> CertReq
+certificateRequest t a = CertReq t a
 	. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
 	. X509.listCertificates
 
-instance B.Bytable CertificateRequest where
-	encode (CertificateRequest t a n) = BS.concat [
+instance B.Bytable CertReq where
+	encode (CertReq t a n) = BS.concat [
 		B.addLen w8 $ cmap B.encode t,
 		B.addLen w16 . BS.concat $
 			concatMap (\(h, s) -> [B.encode h, B.encode s]) a,
 		B.addLen w16 . flip cmap n $ B.addLen w16 .
 			ASN1.encodeASN1' ASN1.DER . flip ASN1.toASN1 [] ]
---	encode (CertificateRequestRaw bs) = bs
+--	encode (CertReq bs) = bs
 	decode = B.evalBytableM $ do
 		t <- flip B.list (B.take 1) =<< B.take 1
 		a <- flip B.list ((,) <$> B.take 1 <*> B.take 1) =<< B.take 2
@@ -64,7 +61,7 @@ instance B.Bytable CertificateRequest where
 			a1 <- either (fail . show) return $
 				ASN1.decodeASN1' ASN1.DER bs
 			either (fail . show) (return . fst) $ ASN1.fromASN1 a1
-		return $ CertificateRequest t a n
+		return $ CertReq t a n
 
 data ClientCertificateType = CTRsaSign | CTEcdsaSign | CTRaw Word8
 	deriving (Show, Eq)

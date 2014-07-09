@@ -6,7 +6,6 @@ module Network.PeyoTLS.Base ( Extension(..),
 	makeEcdsaPubKey,
 	ClSignPublicKey(..), ClSignSecretKey(..),
 	SvSignPublicKey(..),
-	decodePoint,
 	PeyotlsM, eRenegoInfo,
 	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
@@ -23,7 +22,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		HM.getCipherSuite, HM.setCipherSuite,
-	CertificateRequest(..), certificateRequest, ClientCertificateType(..), SecretKey(..),
+	CertReq(..), certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..), Epms(..),
 		HM.generateKeys,
 		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
@@ -87,7 +86,7 @@ import Network.PeyoTLS.Types ( Extension(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
+	CertReq(..), certificateRequest, ClientCertificateType(..),
 		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
@@ -378,10 +377,12 @@ validateAlert vr
 	| X509.InFuture `elem` vr = HM.ADCertificateExpired
 	| otherwise = HM.ADCertificateUnknown
 
-getSettingsC :: HandleLike h => HM.HandshakeM h g (
+type SettingsC = (
 	[CipherSuite],
 	[(HM.CertSecretKey, X509.CertificateChain)],
 	X509.CertificateStore )
+
+getSettingsC :: HandleLike h => HM.HandshakeM h g SettingsC
 getSettingsC = do
 	(css, crts, mcs) <- HM.getSettingsC
 	case mcs of
@@ -389,10 +390,7 @@ getSettingsC = do
 		_ -> HM.throwError HM.ALFatal HM.ADInternalError
 			"Network.PeyoTLS.Base.getSettingsC"
 
-setSettingsC :: HandleLike h => (
-		[CipherSuite],
-		[(HM.CertSecretKey, X509.CertificateChain)],
-		X509.CertificateStore ) -> HM.HandshakeM h g ()
+setSettingsC :: HandleLike h => SettingsC -> HM.HandshakeM h g ()
 setSettingsC (css, crts, cs) = HM.setSettingsC (css, crts, Just cs)
 
 moduleName :: String
@@ -406,9 +404,11 @@ decodePoint s = case BS.uncons s of
 	_ -> error $ moduleName ++ ".decodePoint: not implemented point"
 
 class SvSignPublicKey pk where
+	svpAlgorithm :: pk -> SignAlg
 	verify :: HashAlg -> pk -> BS.ByteString -> BS.ByteString -> Bool
 
 instance SvSignPublicKey RSA.PublicKey where
+	svpAlgorithm _ = Rsa
 	verify = rsaVerify
 
 rsaVerify :: HashAlg -> RSA.PublicKey -> BS.ByteString -> BS.ByteString -> Bool
@@ -426,6 +426,7 @@ rsaVerify ha pk sn m = let
 	oid == oid0 && o == hs m
 
 instance SvSignPublicKey ECDSA.PublicKey where
+	svpAlgorithm _ = Ecdsa
 	verify Sha1 pk = ECDSA.verify SHA1.hash pk . either error id . B.decode
 	verify Sha256 pk = ECDSA.verify SHA256.hash pk . either error id . B.decode
 	verify _ _ = error "TlsClient: ECDSA.PublicKey.verify: not implemented"
@@ -477,15 +478,15 @@ instance SecretKey ECDSA.PrivateKey where
 	signatureAlgorithm _ = Ecdsa
 
 class ClSignSecretKey sk where
-	clsSign :: sk -> BS.ByteString -> BS.ByteString
+	csSign :: sk -> BS.ByteString -> BS.ByteString
 	csAlgorithm :: sk -> (HashAlg, SignAlg)
 
 instance ClSignSecretKey RSA.PrivateKey where
-	clsSign sk m = let pd = HM.rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
+	csSign sk m = let pd = HM.rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
 	csAlgorithm _ = (Sha256, Rsa)
 
 instance ClSignSecretKey ECDSA.PrivateKey where
-	clsSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
+	csSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk

@@ -1,13 +1,12 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle,
-	run, open, renegotiate, names,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, renegotiate, names,
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (when, unless, liftM)
+import Control.Monad (when, unless, liftM, ap)
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
@@ -20,37 +19,31 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Network.PeyoTLS.Base as HB (names)
+import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base (
-	PeyotlsM, TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
+	PeyotlsM, TlsM, run,
+		getSettingsC, setSettingsC,
+		hlGetRn, hlGetLineRn, hlGetContentRn,
+	HandshakeM, execHandshakeM, rerunHandshakeM,
+		withRandom, randomByteString, flushAppData,
 		AlertLevel(..), AlertDesc(..), throwError,
-		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TlsHandle_,
+	TlsHandle_, CertSecretKey(..),
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
-		getSettingsC, setSettingsC,
-	CertSecretKey(..),
-	ClientHello(..), ServerHello(..), SessionId(..),
+	ClientHello(..), ServerHello(..), SessionId(..), eRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
-		setCipherSuite, flushCipherSuite,
+		setCipherSuite,
 		checkServerRenego, makeClientRenego,
-	ServerKeyExEcdhe(..), ServerKeyExDhe(..),
-	CertificateRequest(..), ClientCertificateType(..),
+	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
+	CertReq(..), ClientCertificateType(..),
 	ServerHelloDone(..),
-	ClientKeyExchange(..), Epms(..),
-		generateKeys, encryptRsa,
-	DigitallySigned(..), handshakeHash,
-	Side(..), RW(..), finishedHash,
-	DhParam(..), decodePoint,
-
-	eRenegoInfo, flushAppData,
-	hlGetRn, hlGetLineRn, hlGetContentRn,
-	SvSignPublicKey(..), ClSignSecretKey(..),
-	)
+	ClientKeyExchange(..), Epms(..), generateKeys, encryptRsa,
+	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
+	Side(..), RW(..), finishedHash, flushCipherSuite,
+	DhParam(..), makeEcdsaPubKey )
 
 type PeyotlsHandle = TlsHandle Handle SystemRNG
 
@@ -70,7 +63,7 @@ moduleName :: String
 moduleName = "Network.PeyoTLS.Client"
 
 names :: TlsHandle h g -> [String]
-names = HB.names . tlsHandleC
+names = BASE.names . tlsHandleC
 
 open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
@@ -82,8 +75,8 @@ open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, ca) <- getSettingsC
-	cr <- clientHello cscl
-	flushAppData >>= flip when (handshake crts ca cr)
+	clientHello cscl >>= \cr ->
+		flushAppData >>= flip when (handshake crts ca cr)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
@@ -160,26 +153,27 @@ dheHandshake t rs crts ca = do
 		moduleName ++ ".succeed: validate failure"
 	case X509.certPubKey . X509.signedObject . X509.getSigned $ last cs of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
-		X509.PubKeyECDSA cv pt -> succeed t (ek cv pt) rs crts
+		X509.PubKeyECDSA cv pt -> succeed t (makeEcdsaPubKey cv pt) rs crts
 		_ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".dheHandshake: not implemented"
-	where ek cv pt = ECDSA.PublicKey (ECC.getCurveByName cv) (decodePoint pt)
 
 succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 		KeyExchangeClass ke, Show (Secret ke), Show (Public ke)) =>
 	ke -> pk -> (BS.ByteString, BS.ByteString) ->
 	[(CertSecretKey, X509.CertificateChain)] -> HandshakeM h g ()
 succeed t pk rs@(cr, sr) crts = do
-	(ps, pv, ha, _sa, sn) <- serverKeyExchange
+	(ps, pv, ha, sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
+	unless (sa == svpAlgorithm pk) . throwError ALFatal ADHsFailure $
+		pre ++ "sign algorithm unmatch"
 	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
-		throwError ALFatal ADDecryptError $
-			moduleName ++ ".succeed: verify failure"
+		throwError ALFatal ADDecryptError $ pre ++ "verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	generateKeys Client rs $ calculateShared ps sv pv
 	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic ps sv
 	finishHandshake crt
+	where pre = moduleName ++ ".succeed: "
 
 class (DhParam bs, B.Bytable bs, B.Bytable (Public bs)) => KeyExchangeClass bs where
 	serverKeyExchange :: (HandleLike h, CPRG g) => HandshakeM h g
@@ -199,51 +193,41 @@ clientCertificate :: (HandleLike h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->
 	HandshakeM h g (Maybe (CertSecretKey, X509.CertificateChain))
 clientCertificate crts = do
-	shd <- readHandshake
-	case shd of
-		Left (CertificateRequest ca hsa dn) -> do
-			ServerHelloDone <- readHandshake
-			case find (isMatchedCert ca hsa dn) crts of
-				Just (sk, rcc) -> do
-					writeHandshake rcc
-					return $ Just (sk, rcc)
-				_ -> throwError ALFatal ADUnknownCa $
-					moduleName ++ ".clientCertificate: " ++
-						"no certificate"
-		Right ServerHelloDone -> return Nothing
+	h <- readHandshake
+	(\p -> either p (\SHDone -> return Nothing) h) $ \(CertReq cct a dn) -> do
+		SHDone <- readHandshake
+		case find (isMatchedCert cct a dn) crts of
+			Just c ->
+				(>>) <$> writeHandshake . snd <*> return . Just $ c
+			_ -> throwError ALFatal ADUnknownCa $ moduleName ++
+				".clientCertificate: no certificate"
 
 isMatchedCert :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
 	[X509.DistinguishedName] -> (CertSecretKey, X509.CertificateChain) -> Bool
 isMatchedCert ct hsa dn = (&&) <$> csk . fst <*> ccrt . snd
 	where
-	csk (RsaKey _) = CTRsaSign `elem` ct || Rsa `elem` map snd hsa
-	csk (EcdsaKey _) = CTEcdsaSign `elem` ct || Ecdsa `elem` map snd hsa
-	ccrt (X509.CertificateChain cs@(c : _)) =
-		cpk pk && not (null $ intersect dn issr)
-		where
-		obj = X509.signedObject . X509.getSigned
-		pk = X509.certPubKey $ obj c
-		issr = map (X509.certIssuerDN . obj) cs
-	ccrt _ = error "TlsClient.certIsOk: empty certificate chain"
-	cpk X509.PubKeyRSA {} = CTRsaSign `elem` ct || Rsa `elem` map snd hsa
-	cpk X509.PubKeyECDSA {} = CTEcdsaSign `elem` ct || Ecdsa `elem` map snd hsa
-	cpk _ = False
+	obj = X509.signedObject . X509.getSigned
+	rsa = CTRsaSign `elem` ct || Rsa `elem` map snd hsa
+	ecdsa = CTEcdsaSign `elem` ct || Ecdsa `elem` map snd hsa
+	csk (RsaKey _) = rsa; csk (EcdsaKey _) = ecdsa
+	ccrt (X509.CertificateChain cs) =
+		cpk (X509.certPubKey . obj $ last cs) &&
+		not (null . intersect dn $ map (X509.certIssuerDN . obj) cs)
+	cpk X509.PubKeyRSA{} = rsa; cpk X509.PubKeyECDSA{} = ecdsa; cpk _ = False
 
 finishHandshake :: (HandleLike h, CPRG g) =>
 	Maybe (CertSecretKey, X509.CertificateChain) -> HandshakeM h g ()
 finishHandshake crt = do
 	hs <- handshakeHash
 	case fst <$> crt of
-		Just (RsaKey sk) -> writeHandshake $ digitallySigned sk hs
-		Just (EcdsaKey sk) -> writeHandshake $ digitallySigned sk hs
+		Just (RsaKey sk) -> writeHandshake $
+			DigitallySigned (csAlgorithm sk) $ csSign sk hs
+		Just (EcdsaKey sk) -> writeHandshake $
+			DigitallySigned (csAlgorithm sk) $ csSign sk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
-	fc <- finishedHash Client
-	writeHandshake fc
+	writeHandshake =<< finishedHash Client
 	getChangeCipherSpec >> flushCipherSuite Read
-	fs <- finishedHash Server
-	(fs ==) `liftM` readHandshake >>= flip unless
+	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
 		(throwError ALFatal ADDecryptError $
 			moduleName ++ ".finishHandshake: finished hash failure")
-	where
-	digitallySigned sk hs = DigitallySigned (csAlgorithm sk) $ clsSign sk hs

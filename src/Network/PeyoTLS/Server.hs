@@ -29,23 +29,21 @@ import Network.PeyoTLS.Base (
 		hlGetRn, hlGetLineRn, hlGetContentRn,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
-		throwError, debugCipherSuite,
+		AlertLevel(..), AlertDesc(..), throwError, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandle_, CertSecretKey(..), isRsaKey, isEcdsaKey,
-		readHandshake, getChangeCipherSpec,
-		writeHandshake, writeHandshakeNH, putChangeCipherSpec,
-	AlertLevel(..), AlertDesc(..),
+		readHandshake, writeHandshake, writeHandshakeNH,
+		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
-	ClientHello(..), ServerHello(..), SessionId(..),
-		Extension(..), eRenegoInfo,
+	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClientRenego, makeServerRenego,
-	ServerKeyExchange(..),
+	ServerKeyExchange(..), SecretKey(..),
 	certificateRequest, ClientCertificateType(..),
 	ServerHelloDone(..),
-	ClientKeyExchange(..), Epms(..), SecretKey(..), generateKeys, decryptRsa,
+	ClientKeyExchange(..), Epms(..), generateKeys, decryptRsa,
 	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
@@ -214,7 +212,7 @@ reqAndCert :: (ValidateHandle h, CPRG g) =>
 reqAndCert mcs = do
 	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
 		[CTRsaSign, CTEcdsaSign] [(Sha256, Rsa), (Sha256, Ecdsa)]
-	writeHandshake ServerHelloDone
+	writeHandshake SHDone
 	flip (maybe $ return Nothing) mcs $ liftM Just . \cs -> do
 		cc@(X509.CertificateChain (c : _)) <- readHandshake
 		vr <- handshakeValidate cs cc

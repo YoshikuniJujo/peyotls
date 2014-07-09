@@ -7,7 +7,7 @@ module Network.PeyoTLS.Types ( Extension(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
+	CertReq(..), certificateRequest, ClientCertificateType(..),
 		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) ) where
@@ -28,14 +28,14 @@ import Network.PeyoTLS.Hello ( Extension(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	CompMethod(..), HashAlg(..), SignAlg(..) )
 import Network.PeyoTLS.Certificate (
-	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
+	CertReq(..), certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..) )
 
 data Handshake
 	= HHelloReq
 	| HClientHello ClientHello           | HServerHello ServerHello
 	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
-	| HCertificateReq CertificateRequest | HServerHelloDone
+	| HCertificateReq CertReq | HServerHelloDone
 	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyExchange
 	| HFinished BS.ByteString            | HRaw Type BS.ByteString
 	deriving Show
@@ -163,13 +163,13 @@ instance B.Parsable ServerKeyExEcdhe where
 hasasn :: B.BytableM (HashAlg, SignAlg, BS.ByteString)
 hasasn = (,,) <$> B.parse <*> B.parse <*> (B.take =<< B.take 2)
 
-instance HandshakeItem CertificateRequest where
+instance HandshakeItem CertReq where
 	fromHandshake (HCertificateReq cr) = Just cr
 	fromHandshake _ = Nothing
 	toHandshake = HCertificateReq
 
 instance HandshakeItem ServerHelloDone where
-	fromHandshake HServerHelloDone = Just ServerHelloDone
+	fromHandshake HServerHelloDone = Just SHDone
 	fromHandshake _ = Nothing
 	toHandshake _ = HServerHelloDone
 
@@ -205,7 +205,7 @@ instance HandshakeItem Finished where
 	fromHandshake _ = Nothing
 	toHandshake (Finished f) = HFinished f
 
-data ServerHelloDone = ServerHelloDone deriving Show
+data ServerHelloDone = SHDone deriving Show
 
 data Type
 	= THelloRequest | TClientHello | TServerHello
