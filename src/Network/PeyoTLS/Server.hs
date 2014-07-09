@@ -76,9 +76,9 @@ moduleName = "Network.PeyoTLS.Server"
 names :: TlsHandle h g -> [String]
 names = BASE.names . tlsHandleS
 
-open :: (ValidateHandle h, CPRG g) => h ->
-	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
-	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
+open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
+	[(CertSecretKey, X509.CertificateChain)] -> Maybe X509.CertificateStore ->
+	TlsM h g (TlsHandle h g)
 open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 	((>>) <$> setSettings <*> handshake) (cssv',
 		first rsaKey <$> find (isRsaKey . fst) crts,
@@ -109,20 +109,19 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> throwError ALFatal ADInternalError $
 			pre ++ "not implemented bulk encryption type"
-	mpk <- ($ mcs) . ($ (cr, sr)) $ case (ke, rcrt, ecrt) of
-		(RSA, Just (rsk, _), _) -> rsaKeyExchange rsk cv
-		(DHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha dh3072Modp rsk
-		(ECDHE_RSA, Just (rsk, _), _) -> dhKeyExchange ha secp256r1 rsk
-		(ECDHE_ECDSA, _, Just (esk, _)) -> dhKeyExchange ha secp256r1 esk
+	mpk <- ($ mcs) . ($ (cr, sr)) $ case (ke, fst <$> rcrt, fst <$> ecrt) of
+		(RSA, Just rsk, _) -> rsaKeyExchange rsk cv
+		(DHE_RSA, Just rsk, _) -> dhKeyExchange ha dh3072Modp rsk
+		(ECDHE_RSA, Just rsk, _) -> dhKeyExchange ha secp256r1 rsk
+		(ECDHE_ECDSA, _, Just esk) -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> throwError ALFatal ADInternalError $
 			pre ++ "no implemented key exchange type or " ++
 				"no applicable certificate files"
-	case mpk of
-		Just (X509.PubKeyRSA pk) -> certVerify pk
-		Just (X509.PubKeyECDSA c xy) -> certVerify $ makeEcdsaPubKey c xy
-		Just pk -> throwError ALFatal ADUnsupportedCertificate $
+	flip (maybe $ return ()) mpk $ \pk -> case pk of
+		X509.PubKeyRSA rpk -> certVerify rpk
+		X509.PubKeyECDSA c xy -> certVerify $ makeEcdsaPubKey c xy
+		_ -> throwError ALFatal ADUnsupportedCertificate $
 			pre ++ "not implement: " ++ show pk
-		Nothing -> return ()
 	getChangeCipherSpec >> flushCipherSuite Read
 	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok -> unless ok .
 		throwError ALFatal ADDecryptError $ pre ++ "wrong finished hash"
@@ -136,7 +135,7 @@ clientHello cssv = do
 	ClientHello cv cr _sid cscl cms me <- readHandshake
 	checkRenegoInfo cscl me
 	unless (cv >= version) . throwError ALFatal ADProtocolVersion $
-		pre ++ "client version should 3.3 or more"
+		pre ++ "only implement TLS 1.2"
 	unless (CompMethodNull `elem` cms) . throwError ALFatal ADDecodeError $
 		pre ++ "compression method NULL must be supported"
 	(ke, be) <- case find (`elem` cscl) cssv of
@@ -144,7 +143,7 @@ clientHello cssv = do
 		_ -> throwError ALFatal ADHsFailure $
 			pre ++ "no acceptable set of security parameters: \n\t" ++
 			"cscl: " ++ show cscl ++ "\n\t" ++
-			"cssv: " ++ show cssv ++ "\n\t"
+			"cssv: " ++ show cssv ++ "\n"
 	return (ke, be, cr, cv)
 	where pre = moduleName ++ ".clientHello: "
 
@@ -152,7 +151,7 @@ checkRenegoInfo ::
 	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
 checkRenegoInfo cscl me = (\n -> maybe n checkClientRenego mcf) . throwError
 	ALFatal ADInsufficientSecurity $
-		moduleName ++ ".checkRenego: require secure renegotiation"
+	moduleName ++ ".checkRenego: require secure renegotiation"
 	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
 		(True, _) -> Just ""
 		(_, Just e) -> listToMaybe $ mapMaybe eRenegoInfo e
@@ -199,21 +198,17 @@ dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 	sv <- withRandom $ generateSecret dp
 	bl <- withRandom $ generateBlinder sk
-	let pvs = B.encode $ calculatePublic dp sv
+	let pv = B.encode $ calculatePublic dp sv
 	writeHandshake
-		. ServerKeyEx edp pvs ha (signatureAlgorithm sk)
-		. sign ha bl sk $ BS.concat [cr, sr, edp, pvs]
+		. ServerKeyEx (B.encode dp) pv ha (signatureAlgorithm sk)
+		. sign ha bl sk $ BS.concat [cr, sr, B.encode dp, pv]
 	const `liftM` reqAndCert mcs `ap` do
 		ClientKeyExchange cke <- readHandshake
-		pvc <- case B.decode cke of
-			Left em -> throwError ALFatal ADInternalError $ pre ++ em
-			Right pv -> return pv
-		generateKeys Server rs =<< case Right $ calculateShared dp sv pvc of
-			Left em -> throwError ALFatal ADInternalError $ pre ++ em
-			Right sh -> return sh
-	where
-	edp = B.encode dp
-	pre = "Network.PeyoTLS.Server.dhKeyExchange: "
+		generateKeys Server rs . calculateShared dp sv =<<
+			case B.decode cke of
+				Left em -> throwError ALFatal ADInternalError $
+					moduleName ++ ".dhKeyExchange: " ++ em
+				Right pv -> return pv
 
 reqAndCert :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
