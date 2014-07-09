@@ -3,6 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Base ( Extension(..),
+	SvSignPublicKey(..), ClSignSecretKey(..),
 	decodePoint,
 	PeyotlsM, eRenegoInfo,
 	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
@@ -72,6 +73,7 @@ import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
@@ -192,52 +194,6 @@ encodeContent :: Content -> (HM.ContentType, BS.ByteString)
 encodeContent (CCCSpec ccs) = (HM.CTCCSpec, B.encode ccs)
 encodeContent (CAlert al ad) = (HM.CTAlert, BS.pack [al, ad])
 encodeContent (CHandshake hss) = (HM.CTHandshake, B.encode hss)
-
-class SecretKey sk where
-	type Blinder sk
-	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
-	sign :: HashAlg -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
-	signatureAlgorithm :: sk -> SignAlg
-
-instance SecretKey RSA.PrivateKey where
-	type Blinder RSA.PrivateKey = RSA.Blinder
-	generateBlinder sk rng =
-		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
-	sign hs bl sk bs = let
-		(h, oid) = first ($ bs) $ case hs of
-			Sha1 -> (SHA1.hash,
-				ASN1.OID [1, 3, 14, 3, 2, 26])
-			Sha256 -> (SHA256.hash,
-				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
-			_ -> error $ "HandshakeBase: " ++
-				"not implemented bulk encryption type"
-		a = [ASN1.Start ASN1.Sequence,
-			ASN1.Start ASN1.Sequence,
-				oid, ASN1.Null, ASN1.End ASN1.Sequence,
-			ASN1.OctetString h, ASN1.End ASN1.Sequence]
-		b = ASN1.encodeASN1' ASN1.DER a
-		pd = BS.concat [ "\x00\x01",
-			BS.replicate (ps - 3 - BS.length b) 0xff, "\NUL", b ]
-		ps = RSA.public_size $ RSA.private_pub sk in
-		RSA.dp (Just bl) sk pd
-	signatureAlgorithm _ = Rsa
-
-instance SecretKey ECDSA.PrivateKey where
-	type Blinder ECDSA.PrivateKey = Integer
-	generateBlinder _ rng = let
-		(Right bl, rng') = first B.decode $ cprgGenerate 32 rng in
-		(bl, rng')
-	sign ha bl sk = B.encode .
-		(($) <$> blindSign bl hs sk . generateKs (hs, bls) q x <*> id)
-		where
-		(hs, bls) = case ha of
-			Sha1 -> (SHA1.hash, 64)
-			Sha256 -> (SHA256.hash, 64)
-			_ -> error $ "HandshakeBase: " ++
-				"not implemented bulk encryption type"
-		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
-		x = ECDSA.private_d sk
-	signatureAlgorithm _ = Ecdsa
 
 class DhParam b where
 	type Secret b
@@ -446,3 +402,93 @@ decodePoint s = case BS.uncons s of
 		(either error id $ B.decode x)
 		(either error id $ B.decode y)
 	_ -> error $ moduleName ++ ".decodePoint: not implemented point"
+
+class SvSignPublicKey pk where
+	verify :: HashAlg -> pk -> BS.ByteString -> BS.ByteString -> Bool
+
+instance SvSignPublicKey RSA.PublicKey where
+	verify = rsaVerify
+
+rsaVerify :: HashAlg -> RSA.PublicKey -> BS.ByteString -> BS.ByteString -> Bool
+rsaVerify ha pk sn m = let
+	(hs, oid0) = case ha of
+		Sha1 -> (SHA1.hash, ASN1.OID [1, 3, 14, 3, 2, 26])
+		Sha256 -> (SHA256.hash, ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
+		_ -> error "not implemented"
+	(o, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
+		. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
+		Right [ASN1.Start ASN1.Sequence,
+			ASN1.Start ASN1.Sequence, oid_, ASN1.Null, ASN1.End ASN1.Sequence,
+			ASN1.OctetString o_, ASN1.End ASN1.Sequence ] -> (o_, oid_)
+		e -> error $ show e in
+	oid == oid0 && o == hs m
+
+instance SvSignPublicKey ECDSA.PublicKey where
+	verify Sha1 pk = ECDSA.verify SHA1.hash pk . either error id . B.decode
+	verify Sha256 pk = ECDSA.verify SHA256.hash pk . either error id . B.decode
+	verify _ _ = error "TlsClient: ECDSA.PublicKey.verify: not implemented"
+
+class SecretKey sk where
+	type Blinder sk
+	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
+	sign :: HashAlg -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
+	signatureAlgorithm :: sk -> SignAlg
+
+instance SecretKey RSA.PrivateKey where
+	type Blinder RSA.PrivateKey = RSA.Blinder
+	generateBlinder sk rng =
+		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
+	sign hs bl sk bs = let
+		(h, oid) = first ($ bs) $ case hs of
+			Sha1 -> (SHA1.hash,
+				ASN1.OID [1, 3, 14, 3, 2, 26])
+			Sha256 -> (SHA256.hash,
+				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
+			_ -> error $ "HandshakeBase: " ++
+				"not implemented bulk encryption type"
+		a = [ASN1.Start ASN1.Sequence,
+			ASN1.Start ASN1.Sequence,
+				oid, ASN1.Null, ASN1.End ASN1.Sequence,
+			ASN1.OctetString h, ASN1.End ASN1.Sequence]
+		b = ASN1.encodeASN1' ASN1.DER a
+		pd = BS.concat [ "\x00\x01",
+			BS.replicate (ps - 3 - BS.length b) 0xff, "\NUL", b ]
+		ps = RSA.public_size $ RSA.private_pub sk in
+		RSA.dp (Just bl) sk pd
+	signatureAlgorithm _ = Rsa
+
+instance SecretKey ECDSA.PrivateKey where
+	type Blinder ECDSA.PrivateKey = Integer
+	generateBlinder _ rng = let
+		(Right bl, rng') = first B.decode $ cprgGenerate 32 rng in
+		(bl, rng')
+	sign ha bl sk = B.encode .
+		(($) <$> blindSign bl hs sk . generateKs (hs, bls) q x <*> id)
+		where
+		(hs, bls) = case ha of
+			Sha1 -> (SHA1.hash, 64)
+			Sha256 -> (SHA256.hash, 64)
+			_ -> error $ "HandshakeBase: " ++
+				"not implemented bulk encryption type"
+		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
+		x = ECDSA.private_d sk
+	signatureAlgorithm _ = Ecdsa
+
+class ClSignSecretKey sk where
+	clsSign :: sk -> BS.ByteString -> BS.ByteString
+	clsAlgorithm :: sk -> (HashAlg, SignAlg)
+
+instance ClSignSecretKey RSA.PrivateKey where
+	clsSign sk m = let pd = HM.rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
+	clsAlgorithm _ = (Sha256, Rsa)
+
+instance ClSignSecretKey ECDSA.PrivateKey where
+	clsSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
+		where
+		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
+		x = ECDSA.private_d sk
+		enc (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
+			ASN1.Start ASN1.Sequence,
+				ASN1.IntVal r, ASN1.IntVal s,
+				ASN1.End ASN1.Sequence]
+	clsAlgorithm _ = (Sha256, Ecdsa)

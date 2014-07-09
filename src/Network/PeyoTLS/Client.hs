@@ -15,17 +15,10 @@ import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ASN1.Types as ASN1
-import qualified Data.ASN1.Encoding as ASN1
-import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
-import qualified Crypto.Hash.SHA1 as SHA1
-import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.PubKey.DH as DH
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
@@ -49,13 +42,15 @@ import Network.PeyoTLS.Base (
 	CertificateRequest(..), ClientCertificateType(..),
 	ServerHelloDone(..),
 	ClientKeyExchange(..), Epms(..),
-		generateKeys, encryptRsa, rsaPadding,
+		generateKeys, encryptRsa,
 	DigitallySigned(..), handshakeHash,
 	Side(..), RW(..), finishedHash,
-	DhParam(..), generateKs, blindSign, decodePoint,
+	DhParam(..), decodePoint,
 
 	eRenegoInfo, flushAppData,
-	hlGetRn, hlGetLineRn, hlGetContentRn )
+	hlGetRn, hlGetLineRn, hlGetContentRn,
+	SvSignPublicKey(..), ClSignSecretKey(..),
+	)
 
 type PeyotlsHandleC = TlsHandleC Handle SystemRNG
 
@@ -170,7 +165,7 @@ dheHandshake t rs crts ca = do
 			moduleName ++ ".dheHandshake: not implemented"
 	where ek cv pt = ECDSA.PublicKey (ECC.getCurveByName cv) (decodePoint pt)
 
-succeed :: (ValidateHandle h, CPRG g, Verify pk,
+succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 		KeyExchangeClass ke, Show (Secret ke), Show (Public ke)) =>
 	ke -> pk -> (BS.ByteString, BS.ByteString) ->
 	[(CertSecretKey, X509.CertificateChain)] -> HandshakeM h g ()
@@ -199,31 +194,6 @@ instance KeyExchangeClass DH.Params where
 	serverKeyExchange = do
 		ServerKeyExDhe ps pv ha sa sn <- readHandshake
 		return (ps, pv, ha, sa, sn)
-
-class Verify pk where
-	verify :: HashAlg -> pk -> BS.ByteString -> BS.ByteString -> Bool
-
-instance Verify RSA.PublicKey where
-	verify = rsaVerify
-
-rsaVerify :: HashAlg -> RSA.PublicKey -> BS.ByteString -> BS.ByteString -> Bool
-rsaVerify ha pk sn m = let
-	(hs, oid0) = case ha of
-		Sha1 -> (SHA1.hash, ASN1.OID [1, 3, 14, 3, 2, 26])
-		Sha256 -> (SHA256.hash, ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
-		_ -> error "not implemented"
-	(o, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
-		. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
-		Right [ASN1.Start ASN1.Sequence,
-			ASN1.Start ASN1.Sequence, oid_, ASN1.Null, ASN1.End ASN1.Sequence,
-			ASN1.OctetString o_, ASN1.End ASN1.Sequence ] -> (o_, oid_)
-		e -> error $ show e in
-	oid == oid0 && o == hs m
-
-instance Verify ECDSA.PublicKey where
-	verify Sha1 pk = ECDSA.verify SHA1.hash pk . either error id . B.decode
-	verify Sha256 pk = ECDSA.verify SHA256.hash pk . either error id . B.decode
-	verify _ _ = error "TlsClient: ECDSA.PublicKey.verify: not implemented"
 
 clientCertificate :: (HandleLike h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->
@@ -263,11 +233,9 @@ finishHandshake :: (HandleLike h, CPRG g) =>
 	Maybe (CertSecretKey, X509.CertificateChain) -> HandshakeM h g ()
 finishHandshake crt = do
 	hs <- handshakeHash
-	case crt of
-		Just (RsaKey sk, X509.CertificateChain (c : _)) ->
-			writeHandshake $ digitallySigned sk (pubKey sk c) hs
-		Just (EcdsaKey sk, X509.CertificateChain (c : _)) ->
-			writeHandshake $ digitallySigned sk (pubKey sk c) hs
+	case fst <$> crt of
+		Just (RsaKey sk) -> writeHandshake $ digitallySigned sk hs
+		Just (EcdsaKey sk) -> writeHandshake $ digitallySigned sk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
 	fc <- finishedHash Client
@@ -278,31 +246,4 @@ finishHandshake crt = do
 		(throwError ALFatal ADDecryptError $
 			moduleName ++ ".finishHandshake: finished hash failure")
 	where
-	digitallySigned sk pk hs = DigitallySigned (algorithm sk) $ sign sk pk hs
-
-class SecretKey sk where
-	type PubKey sk
-	pubKey :: sk -> X509.SignedCertificate -> PubKey sk
-	sign :: sk -> PubKey sk -> BS.ByteString -> BS.ByteString
-	algorithm :: sk -> (HashAlg, SignAlg)
-
-instance SecretKey RSA.PrivateKey where
-	type PubKey RSA.PrivateKey = RSA.PublicKey
-	pubKey _ c = case X509.certPubKey . X509.signedObject $ X509.getSigned c of
-		X509.PubKeyRSA pk -> pk
-		_ -> error $ moduleName ++ ": RSA.PrivateKey.pubKey"
-	sign sk pk m = let pd = rsaPadding pk m in RSA.dp Nothing sk pd
-	algorithm _ = (Sha256, Rsa)
-
-instance SecretKey ECDSA.PrivateKey where
-	type PubKey ECDSA.PrivateKey = ()
-	pubKey _ _ = ()
-	sign sk _ m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
-		where
-		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
-		x = ECDSA.private_d sk
-		enc (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
-			ASN1.Start ASN1.Sequence,
-				ASN1.IntVal r, ASN1.IntVal s,
-				ASN1.End ASN1.Sequence]
-	algorithm _ = (Sha256, Ecdsa)
+	digitallySigned sk hs = DigitallySigned (clsAlgorithm sk) $ clsSign sk hs
