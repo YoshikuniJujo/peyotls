@@ -8,7 +8,7 @@ module Network.PeyoTLS.Client (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, liftM)
-import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -123,7 +123,7 @@ serverHello = do
 		CompMethodNull -> return ()
 		_ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".serverHello: only compression method null"
-	case listToMaybe . mapMaybe eRenegoInfo $ maybe [] id e of
+	case listToMaybe . mapMaybe eRenegoInfo $ fromMaybe [] e of
 		Just ri -> checkServerRenego ri
 		_ -> throwError ALFatal ADInsufficientSecurity $
 			moduleName ++ ".serverHello: require secure renegotiation"
@@ -136,7 +136,7 @@ rsaHandshake :: (ValidateHandle h, CPRG g) => (BS.ByteString, BS.ByteString) ->
 rsaHandshake rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) $ throwError ALFatal (validateAlert vr) $
+	unless (null vr) . throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".rsaHandshake: validate failure"
 	pk <- case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA k -> return k
@@ -156,7 +156,7 @@ dheHandshake :: (ValidateHandle h, CPRG g,
 dheHandshake t rs crts ca = do
 	cc@(X509.CertificateChain cs) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) $ throwError ALFatal (validateAlert vr) $
+	unless (null vr) . throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
 	case X509.certPubKey . X509.signedObject . X509.getSigned $ last cs of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
@@ -172,7 +172,7 @@ succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 succeed t pk rs@(cr, sr) crts = do
 	(ps, pv, ha, _sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
-	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) $
+	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
 		throwError ALFatal ADDecryptError $
 			moduleName ++ ".succeed: verify failure"
 	crt <- clientCertificate crts

@@ -1,5 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, TypeFamilies, FlexibleContexts,
-	PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Server (
 	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS, run, open, renegotiate, names,
@@ -22,40 +21,35 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
-import qualified Crypto.Types.PubKey.ECC as ECC
-import qualified Crypto.Types.PubKey.ECDSA as ECDSA
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Network.PeyoTLS.Base as HB (names)
+import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run,
+		SettingsS, getSettings, setSettings,
+		hlGetRn, hlGetLineRn, hlGetContentRn,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
+		withRandom, randomByteString, flushAppData,
 		throwError, debugCipherSuite,
-		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandle, CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, getChangeCipherSpec,
-		writeHandshake, putChangeCipherSpec,
-		writeHandshakeNH,
+		writeHandshake, writeHandshakeNH, putChangeCipherSpec,
 	AlertLevel(..), AlertDesc(..),
-	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
+	Handshake(HHelloReq),
+	ClientHello(..), ServerHello(..), SessionId(..),
+		Extension(..), eRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClientRenego, makeServerRenego,
 	ServerKeyExchange(..),
-	certificateRequest, ClientCertificateType(..), SecretKey(..),
+	certificateRequest, ClientCertificateType(..),
 	ServerHelloDone(..),
-	ClientKeyExchange(..), Epms(..),
-		generateKeys, decryptRsa, rsaPadding,
-	DigitallySigned(..), handshakeHash,
+	ClientKeyExchange(..), Epms(..), SecretKey(..), generateKeys, decryptRsa,
+	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1, decodePoint,
-
-	Handshake(HHelloReq), eRenegoInfo, getSettings, setSettings, flushAppData,
-	hlGetRn, hlGetLineRn, hlGetContentRn )
+	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 )
 
 type PeyotlsHandleS = TlsHandleS Handle SystemRNG
 
@@ -72,11 +66,6 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
 	hlClose (TlsHandleS t) = hlClose t
 
 type Version = (Word8, Word8)
-type Settings = (
-	[CipherSuite],
-	Maybe (RSA.PrivateKey, X509.CertificateChain),
-	Maybe (ECDSA.PrivateKey, X509.CertificateChain),
-	Maybe X509.CertificateStore )
 
 version :: Version
 version = (3, 3)
@@ -85,7 +74,7 @@ moduleName :: String
 moduleName = "Network.PeyoTLS.Server"
 
 names :: TlsHandleS h g -> [String]
-names = HB.names . tlsHandleS
+names = BASE.names . tlsHandleS
 
 open :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
@@ -111,7 +100,7 @@ renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshakeNH HHelloReq >>
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
 
-handshake :: (ValidateHandle h, CPRG g) => Settings -> HandshakeM h g ()
+handshake :: (ValidateHandle h, CPRG g) => SettingsS -> HandshakeM h g ()
 handshake (cssv, rcrt, ecrt, mcs) = do
 	(ke, be, cr, cv) <- clientHello cssv
 	sr <- serverHello (snd <$> rcrt) (snd <$> ecrt)
@@ -128,11 +117,15 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 		_ -> \_ _ -> throwError ALFatal ADInternalError $
 			pre ++ "no implemented key exchange type or " ++
 				"no applicable certificate files"
-	maybe (return ()) certVerify mpk
+	case mpk of
+		Just (X509.PubKeyRSA pk) -> certVerify pk
+		Just (X509.PubKeyECDSA c xy) -> certVerify $ makeEcdsaPubKey c xy
+		Just pk -> throwError ALFatal ADUnsupportedCertificate $
+			pre ++ "not implement: " ++ show pk
+		Nothing -> return ()
 	getChangeCipherSpec >> flushCipherSuite Read
-	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok ->
-		unless ok . throwError ALFatal ADDecryptError $
-			pre ++ "wrong finished hash"
+	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok -> unless ok .
+		throwError ALFatal ADDecryptError $ pre ++ "wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
 	where pre = moduleName ++ ".handshake: "
@@ -235,29 +228,16 @@ reqAndCert mcs = do
 			"Network.PeyoTLS.Server.reqAndCert: " ++ show vr
 		return . X509.certPubKey $ X509.getCertificate c
 
-certVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
-certVerify (X509.PubKeyRSA pk) = do
-	debugCipherSuite "RSA"
-	hs0 <- rsaPadding pk `liftM` handshakeHash
-	DigitallySigned a s <- readHandshake
-	case a of
-		(Sha256, Rsa) -> return ()
-		_ -> throwError ALFatal ADDecodeError $
-			moduleName ++ ".certVerify: not implement: " ++ show a
-	unless (RSA.ep pk s == hs0) $ throwError ALFatal ADDecryptError $
-		moduleName ++ ".certVerify: client auth failed "
-certVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
-	debugCipherSuite "ECDSA"
+certVerify :: (HandleLike h, CPRG g, ClSignPublicKey pk) =>
+	pk -> HandshakeM h g ()
+certVerify pk = do
+	debugCipherSuite . show $ clspAlgorithm pk
 	hs0 <- handshakeHash
 	DigitallySigned a s <- readHandshake
 	case a of
-		(Sha256, Ecdsa) -> return ()
+		(Sha256, sa)
+			| sa == clspAlgorithm pk -> return ()
 		_ -> throwError ALFatal ADDecodeError $
 			moduleName ++ ".certVerify: not implement: " ++ show a
-	unless (ECDSA.verify id
-		(ECDSA.PublicKey secp256r1 $ decodePoint xy)
-		(either error id $ B.decode s) hs0) $ throwError
-			ALFatal ADDecryptError $
-			moduleName ++ ".certVerify: client auth failed"
-certVerify pk = throwError ALFatal ADUnsupportedCertificate $
-	moduleName ++ ".certVerify: not implement: " ++ show pk
+	unless (clsVerify pk s hs0) . throwError ALFatal ADDecryptError $
+		moduleName ++ ".certVerify: client auth failed "

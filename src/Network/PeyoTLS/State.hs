@@ -15,7 +15,7 @@ module Network.PeyoTLS.State (
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 
-	InitialSettings, Settings,
+	SettingsS, Settings,
 	CertSecretKey(..),
 ) where
 
@@ -65,7 +65,7 @@ newPartnerId s = (PartnerId i ,) s{
 		}
 	sos = states s
 
-type InitialSettings = (
+type SettingsS = (
 	[CipherSuite],
 	Maybe (RSA.PrivateKey, X509.CertificateChain),
 	Maybe (ECDSA.PrivateKey, X509.CertificateChain),
@@ -76,12 +76,12 @@ type Settings = (
 	[(CertSecretKey, X509.CertificateChain)],
 	Maybe X509.CertificateStore )
 
-convertSettings :: Settings -> InitialSettings
+convertSettings :: Settings -> SettingsS
 convertSettings (cs, crts, mcs) = (cs,
 	first rsaKey <$> find (isRsaKey . fst) crts,
 	first ecdsaKey <$> find (isEcdsaKey . fst) crts, mcs)
 
-revertSettings :: InitialSettings -> Settings
+revertSettings :: SettingsS -> Settings
 revertSettings (cs, rcrt, ecrt, mcs) = (cs,
 	maybeToList (first RsaKey <$> rcrt) ++
 	maybeToList (first EcdsaKey <$> ecrt), mcs)
@@ -209,14 +209,14 @@ setKeys i = modifyState i . \k st -> st { sKeys = k }
 getSettings :: PartnerId -> HandshakeState h g -> Settings
 getSettings i = initialSettings . fromJust' "getSettings" . lookup i . states
 
-getInitSet :: PartnerId -> HandshakeState h g -> InitialSettings
+getInitSet :: PartnerId -> HandshakeState h g -> SettingsS
 getInitSet i = convertSettings .
 	initialSettings . fromJust' "getInitSet" . lookup i . states
 
 setSettings :: PartnerId -> Settings -> Modify (HandshakeState h g)
 setSettings i = modifyState i . \is st -> st { initialSettings = is }
 
-setInitSet :: PartnerId -> InitialSettings -> Modify (HandshakeState h g)
+setInitSet :: PartnerId -> SettingsS -> Modify (HandshakeState h g)
 setInitSet i = modifyState i . \is st -> st
 	{ initialSettings = revertSettings is }
 

@@ -11,7 +11,7 @@ module Network.PeyoTLS.Monad (
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
 		getSettings, setSettings,
-		getInitSet, setInitSet, S.InitialSettings, S.Settings,
+		getInitSet, setInitSet, S.SettingsS, S.Settings,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
 	S.CipherSuite(..), S.KeyEx(..), S.BulkEnc(..),
@@ -47,7 +47,7 @@ import qualified Network.PeyoTLS.State as S (
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 
-	InitialSettings, Settings,
+	SettingsS, Settings,
 	CertSecretKey(..),
 	)
 
@@ -92,13 +92,13 @@ setKeys = (modify .) . S.setKeys
 getKeys :: HandleLike h => S.PartnerId -> TlsM h g S.Keys
 getKeys = gets . S.getKeys
 
-getInitSet :: HandleLike h => S.PartnerId -> TlsM h g S.InitialSettings
+getInitSet :: HandleLike h => S.PartnerId -> TlsM h g S.SettingsS
 getInitSet = gets . S.getInitSet
 
 getSettings :: HandleLike h => S.PartnerId -> TlsM h g S.Settings
 getSettings = gets . S.getSettings
 
-setInitSet :: HandleLike h => S.PartnerId -> S.InitialSettings -> TlsM h g ()
+setInitSet :: HandleLike h => S.PartnerId -> S.SettingsS -> TlsM h g ()
 setInitSet = (modify .) . S.setInitSet
 
 setSettings :: HandleLike h => S.PartnerId -> S.Settings -> TlsM h g ()

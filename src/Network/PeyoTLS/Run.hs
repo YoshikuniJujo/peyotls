@@ -18,7 +18,7 @@ module Network.PeyoTLS.Run (
 
 	resetSequenceNumber,
 
-	getSettings, setSettings,
+	getSettings, setSettings, TH.SettingsS,
 	getSettingsC, setSettingsC, TH.Settings,
 	flushAppData_,
 
@@ -67,7 +67,7 @@ import qualified Network.PeyoTLS.Handle as TH (
 	resetSequenceNumber,
 
 	getSettingsT, setSettingsT, Settings,
-	getInitSetT, setInitSetT, InitialSettings,
+	getInitSetT, setInitSetT, SettingsS,
 	tlsGet_,
 	flushAppData,
 	getAdBufT,
@@ -226,13 +226,13 @@ setClientFinished, setServerFinished ::
 setClientFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
 setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
 
-getSettings :: HandleLike h => HandshakeM h g TH.InitialSettings
+getSettings :: HandleLike h => HandshakeM h g TH.SettingsS
 getSettings = gets fst >>= lift . TH.getInitSetT
 
 getSettingsC :: HandleLike h => HandshakeM h g TH.Settings
 getSettingsC = gets fst >>= lift . TH.getSettingsT
 
-setSettings :: HandleLike h => TH.InitialSettings -> HandshakeM h g ()
+setSettings :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
 setSettings is = gets fst >>= lift . flip TH.setInitSetT is
 
 setSettingsC :: HandleLike h => TH.Settings -> HandshakeM h g ()

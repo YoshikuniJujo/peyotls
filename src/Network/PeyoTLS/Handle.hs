@@ -16,7 +16,7 @@ module Network.PeyoTLS.Handle (
 	Settings,
 	getSettingsT, setSettingsT,
 	getInitSetT, setInitSetT,
-	InitialSettings,
+	SettingsS,
 
 	resetSequenceNumber,
 	tlsGet_,
@@ -57,7 +57,7 @@ import Network.PeyoTLS.Monad (
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 	Settings, getSettings, setSettings,
-	InitialSettings,
+	SettingsS,
 	getInitSet, setInitSet,
 	CertSecretKey(..),
 	)
@@ -394,13 +394,13 @@ setServerFinishedT = setServerFinished . clientId
 getSettingsT :: HandleLike h => TlsHandle h g -> TlsM h g Settings
 getSettingsT = getSettings . clientId
 
-getInitSetT :: HandleLike h => TlsHandle h g -> TlsM h g InitialSettings
+getInitSetT :: HandleLike h => TlsHandle h g -> TlsM h g SettingsS
 getInitSetT = getInitSet . clientId
 
 setSettingsT :: HandleLike h => TlsHandle h g -> Settings -> TlsM h g ()
 setSettingsT = setSettings . clientId
 
-setInitSetT :: HandleLike h => TlsHandle h g -> InitialSettings -> TlsM h g ()
+setInitSetT :: HandleLike h => TlsHandle h g -> SettingsS -> TlsM h g ()
 setInitSetT = setInitSet . clientId
 
 getAdBufT :: HandleLike h => TlsHandle h g -> TlsM h g BS.ByteString

@@ -3,7 +3,9 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Base ( Extension(..),
-	SvSignPublicKey(..), ClSignSecretKey(..),
+	makeEcdsaPubKey,
+	ClSignPublicKey(..), ClSignSecretKey(..),
+	SvSignPublicKey(..),
 	decodePoint,
 	PeyotlsM, eRenegoInfo,
 	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
@@ -38,7 +40,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 	hlGetRn, hlGetLineRn_, hlGetLineRn, hlGetContentRn_,
 	hlGetContentRn,
 
-	HM.getSettings, HM.setSettings,
+	HM.getSettings, HM.setSettings, HM.SettingsS,
 	getSettingsC, setSettingsC,
 	HM.flushAppData_,
 	flushAppData,
@@ -107,7 +109,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	getServerFinished, setServerFinished,
 	resetSequenceNumber,
 
-	getSettings, setSettings,
+	getSettings, setSettings, SettingsS,
 	getSettingsC, setSettingsC,
 	flushAppData_,
 	getAdBuf,
@@ -492,3 +494,18 @@ instance ClSignSecretKey ECDSA.PrivateKey where
 				ASN1.IntVal r, ASN1.IntVal s,
 				ASN1.End ASN1.Sequence]
 	clsAlgorithm _ = (Sha256, Ecdsa)
+
+class ClSignPublicKey pk where
+	clspAlgorithm :: pk -> SignAlg
+	clsVerify :: pk -> BS.ByteString -> BS.ByteString -> Bool
+
+instance ClSignPublicKey RSA.PublicKey where
+	clspAlgorithm _ = Rsa
+	clsVerify k s h = RSA.ep k s == HM.rsaPadding k h
+
+instance ClSignPublicKey ECDSA.PublicKey where
+	clspAlgorithm _ = Ecdsa
+	clsVerify k = ECDSA.verify id k . either error id . B.decode
+
+makeEcdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
+makeEcdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
