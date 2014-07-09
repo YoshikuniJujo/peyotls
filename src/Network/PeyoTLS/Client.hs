@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	PeyotlsM, PeyotlsHandleC, TlsM, TlsHandleC,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle,
 	run, open, renegotiate, names,
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey(..) ) where
@@ -28,7 +28,7 @@ import Network.PeyoTLS.Base (
 		AlertLevel(..), AlertDesc(..), throwError,
 		withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TlsHandle,
+	TlsHandle_,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 		getSettingsC, setSettingsC,
@@ -52,13 +52,13 @@ import Network.PeyoTLS.Base (
 	SvSignPublicKey(..), ClSignSecretKey(..),
 	)
 
-type PeyotlsHandleC = TlsHandleC Handle SystemRNG
+type PeyotlsHandle = TlsHandle Handle SystemRNG
 
-newtype TlsHandleC h g = TlsHandleC { tlsHandleC :: TlsHandle h g } deriving Show
+newtype TlsHandle h g = TlsHandleC { tlsHandleC :: TlsHandle_ h g } deriving Show
 
-instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
-	type HandleMonad (TlsHandleC h g) = TlsM h g
-	type DebugLevel (TlsHandleC h g) = DebugLevel h
+instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
+	type HandleMonad (TlsHandle h g) = TlsM h g
+	type DebugLevel (TlsHandle h g) = DebugLevel h
 	hlPut (TlsHandleC t) = hlPut t
 	hlGet = hlGetRn rehandshake . tlsHandleC
 	hlGetLine = hlGetLineRn rehandshake . tlsHandleC
@@ -69,23 +69,23 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleC h g) where
 moduleName :: String
 moduleName = "Network.PeyoTLS.Client"
 
-names :: TlsHandleC h g -> [String]
+names :: TlsHandle h g -> [String]
 names = HB.names . tlsHandleC
 
 open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
-	TlsM h g (TlsHandleC h g)
+	TlsM h g (TlsHandle h g)
 open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 	setSettingsC (cscl, crts, ca)
 	handshake crts ca =<< clientHello cscl
 
-renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleC h g -> TlsM h g ()
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, ca) <- getSettingsC
 	cr <- clientHello cscl
 	flushAppData >>= flip when (handshake crts ca cr)
 
-rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
 	(cscl, crts, ca) <- getSettingsC
 	handshake crts ca =<< clientHello cscl

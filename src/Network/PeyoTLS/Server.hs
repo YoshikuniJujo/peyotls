@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Server (
-	PeyotlsM, PeyotlsHandleS, TlsM, TlsHandleS, run, open, renegotiate, names,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, renegotiate, names,
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	ValidateHandle(..), CertSecretKey(..) ) where
 
@@ -31,7 +31,7 @@ import Network.PeyoTLS.Base (
 		withRandom, randomByteString, flushAppData,
 		throwError, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TlsHandle, CertSecretKey(..), isRsaKey, isEcdsaKey,
+	TlsHandle_, CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, writeHandshakeNH, putChangeCipherSpec,
 	AlertLevel(..), AlertDesc(..),
@@ -51,13 +51,13 @@ import Network.PeyoTLS.Base (
 	Side(..), finishedHash,
 	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 )
 
-type PeyotlsHandleS = TlsHandleS Handle SystemRNG
+type PeyotlsHandle = TlsHandle Handle SystemRNG
 
-newtype TlsHandleS h g = TlsHandleS { tlsHandleS :: TlsHandle h g } deriving Show
+newtype TlsHandle h g = TlsHandleS { tlsHandleS :: TlsHandle_ h g } deriving Show
 
-instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandleS h g) where
-	type HandleMonad (TlsHandleS h g) = TlsM h g
-	type DebugLevel (TlsHandleS h g) = DebugLevel h
+instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
+	type HandleMonad (TlsHandle h g) = TlsM h g
+	type DebugLevel (TlsHandle h g) = DebugLevel h
 	hlPut (TlsHandleS t) = hlPut t
 	hlGet = hlGetRn rehandshake . tlsHandleS
 	hlGetLine = hlGetLineRn rehandshake . tlsHandleS
@@ -73,12 +73,12 @@ version = (3, 3)
 moduleName :: String
 moduleName = "Network.PeyoTLS.Server"
 
-names :: TlsHandleS h g -> [String]
+names :: TlsHandle h g -> [String]
 names = BASE.names . tlsHandleS
 
 open :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] -> [(CertSecretKey, X509.CertificateChain)] ->
-	Maybe X509.CertificateStore -> TlsM h g (TlsHandleS h g)
+	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
 open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 	((>>) <$> setSettings <*> handshake) (cssv',
 		first rsaKey <$> find (isRsaKey . fst) crts,
@@ -93,11 +93,11 @@ open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 	iscs EMPTY_RENEGOTIATION_INFO = False
 	iscs _ = True
 
-renegotiate :: (ValidateHandle h, CPRG g) => TlsHandleS h g -> TlsM h g ()
+renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshakeNH HHelloReq >>
 		flushAppData >>= flip when (handshake =<< getSettings)
 
-rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
 
 handshake :: (ValidateHandle h, CPRG g) => SettingsS -> HandshakeM h g ()

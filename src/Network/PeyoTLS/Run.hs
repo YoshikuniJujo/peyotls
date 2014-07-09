@@ -4,7 +4,7 @@ module Network.PeyoTLS.Run (
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
-	TH.TlsHandle(..), TH.ContentType(..),
+	TH.TlsHandle_(..), TH.ContentType(..),
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
@@ -55,7 +55,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import qualified Network.PeyoTLS.Handle as TH (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), ContentType(..),
+	TlsHandle_(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
@@ -80,17 +80,17 @@ resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
 
 tlsGet_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
-	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
+	(TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
+	(TH.TlsHandle_ h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle_ h g, SHA256.Ctx))
 tlsGet_ = TH.tlsGet_
 
 tlsGet__ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle h g, SHA256.Ctx))
+	(TH.TlsHandle_ h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle_ h g, SHA256.Ctx))
 tlsGet__ = TH.tlsGet True
 
 tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle h g -> TH.TlsM h g ()) ->
-	TH.TlsHandle h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
+	(TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
+	TH.TlsHandle_ h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
 tGetLine_ = TH.tGetLine_
 
 flushAppData_ :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, Bool)
@@ -103,22 +103,22 @@ tGetContent_ rn t = do
 		_ -> TH.tGetContent t
 
 tlsPut_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandle h g, SHA256.Ctx)
+	(TH.TlsHandle_ h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandle_ h g, SHA256.Ctx)
 tlsPut_ = TH.tlsPut True
 
 throwError :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
 throwError al ad m = E.throwError $ TH.Alert al ad m
 
-type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
+type HandshakeM h g = StateT (TH.TlsHandle_ h g, SHA256.Ctx) (TH.TlsM h g)
 
 execHandshakeM :: HandleLike h =>
-	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle h g)
+	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle_ h g)
 execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
 rerunHandshakeM ::
-	HandleLike h => TH.TlsHandle h g -> HandshakeM h g a -> TH.TlsM h g a
+	HandleLike h => TH.TlsHandle_ h g -> HandshakeM h g a -> TH.TlsM h g a
 rerunHandshakeM t hm = evalStateT hm (t, SHA256.init)
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
@@ -238,11 +238,11 @@ setSettings is = gets fst >>= lift . flip TH.setInitSetT is
 setSettingsC :: HandleLike h => TH.Settings -> HandshakeM h g ()
 setSettingsC is = gets fst >>= lift . flip TH.setSettingsT is
 
-getAdBuf :: HandleLike h => TH.TlsHandle h g -> TH.TlsM h g BS.ByteString
+getAdBuf :: HandleLike h => TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
 getAdBuf = TH.getAdBufT
 
 setAdBuf :: HandleLike h =>
-	TH.TlsHandle h g -> BS.ByteString -> TH.TlsM h g ()
+	TH.TlsHandle_ h g -> BS.ByteString -> TH.TlsM h g ()
 setAdBuf = TH.setAdBufT
 
 getAdBufH :: HandleLike h => HandshakeM h g BS.ByteString

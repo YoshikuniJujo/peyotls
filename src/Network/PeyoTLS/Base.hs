@@ -11,7 +11,7 @@ module Network.PeyoTLS.Base ( Extension(..),
 	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 	HM.withRandom, HM.randomByteString,
-	HM.TlsHandle, HM.names,
+	HM.TlsHandle_, HM.names,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 		writeHandshakeNH,
@@ -95,7 +95,7 @@ import qualified Network.PeyoTLS.Run as HM (
 	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
-	TlsHandle(..), ContentType(..),
+	TlsHandle_(..), ContentType(..),
 		names,
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
@@ -258,9 +258,9 @@ finishedHash s = (Finished `liftM`) $ do
 		HM.Server -> HM.setServerFinished fh
 	return fh
 
-instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
-	type HandleMonad (HM.TlsHandle h g) = HM.TlsM h g
-	type DebugLevel (HM.TlsHandle h g) = DebugLevel h
+instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle_ h g) where
+	type HandleMonad (HM.TlsHandle_ h g) = HM.TlsM h g
+	type DebugLevel (HM.TlsHandle_ h g) = DebugLevel h
 	hlPut = HM.hlPut_
 	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .)
 		. HM.tlsGet__ . (, undefined)
@@ -269,13 +269,13 @@ instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle h g) where
 	hlDebug = HM.hlDebug_
 	hlClose = HM.hlClose_
 
-checkAppData :: (HandleLike h, CPRG g) => HM.TlsHandle h g ->
+checkAppData :: (HandleLike h, CPRG g) => HM.TlsHandle_ h g ->
 	HM.TlsM h g (HM.ContentType, BS.ByteString) -> HM.TlsM h g BS.ByteString
 checkAppData t m = m >>= \cp -> case cp of
 	(HM.CTAppData, ad) -> return ad
 	(HM.CTAlert, "\SOH\NUL") -> do
 		_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\SOH\NUL"
-		E.throwError "TlsHandle.checkAppData: EOF"
+		E.throwError "TlsHandle_.checkAppData: EOF"
 	(HM.CTHandshake, hs) -> do
 		lift . lift $ hlDebug (HM.tlsHandle t) "critical" "renegotiation?\n"
 		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack
@@ -284,20 +284,20 @@ checkAppData t m = m >>= \cp -> case cp of
 			. (++ "\n") $ show (B.decode hs :: Either String Handshake)
 		return ""
 	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"
-		E.throwError "TlsHandle.checkAppData: not application data"
+		E.throwError "TlsHandle_.checkAppData: not application data"
 
-hlGetRn_ :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle h g -> HM.TlsM h g ()) ->
-	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
+hlGetRn_ :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
+	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
 hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
 	. (, undefined)
 
 hlGetLineRn_, hlGetContentRn_ :: (HM.ValidateHandle h, CPRG g) =>
-	(HM.TlsHandle h g -> HM.TlsM h g ()) -> HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
+	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g -> HM.TlsM h g BS.ByteString
 hlGetLineRn_ rh = ($) <$> checkAppData <*> HM.tGetLine_ rh
 hlGetContentRn_ rh = ($) <$> checkAppData <*> HM.tGetContent_ rh
 
-hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle h g -> HM.TlsM h g ()) ->
-	HM.TlsHandle h g -> Int -> HM.TlsM h g BS.ByteString
+hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
+	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
 hlGetRn rn t n = do
 	bf <- HM.getAdBuf t
 	if BS.length bf >= n
@@ -307,7 +307,7 @@ hlGetRn rn t n = do
 	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
 
 hlGetLineRn :: (HM.ValidateHandle h, CPRG g) =>
-	(HM.TlsHandle h g -> HM.TlsM h g ()) -> HM.TlsHandle h g ->
+	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g ->
 	HM.TlsM h g BS.ByteString
 hlGetLineRn rn t = do
 	bf <- HM.getAdBuf t
@@ -330,8 +330,8 @@ dropRet bs = case BSC.uncons bs of
 	_ -> bs
 
 hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
-	(HM.TlsHandle h g -> HM.TlsM h g ()) ->
-	HM.TlsHandle h g -> HM.TlsM h g BS.ByteString
+	(HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
+	HM.TlsHandle_ h g -> HM.TlsM h g BS.ByteString
 hlGetContentRn rn t = do
 	bf <- HM.getAdBuf t
 	if BS.null bf

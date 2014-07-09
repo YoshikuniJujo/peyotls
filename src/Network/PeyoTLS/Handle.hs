@@ -3,7 +3,7 @@
 module Network.PeyoTLS.Handle (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
+	TlsHandle_(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
@@ -64,13 +64,13 @@ import Network.PeyoTLS.Monad (
 import qualified Network.PeyoTLS.Crypto as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
-data TlsHandle h g = TlsHandle {
+data TlsHandle_ h g = TlsHandle_ {
 	clientId :: PartnerId,
 	tlsHandle :: h,
 	names :: [String] }
 	deriving Show
 
-type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
+type HandleHash h g = (TlsHandle_ h g, SHA256.Ctx)
 
 data Side = Server | Client deriving (Show, Eq)
 
@@ -81,15 +81,15 @@ run m g = do
 		Right r -> return r
 		Left a -> error $ show a
 
-newHandle :: HandleLike h => h -> TlsM h g (TlsHandle h g)
+newHandle :: HandleLike h => h -> TlsM h g (TlsHandle_ h g)
 newHandle h = do
 	s <- get
 	let (i, s') = newPartnerId s
 	put s'
-	return TlsHandle {
+	return TlsHandle_ {
 		clientId = i, tlsHandle = h, names = [] }
 
-getContentType :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ContentType
+getContentType :: (HandleLike h, CPRG g) => TlsHandle_ h g -> TlsM h g ContentType
 getContentType t = do
 	ct <- fst `liftM` getBuf (clientId t)
 	(\gt -> case ct of CTNull -> gt; _ -> return ct) $ do
@@ -98,7 +98,7 @@ getContentType t = do
 		return ct'
 
 flushAppData :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> TlsM h g (BS.ByteString, Bool)
+	TlsHandle_ h g -> TlsM h g (BS.ByteString, Bool)
 flushAppData t = do
 	ct <- getContentType t
 	case ct of
@@ -126,13 +126,13 @@ tlsGet b hh@(t, _) n = do
 			| otherwise -> updateHash hh bs
 		_ -> return hh
 
-tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
+tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle_ h g -> TlsM h g ()) ->
 	HandleHash h g -> Int ->
 	TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
 tlsGet_ rn hh@(t, _) n = (, hh) `liftM` buffered_ rn t n
 
 buffered :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
+	TlsHandle_ h g -> Int -> TlsM h g (ContentType, BS.ByteString)
 buffered t n = do
 	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
 	if rl <= 0
@@ -147,8 +147,8 @@ buffered t n = do
 		setBuf (clientId t) (ct', b')
 		second (b `BS.append`) `liftM` buffered t rl
 
-buffered_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
-	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
+buffered_ :: (HandleLike h, CPRG g) => (TlsHandle_ h g -> TlsM h g ()) ->
+	TlsHandle_ h g -> Int -> TlsM h g (ContentType, BS.ByteString)
 buffered_ rn t n = do
 	ct0 <- getContentType t
 	case ct0 of
@@ -164,7 +164,7 @@ buffered_ rn t n = do
 				second (b `BS.append`) `liftM` buffered_ rn t rl
 
 splitRetBuf :: HandleLike h =>
-	TlsHandle h g -> Int -> ContentType -> BS.ByteString ->
+	TlsHandle_ h g -> Int -> ContentType -> BS.ByteString ->
 	TlsM h g (ContentType, BS.ByteString)
 splitRetBuf t n ct b = do
 	let (ret, b') = BS.splitAt n b
@@ -172,33 +172,33 @@ splitRetBuf t n ct b = do
 	return (ct, ret)
 
 getWholeWithCt :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+	TlsHandle_ h g -> TlsM h g (ContentType, BS.ByteString)
 getWholeWithCt t = do
 	flush t
 	ct <- (either (throwError . strMsg) return . B.decode) =<< read t 1
 	[_vmj, _vmn] <- BS.unpack `liftM` read t 2
 	e <- read t =<< either (throwError . strMsg) return . B.decode =<< read t 2
-	when (BS.null e) $ throwError "TlsHandle.getWholeWithCt: e is null"
+	when (BS.null e) $ throwError "TlsHandle_.getWholeWithCt: e is null"
 	p <- decrypt t ct e
 	thlDebug (tlsHandle t) "medium" . BSC.pack . (++ ": ") $ show ct
 	thlDebug (tlsHandle t) "medium" . BSC.pack . (++  "\n") . show $ BS.head p
 	thlDebug (tlsHandle t) "low" . BSC.pack . (++ "\n") $ show p
 	return (ct, p)
 
-read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
+read :: (HandleLike h, CPRG g) => TlsHandle_ h g -> Int -> TlsM h g BS.ByteString
 read t n = do
 	r <- thlGet (tlsHandle t) n
 	unless (BS.length r == n) . throwError . strMsg $
-		"TlsHandle.read: can't read " ++ show (BS.length r) ++ " " ++ show n
+		"TlsHandle_.read: can't read " ++ show (BS.length r) ++ " " ++ show n
 	return r
 
 decrypt :: HandleLike h =>
-	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
+	TlsHandle_ h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
 decrypt t ct e = do
 	ks <- getKeys $ clientId t
 	decrypt_ t ks ct e
 
-decrypt_ :: HandleLike h => TlsHandle h g ->
+decrypt_ :: HandleLike h => TlsHandle_ h g ->
 	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
 decrypt_ _ Keys{ kReadCS = CipherSuite _ BE_NULL } _ e = return e
 decrypt_ t ks ct e = do
@@ -209,7 +209,7 @@ decrypt_ t ks ct e = do
 	hs <- case be of
 		AES_128_CBC_SHA -> return CT.hashSha1
 		AES_128_CBC_SHA256 -> return CT.hashSha256
-		_ -> throwError "TlsHandle.decrypt: not implement bulk encryption"
+		_ -> throwError "TlsHandle_.decrypt: not implement bulk encryption"
 	either (throwError . strMsg) return $
 		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
@@ -226,7 +226,7 @@ tlsPut b hh@(t, _) ct p = do
 		(CTHandshake, True) -> updateHash hh p
 		_ -> return hh
 
-flush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
+flush :: (HandleLike h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 flush t = do
 	(bct, bp) <- getWBuf $ clientId t
 	setWBuf (clientId t) (CTNull, "")
@@ -236,12 +236,12 @@ flush t = do
 			B.encode bct, "\x03\x03", B.addLen (undefined :: Word16) e ]
 
 encrypt :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
+	TlsHandle_ h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
 encrypt t ct p = do
 	ks <- getKeys $ clientId t
 	encrypt_ t ks ct p
 
-encrypt_ :: (HandleLike h, CPRG g) => TlsHandle h g ->
+encrypt_ :: (HandleLike h, CPRG g) => TlsHandle_ h g ->
 	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
 encrypt_ _ Keys{ kWriteCS = CipherSuite _ BE_NULL } _ p = return p
 encrypt_ t ks ct p = do
@@ -252,14 +252,14 @@ encrypt_ t ks ct p = do
 	hs <- case be of
 		AES_128_CBC_SHA -> return CT.hashSha1
 		AES_128_CBC_SHA256 -> return CT.hashSha256
-		_ -> throwError "TlsHandle.encrypt: not implemented bulk encryption"
+		_ -> throwError "TlsHandle_.encrypt: not implemented bulk encryption"
 	withRandom $ CT.encrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") p
 
 updateHash ::
 	HandleLike h => HandleHash h g -> BS.ByteString -> TlsM h g (HandleHash h g)
 updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
 
-updateSequenceNumber :: HandleLike h => TlsHandle h g -> RW -> TlsM h g Word64
+updateSequenceNumber :: HandleLike h => TlsHandle_ h g -> RW -> TlsM h g Word64
 updateSequenceNumber t rw = do
 	ks <- getKeys $ clientId t
 	(sn, cs) <- case rw of
@@ -272,12 +272,12 @@ updateSequenceNumber t rw = do
 			Write -> succWriteSn $ clientId t
 	return sn
 
-resetSequenceNumber :: HandleLike h => TlsHandle h g -> RW -> TlsM h g ()
+resetSequenceNumber :: HandleLike h => TlsHandle_ h g -> RW -> TlsM h g ()
 resetSequenceNumber t rw = case rw of
 	Read -> resetReadSn $ clientId t
 	Write -> resetWriteSn $ clientId t
 
-generateKeys :: HandleLike h => TlsHandle h g -> Side -> CipherSuite ->
+generateKeys :: HandleLike h => TlsHandle_ h g -> Side -> CipherSuite ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys
 generateKeys t p cs cr sr pms = do
 	let CipherSuite _ be = cs
@@ -307,7 +307,7 @@ flushCipherSuiteSt p = case p of
 	Read -> flushCipherSuiteRead
 	Write -> flushCipherSuiteWrite
 
-debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
+debugCipherSuite :: HandleLike h => TlsHandle_ h g -> String -> TlsM h g ()
 debugCipherSuite t a = do
 	k <- getKeys $ clientId t
 	thlDebug (tlsHandle t) "high" . BSC.pack
@@ -324,19 +324,19 @@ finishedHash (t, ctx) partner = do
 	sha256 <- handshakeHash (t, ctx)
 	return $ CT.finishedHash (partner == Client) ms sha256
 
-hlPut_ :: (HandleLike h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+hlPut_ :: (HandleLike h, CPRG g) => TlsHandle_ h g -> BS.ByteString -> TlsM h g ()
 hlPut_ = ((>> return ()) .) . flip (tlsPut True) CTAppData . (, undefined)
 
 hlDebug_ :: HandleLike h =>
-	TlsHandle h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
+	TlsHandle_ h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
 hlDebug_ t l = lift . lift . hlDebug (tlsHandle t) l
 
-hlClose_ :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
+hlClose_ :: (HandleLike h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 hlClose_ t = tlsPut True (t, undefined) CTAlert "\SOH\NUL" >>
 	flush t >> thlClose (tlsHandle t)
 
 tGetLine :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+	TlsHandle_ h g -> TlsM h g (ContentType, BS.ByteString)
 tGetLine t = do
 	(bct, bp) <- getBuf $ clientId t
 	case splitLine bp of
@@ -345,8 +345,8 @@ tGetLine t = do
 			setBuf (clientId t) cp
 			second (bp `BS.append`) `liftM` tGetLine t
 
-tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandle h g -> TlsM h g ()) ->
-	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandle_ h g -> TlsM h g ()) ->
+	TlsHandle_ h g -> TlsM h g (ContentType, BS.ByteString)
 tGetLine_ rn t = do
 	ct <- getContentType t
 	case ct of
@@ -375,36 +375,36 @@ splitLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 	_ -> Nothing
 
 tGetContent :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+	TlsHandle_ h g -> TlsM h g (ContentType, BS.ByteString)
 tGetContent t = do
 	bcp@(_, bp) <- getBuf $ clientId t
 	if BS.null bp then getWholeWithCt t else
 		setBuf (clientId t) (CTNull, BS.empty) >> return bcp
 
 getClientFinishedT, getServerFinishedT ::
-	HandleLike h => TlsHandle h g -> TlsM h g BS.ByteString
+	HandleLike h => TlsHandle_ h g -> TlsM h g BS.ByteString
 getClientFinishedT = getClientFinished . clientId
 getServerFinishedT = getServerFinished . clientId
 
 setClientFinishedT, setServerFinishedT ::
-	HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+	HandleLike h => TlsHandle_ h g -> BS.ByteString -> TlsM h g ()
 setClientFinishedT = setClientFinished . clientId
 setServerFinishedT = setServerFinished . clientId
 
-getSettingsT :: HandleLike h => TlsHandle h g -> TlsM h g Settings
+getSettingsT :: HandleLike h => TlsHandle_ h g -> TlsM h g Settings
 getSettingsT = getSettings . clientId
 
-getInitSetT :: HandleLike h => TlsHandle h g -> TlsM h g SettingsS
+getInitSetT :: HandleLike h => TlsHandle_ h g -> TlsM h g SettingsS
 getInitSetT = getInitSet . clientId
 
-setSettingsT :: HandleLike h => TlsHandle h g -> Settings -> TlsM h g ()
+setSettingsT :: HandleLike h => TlsHandle_ h g -> Settings -> TlsM h g ()
 setSettingsT = setSettings . clientId
 
-setInitSetT :: HandleLike h => TlsHandle h g -> SettingsS -> TlsM h g ()
+setInitSetT :: HandleLike h => TlsHandle_ h g -> SettingsS -> TlsM h g ()
 setInitSetT = setInitSet . clientId
 
-getAdBufT :: HandleLike h => TlsHandle h g -> TlsM h g BS.ByteString
+getAdBufT :: HandleLike h => TlsHandle_ h g -> TlsM h g BS.ByteString
 getAdBufT = getAdBuf . clientId
 
-setAdBufT :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+setAdBufT :: HandleLike h => TlsHandle_ h g -> BS.ByteString -> TlsM h g ()
 setAdBufT = setAdBuf . clientId
