@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections #-}
+{-# LANGUAGE TupleSections #-}
 
 module Network.PeyoTLS.ReadFile (
 	CertSecretKey, readKey, readCertificateChain, readCertificateStore) where
@@ -17,24 +17,19 @@ import qualified Data.X509 as X509
 import qualified Data.X509.File as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
-import Codec.Bytable.BigEndian ()
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
-import Network.PeyoTLS.CertSecretKey
+import Network.PeyoTLS.CertSecretKey (CertSecretKey(..))
 
 readKey :: FilePath -> IO CertSecretKey
-readKey fp = do
-	rk <- readRsaKey fp
-	maybe (readEcdsaKey fp) return rk
+readKey fp = maybe (readEcdsaKey fp) return =<< readRsaKey fp
 
 readRsaKey :: FilePath -> IO (Maybe CertSecretKey)
-readRsaKey fp = do
-	ks <- X509.readKeyFile fp
-	case ks of
-		[X509.PrivKeyRSA sk] -> return . Just $ RsaKey sk
-		_ -> return Nothing -- error "ReadFile.readRsaKey: not single RSA key"
+readRsaKey fp = X509.readKeyFile fp >>= \ks -> case ks of
+	[X509.PrivKeyRSA sk] -> return . Just $ RsaKey sk
+	_ -> return Nothing
 
 readEcdsaKey :: FilePath -> IO CertSecretKey
 readEcdsaKey = (EcdsaKey . either error id . decodeEcdsaKey <$>) . BS.readFile
@@ -51,9 +46,11 @@ decodeEcdsaKey bs = do
 	pms <- either (Left . show) return $ PEM.pemParseBS bs
 	pm <- fromSinglePem pms
 	pmc <- case pm of
-		PEM.PEM { PEM.pemName = "EC PRIVATE KEY", PEM.pemHeader = [],
+		PEM.PEM {
+			PEM.pemName = "EC PRIVATE KEY",
+			PEM.pemHeader = [],
 			PEM.pemContent = c } -> return c
-		_ -> Left $ msgp ++ "bad PEM structure"
+		_ -> Left $ pre ++ "bad PEM structure"
 	asn <- either (Left . show) return $ ASN1.decodeASN1' ASN1.DER pmc
 	(sk, oid, pk) <- case asn of
 		[ASN1.Start ASN1.Sequence,
@@ -65,20 +62,20 @@ decodeEcdsaKey bs = do
 				ASN1.BitString (ASN1.BitArray _pl p),
 				ASN1.End (ASN1.Container ASN1.Context 1),
 			ASN1.End ASN1.Sequence] -> (, o, p) <$> B.decode s
-		_ -> Left $ msgp ++ "bad ASN.1 structure"
-	unless (oid == oidSecp256r1) . Left $ msgp ++ "not implemented curve"
+		_ -> Left $ pre ++ "bad ASN.1 structure"
+	unless (oid == oidSecp256r1) . Left $ pre ++ "not implemented curve"
 	tpk <- case BS.uncons pk of
 		Just (4, t) -> return t
-		_ -> Left $ msgp ++ "not implemented point format"
+		_ -> Left $ pre ++ "not implemented point format"
 	(x, y) <- (\(ex, ey) -> (,) <$> ex <*> ey) .
 			(B.decode *** B.decode) $ BS.splitAt 32 tpk
 	unless (ECC.Point x y == ECC.pointMul secp256r1 sk g) .
-		Left $ msgp ++ "the public key not match"
+		Left $ pre ++ "the public key not match"
 	return $ ECDSA.PrivateKey secp256r1 sk
 	where
-	msgp = "ReadFile.decodeEcdsaKey: "
+	pre = "ReadFile.decodeEcdsaKey: "
 	fromSinglePem [x] = return x
-	fromSinglePem _ = Left $ msgp ++ "not single PEM"
+	fromSinglePem _ = Left $ pre ++ "not single PEM"
 	g = ECC.ecc_g $ ECC.common_curve secp256r1
 	secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
 	oidSecp256r1 = ASN1.OID [1, 2, 840, 10045, 3, 1, 7]

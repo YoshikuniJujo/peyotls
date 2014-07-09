@@ -33,6 +33,10 @@ description:
     .
     * TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
     .
+    implement the following curves
+    .
+    * SEC p256r1
+    .
     And support client certificate with the following algorithms.
     .
     * RSA with SHA256
@@ -44,6 +48,8 @@ description:
     Currently not implement the following features.
     .
     * session resumption (RFC 5077)
+    .
+    * curves other than SEC p256r1
     .
     Server sample
     .
