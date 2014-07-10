@@ -9,7 +9,6 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
-import Data.Maybe (listToMaybe, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
@@ -35,7 +34,8 @@ import Network.PeyoTLS.Base (
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
-	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
+	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
+		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
@@ -151,8 +151,8 @@ checkRenegoInfo cscl me = (\n -> maybe n checkClientRenego mcf) . throwError
 	ALFatal ADInsufficientSecurity $
 	moduleName ++ ".checkRenego: require secure renegotiation"
 	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
-		(True, _) -> Just ""
-		(_, Just e) -> listToMaybe $ mapMaybe eRenegoInfo e
+		(True, _) -> Just emptyRenegoInfo
+		(_, Just e) -> find isRenegoInfo e
 		(_, _) -> Nothing
 
 serverHello :: (HandleLike h, CPRG g) =>

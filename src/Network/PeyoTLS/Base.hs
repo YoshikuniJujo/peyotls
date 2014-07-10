@@ -14,6 +14,7 @@ module Network.PeyoTLS.Base (
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
+		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		HM.getCipherSuite, HM.setCipherSuite,
@@ -266,11 +267,20 @@ eRenegoInfo :: Extension -> Maybe BS.ByteString
 eRenegoInfo (ERenegoInfo ri) = Just ri
 eRenegoInfo _ = Nothing
 
-checkClientRenego, checkServerRenego ::
-	HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
-checkClientRenego cf = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
+isRenegoInfo :: Extension -> Bool
+isRenegoInfo (ERenegoInfo _) = True
+isRenegoInfo _ = False
+
+emptyRenegoInfo :: Extension
+emptyRenegoInfo = ERenegoInfo ""
+
+checkClientRenego :: HandleLike h => Extension -> HM.HandshakeM h g ()
+checkClientRenego (ERenegoInfo cf) = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
 	unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
+checkClientRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
+checkServerRenego ::
+	HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
 checkServerRenego ri = do
 	cf <- HM.getClientFinished
 	sf <- HM.getServerFinished
