@@ -260,6 +260,7 @@ extra-source-files:
     examples/eccClient.hs
     examples/debugServer.hs
     examples/renegServer.hs
+    examples/secretServer.hs
 
 data-dir: data
 data-files:

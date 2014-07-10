@@ -1,8 +1,23 @@
+{-|
+
+Module		: Network.PeyoTLS.Server
+Copyright	: (c) Yoshikuni Jujo, 2014
+License		: BSD3
+Maintainer	: PAF01143@nifty.ne.jp
+Stability	: Experimental
+
+-}
+
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Server (
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, renegotiate, names,
+	-- * Basic
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, names,
+	-- * Renegotiation
+	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
+	-- * Cipher Suite
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
+	-- * Others
 	ValidateHandle(..), CertSecretKey(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -22,7 +37,7 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.RSA as RSA
 
 import qualified Network.PeyoTLS.Base as BASE (names)
-import Network.PeyoTLS.Base (
+import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		SettingsS, getSettingsS, setSettingsS,
 		hlGetRn, hlGetLineRn, hlGetContentRn,
@@ -91,9 +106,33 @@ open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 	iscs EMPTY_RENEGOTIATION_INFO = False
 	iscs _ = True
 
+setCipherSuites :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
+	[CipherSuite] -> TlsM h g ()
+setCipherSuites (TlsHandleS t) cssv = rerunHandshakeM t $ do
+	(_, rcrt, ecrt, mcs) <- getSettingsS
+	setSettingsS (cssv, rcrt, ecrt, mcs)
+
+setKeyCerts :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
+	[(CertSecretKey, X509.CertificateChain)] -> TlsM h g ()
+setKeyCerts (TlsHandleS t) crts = rerunHandshakeM t $ do
+	(cssv, _, _, mcs) <- getSettingsS
+	setSettingsS (cssv,
+		first rsaKey <$> find (isRsaKey . fst) crts,
+		first ecdsaKey <$> find (isEcdsaKey . fst) crts, mcs)
+
+setCertificateStore :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
+	Maybe X509.CertificateStore -> TlsM h g ()
+setCertificateStore (TlsHandleS t) mcs = rerunHandshakeM t $ do
+	(cssv, rcrt, ecrt, _) <- getSettingsS
+	setSettingsS (cssv, rcrt, ecrt, mcs)
+
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
-renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshake HHelloReq >>
-		flushAppData >>= flip when (handshake =<< getSettingsS)
+renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
+	writeHandshake HHelloReq
+	debug "low" ("before flushAppData" :: String)
+	ne <- flushAppData
+	debug "low" ("after flushAppData" :: String)
+	when ne (handshake =<< getSettingsS)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ handshake =<< getSettingsS

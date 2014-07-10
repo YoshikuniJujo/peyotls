@@ -102,19 +102,30 @@ getContentType t = do
 flushAppData :: (HandleLike h, CPRG g) =>
 	TlsHandle_ h g -> TlsM h g (BS.ByteString, Bool)
 flushAppData t = do
+	lift . lift $ hlDebug (tlsHandle t) "low" "begin flushAppData\n"
 	ct <- getContentType t
+	lift . lift $ hlDebug (tlsHandle t) "low" "after getContentType\n"
 	case ct of
 		CTAppData -> do
-			(_, ad) <- tGetContent t
+			lift . lift $ hlDebug (tlsHandle t) "low" "CTAppData\n"
+			(ct', ad) <- tGetContent t
+			lift . lift $ hlDebug (tlsHandle t) "low" .
+				BSC.pack $ show (ct', ad) ++ "\n"
 			(bs, b) <- flushAppData t
+			lift . lift . hlDebug (tlsHandle t) "low" .
+				BSC.pack $ show bs
 			return (ad `BS.append` bs, b)
 --			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
 		CTAlert -> do
 			((_, a), _) <- tlsGet True (t, undefined) 2
+			lift . lift $ hlDebug (tlsHandle t) "low" .
+				BSC.pack $ show a
 			case a of
 				"\1\0" -> return ("", False)
 				_ -> throwError "flushAppData"
-		_ -> return ("", True)
+		_ -> do	lift . lift $ hlDebug (tlsHandle t) "low" .
+				BSC.pack $ show ct
+			return ("", True)
 
 tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
 	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
@@ -350,7 +361,7 @@ tGetLine_ rn t = do
 		_ -> do	(bct, bp) <- getBuf $ clientId t
 			case splitLine bp of
 				Just (l, ls) -> do
-					setBuf (clientId t) (bct, ls)
+					setBuf (clientId t) (if BS.null ls then CTNull else bct, ls)
 					return (bct, l)
 				_ -> do	cp <- getWholeWithCt t
 					setBuf (clientId t) cp
