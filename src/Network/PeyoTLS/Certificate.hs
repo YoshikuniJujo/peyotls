@@ -25,7 +25,7 @@ instance B.Bytable X509.CertificateChain where
 		. (\(X509.CertificateChainRaw ccr) -> ccr)
 		. X509.encodeCertificateChain
 		. (\(X509.CertificateChain cs) ->
-			X509.CertificateChain $ reverse cs)
+			X509.CertificateChain $ cs)
 
 instance B.Parsable X509.CertificateChain where
 	parse = do
@@ -33,7 +33,7 @@ instance B.Parsable X509.CertificateChain where
 			(flip B.list (B.take =<< B.take 3) =<< B.take 3)
 		case ecc of
 			Right (X509.CertificateChain cs) ->
-				return . X509.CertificateChain $ reverse cs
+				return . X509.CertificateChain $ cs
 			Left (n, err) -> fail $ show n ++ " " ++ err
 
 data CertReq = CertReq [ClientCertificateType] [(HashAlg, SignAlg)] [X509.DistinguishedName]

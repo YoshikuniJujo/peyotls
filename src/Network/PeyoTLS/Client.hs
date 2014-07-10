@@ -21,7 +21,7 @@ import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
 import qualified Network.PeyoTLS.Base as BASE (names)
-import Network.PeyoTLS.Base (
+import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		getSettingsC, setSettingsC,
 		hlGetRn, hlGetLineRn, hlGetContentRn,
@@ -87,7 +87,7 @@ clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g BS.ByteString
 clientHello cscl = do
 	cr <- randomByteString 32
-	writeHandshake
+	((>>) <$> writeHandshake <*> debug "low")
 		. ClientHello (3, 3) cr (SessionId "") cscl [CompMethodNull]
 		. Just . (: []) =<< makeClientRenego
 	return cr
@@ -151,7 +151,7 @@ dheHandshake t rs crts ca = do
 	vr <- handshakeValidate ca cc
 	unless (null vr) . throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
-	case X509.certPubKey . X509.signedObject . X509.getSigned $ last cs of
+	case X509.certPubKey . X509.signedObject . X509.getSigned $ head cs of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
 		X509.PubKeyECDSA cv pt -> succeed t (makeEcdsaPubKey cv pt) rs crts
 		_ -> throwError ALFatal ADHsFailure $
@@ -211,7 +211,7 @@ isMatchedCert ct hsa dn = (&&) <$> csk . fst <*> ccrt . snd
 	ecdsa = CTEcdsaSign `elem` ct || Ecdsa `elem` map snd hsa
 	csk (RsaKey _) = rsa; csk (EcdsaKey _) = ecdsa
 	ccrt (X509.CertificateChain cs) =
-		cpk (X509.certPubKey . obj $ last cs) &&
+		cpk (X509.certPubKey . obj $ head cs) &&
 		not (null . intersect dn $ map (X509.certIssuerDN . obj) cs)
 	cpk X509.PubKeyRSA{} = rsa; cpk X509.PubKeyECDSA{} = ecdsa; cpk _ = False
 
