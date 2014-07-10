@@ -91,7 +91,7 @@ description:
     > main :: IO ()
     > main = do
     >	k <- readKey "localhost.key"
-    >	c <- readCertificateChain "localhost.crt"
+    >	c <- readCertificateChain ["localhost.crt"]
     >	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
     >	soc <- listenOn $ PortNumber 443
     >	void . (`runStateT` g0) . forever $ do
@@ -178,7 +178,7 @@ description:
     > % diff examples/simpleClient.hs examples/clcertClient.hs
     > 15a16,17
     > >	rk <- readKey "client_rsa.key"
-    > >	rc <- readCertificateChain "client_rsa.crt"
+    > >	rc <- readCertificateChain ["client_rsa.crt"]
     > 20c22
     > <		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
     > ---
@@ -191,7 +191,7 @@ description:
     > % diff examples/clcertClient.hs examples/clcertEcdsaClient.hs
     > 17a18,19
     > >	ek <- readKey "client_ecdsa.key"
-    > >	ec <- readCertificateChain "client_ecdsa.crt"
+    > >	ec <- readCertificateChain ["client_ecdsa.crt"]
     > 22c24
     > <		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(rk, rc)] ca
     > ---
@@ -216,12 +216,12 @@ description:
     > >
     > 18,19c29,32
     > <       k <- readKey "localhost.key"
-    > <       c <- readCertificateChain "localhost.crt"
+    > <       c <- readCertificateChain ["localhost.crt"]
     > ---
     > >       rk <- readKey "localhost.key"
-    > >       rc <- readCertificateChain "localhost.crt"
+    > >       rc <- readCertificateChain ["localhost.crt"]
     > >       ek <- readKey "localhost_ecdsa.key"
-    > >       ec <- readCertificateChain "localhost_ecdsa.crt"
+    > >       ec <- readCertificateChain ["localhost_ecdsa.crt"]
     > 26c39
     > <                       p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
     > ---

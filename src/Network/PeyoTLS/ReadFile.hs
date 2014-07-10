@@ -5,7 +5,7 @@ module Network.PeyoTLS.ReadFile (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ((***))
-import Control.Monad (unless)
+import Control.Monad (unless, forM)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -34,8 +34,9 @@ readRsaKey fp = X509.readKeyFile fp >>= \ks -> case ks of
 readEcdsaKey :: FilePath -> IO CertSecretKey
 readEcdsaKey = (EcdsaKey . either error id . decodeEcdsaKey <$>) . BS.readFile
 
-readCertificateChain :: FilePath -> IO X509.CertificateChain
-readCertificateChain = (X509.CertificateChain <$>) . X509.readSignedObject
+readCertificateChain :: [FilePath] -> IO X509.CertificateChain
+readCertificateChain fps =
+	X509.CertificateChain . concat <$> forM fps X509.readSignedObject
 
 readCertificateStore :: [FilePath] -> IO X509.CertificateStore
 readCertificateStore =

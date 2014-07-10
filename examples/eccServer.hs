@@ -29,9 +29,9 @@ main :: IO ()
 main = do
 	d : _ <- getArgs
 	rk <- readKey $ d ++ "/localhost.sample_key"
-	rc <- readCertificateChain $ d ++ "/localhost.sample_crt"
+	rc <- readCertificateChain [d ++ "/localhost.sample_crt"]
 	ek <- readKey $ d ++ "/localhost_ecdsa.sample_key"
-	ec <- readCertificateChain $ d ++ "/localhost_ecdsa.sample_crt"
+	ec <- readCertificateChain [d ++ "/localhost_ecdsa.sample_crt"]
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	soc <- listenOn $ PortNumber 443
 	void . (`runStateT` g0) . forever $ do

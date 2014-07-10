@@ -33,6 +33,7 @@ cipherSuites = [
  ]
 
 randomFrom :: [a] -> IO [a]
+randomFrom [] = error "bad"
 randomFrom [x] = return [x]
 randomFrom (x : xs) = do
 	b <- randomIO

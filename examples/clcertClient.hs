@@ -16,7 +16,7 @@ main :: IO ()
 main = do
 	d : _ <- getArgs
 	rk <- readKey $ d ++ "/yoshikuni.sample_key"
-	rc <- readCertificateChain $ d ++ "/yoshikuni.sample_crt"
+	rc <- readCertificateChain [d ++ "/yoshikuni.sample_crt"]
 	ca <- readCertificateStore [d ++ "/cacert.pem"]
 	h <- connectTo "localhost" $ PortNumber 443
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG

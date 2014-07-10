@@ -25,7 +25,7 @@ readPathKey :: FilePath -> IO CertSecretKey
 readPathKey = (readKey =<<) . getDataFileName
 
 readPathCertificateChain :: FilePath -> IO X509.CertificateChain
-readPathCertificateChain = (readCertificateChain =<<) . getDataFileName
+readPathCertificateChain = (readCertificateChain . (: []) =<<) . getDataFileName
 
 readPathCertificateStore :: [FilePath] -> IO X509.CertificateStore
 readPathCertificateStore = (readCertificateStore =<<) . mapM getDataFileName
