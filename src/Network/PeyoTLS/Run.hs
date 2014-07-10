@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.Run (
-	hlGetRn_, hlGetLineRn_, hlGetContentRn_,
+	hsGet, hsPut, hsPutNH,
+	ccsGet, ccsPut,
+	adGet, adGetLine, adGetContent,
 	isRsaKey, isEcdsaKey,
 	checkAppData,
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
@@ -33,6 +35,7 @@ module Network.PeyoTLS.Run (
 
 import Prelude hiding (read)
 
+import Data.Word
 import Control.Applicative
 import qualified Data.ASN1.Types as ASN1
 import Control.Arrow (first)
@@ -78,6 +81,8 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	CertSecretKey(..),
 	)
+
+import qualified Codec.Bytable.BigEndian as B
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
@@ -294,13 +299,50 @@ pushAdBufH bs = do
 	bf <- getAdBufH
 	setAdBufH $ bf `BS.append` bs
 
-hlGetRn_ :: (ValidateHandle h, CPRG g) =>
+adGet, hlGetRn_ :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> Int ->
 	TH.TlsM h g BS.ByteString
+adGet = hlGetRn_
 hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . TH.tlsGet_ rh
 	. (, undefined)
 
-hlGetLineRn_, hlGetContentRn_ :: (ValidateHandle h, CPRG g) =>
+hlGetLineRn_, hlGetContentRn_, adGetLine, adGetContent ::
+	(ValidateHandle h, CPRG g) =>
 	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
+adGetLine = hlGetLineRn_
 hlGetLineRn_ rh = ($) <$> checkAppData <*> tGetLine_ rh
+adGetContent = hlGetContentRn_
 hlGetContentRn_ rh = ($) <$> checkAppData <*> tGetContent_ rh
+
+hsGet :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
+hsGet = do
+	ct <- tlsGetContentType
+	case ct of
+		TH.CTHandshake -> do
+			t <- tlsGet True 1
+			len <- tlsGet (t /= "\0") 3
+			body <- tlsGet True . either error id $ B.decode len
+			return $ BS.concat [t, len, body]
+		_ -> throwError
+			TH.ALFatal TH.ADUnexpectedMessage $
+			"HandshakeBase.readHandshake: not handshake: " ++ show ct
+
+ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
+ccsGet = do
+	ct <- tlsGetContentType
+	bs <- case ct of
+		TH.CTCCSpec -> tlsGet True 1
+		_ -> throwError TH.ALFatal TH.ADUnexpectedMessage $
+			"HandshakeBase.getChangeCipherSpec: " ++
+			"not change cipher spec: " ++ show ct
+	resetSequenceNumber TH.Read
+	return $ let [w] = BS.unpack bs in w
+
+hsPut, hsPutNH :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
+hsPut = tlsPut TH.CTHandshake
+hsPutNH = tlsPutNH TH.CTHandshake
+
+ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
+ccsPut w = do
+	tlsPut TH.CTCCSpec $ BS.pack [w]
+	resetSequenceNumber TH.Write

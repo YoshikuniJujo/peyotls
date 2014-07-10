@@ -78,12 +78,9 @@ import qualified Network.PeyoTLS.Run as HM (
 		getClientFinished, setClientFinished,
 		getServerFinished, setServerFinished,
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-		resetSequenceNumber,
 		AlertLevel(..), AlertDesc(..),
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle_(..), names, CertSecretKey(..), isRsaKey, isEcdsaKey,
-
-		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 
 	generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	handshakeHash, finishedHash, throwError,
@@ -92,7 +89,9 @@ import qualified Network.PeyoTLS.Run as HM (
 
 	getAdBuf, setAdBuf, pushAdBufH,
 
-	hlGetRn_, hlGetLineRn_, hlGetContentRn_,
+	hsGet, hsPut, hsPutNH,
+	ccsGet, ccsPut,
+	adGet, adGetLine, adGetContent,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
@@ -105,23 +104,20 @@ debug p x = do
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
-	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
-	hs <- case cnt of
-		CHandshake HHelloReq -> readHandshake
-		CHandshake hs -> return hs
-		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage $
-			"HandshakeBase.readHandshake: not handshake: " ++ show cnt
-	case fromHandshake hs of
-		Just i -> return i
-		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage $
-			"HandshakeBase.readHandshake: type mismatch " ++ show hs
+	bs <- HM.hsGet
+	case B.decode bs of
+		Right HHelloReq -> readHandshake
+		Right hs -> case fromHandshake hs of
+			Just i -> return i
+			_ -> HM.throwError
+				HM.ALFatal HM.ADUnexpectedMessage $ moduleName ++
+				".readHandshake: type mismatch " ++ show hs
+		_ -> HM.throwError HM.ALFatal HM.ADInternalError "bad"
 
 writeHandshake, writeHandshakeNH ::
 	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
-writeHandshake = uncurry HM.tlsPut . encodeContent . CHandshake . toHandshake
-writeHandshakeNH = uncurry HM.tlsPutNH . encodeContent . CHandshake . toHandshake
+writeHandshake = HM.hsPut . snd . encodeContent . CHandshake . toHandshake
+writeHandshakeNH = HM.hsPutNH . snd . encodeContent . CHandshake . toHandshake
 
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
@@ -135,36 +131,19 @@ instance B.Bytable ChangeCipherSpec where
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
-	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
-	case cnt of
-		CCCSpec ChangeCipherSpec -> return ()
-		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage $
+	w <- HM.ccsGet
+	case B.decode $ BS.pack [w] of
+		Right ChangeCipherSpec -> return ()
+		_ -> HM.throwError HM.ALFatal HM.ADUnexpectedMessage $
 			"HandshakeBase.getChangeCipherSpec: " ++
-			"not change cipher spec: " ++
-			show cnt
-	HM.resetSequenceNumber HM.Read
+			"not change cipher spec"
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
-putChangeCipherSpec = do
-	uncurry HM.tlsPut . encodeContent $ CCCSpec ChangeCipherSpec
-	HM.resetSequenceNumber HM.Write
+putChangeCipherSpec =
+	HM.ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
 
 data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
 	deriving Show
-
-readContent :: Monad m => (Bool -> Int -> m BS.ByteString) -> HM.ContentType -> m Content
-readContent rd HM.CTCCSpec =
-	(CCCSpec . either error id . B.decode) `liftM` rd True 1
-readContent rd HM.CTAlert =
-	((\[al, ad] -> CAlert al ad) . BS.unpack) `liftM` rd True 2
-readContent rd HM.CTHandshake = CHandshake `liftM` do
-	t <- rd True 1
-	len <- rd (t /= "\0") 3
---	(t, len) <- (,) `liftM` rd True 1 `ap` rd True 3
-	body <- rd True . either error id $ B.decode len
-	return . either error id . B.decode $ BS.concat [t, len, body]
-readContent _ _ = undefined
 
 encodeContent :: Content -> (HM.ContentType, BS.ByteString)
 encodeContent (CCCSpec ccs) = (HM.CTCCSpec, B.encode ccs)
@@ -240,7 +219,7 @@ hlGetRn rn t n = do
 	then do	let (ret, rest) = BS.splitAt n bf
 		HM.setAdBuf t rest
 		return ret
-	else (bf `BS.append`) `liftM` HM.hlGetRn_ rn t (n - BS.length bf)
+	else (bf `BS.append`) `liftM` HM.adGet rn t (n - BS.length bf)
 
 hlGetLineRn :: (HM.ValidateHandle h, CPRG g) =>
 	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g ->
@@ -251,7 +230,7 @@ hlGetLineRn rn t = do
 	then do	let (ret, rest) = splitOneLine bf
 		HM.setAdBuf t $ BS.tail rest
 		return ret
-	else (bf `BS.append`) `liftM` HM.hlGetLineRn_ rn t
+	else (bf `BS.append`) `liftM` HM.adGetLine rn t
 
 splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
 splitOneLine bs = case BSC.span (/= '\r') bs of
@@ -271,7 +250,7 @@ hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
 hlGetContentRn rn t = do
 	bf <- HM.getAdBuf t
 	if BS.null bf
-	then HM.hlGetContentRn_ rn t
+	then HM.adGetContent rn t
 	else do	HM.setAdBuf t ""
 		return bf
 
