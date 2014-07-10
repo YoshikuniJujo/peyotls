@@ -147,11 +147,11 @@ dheHandshake :: (ValidateHandle h, CPRG g,
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
 dheHandshake t rs crts ca = do
-	cc@(X509.CertificateChain cs) <- readHandshake
+	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
 	unless (null vr) . throwError ALFatal (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
-	case X509.certPubKey . X509.signedObject . X509.getSigned $ head cs of
+	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
 		X509.PubKeyECDSA cv pt -> succeed t (makeEcdsaPubKey cv pt) rs crts
 		_ -> throwError ALFatal ADHsFailure $
@@ -210,9 +210,10 @@ isMatchedCert ct hsa dn = (&&) <$> csk . fst <*> ccrt . snd
 	rsa = CTRsaSign `elem` ct || Rsa `elem` map snd hsa
 	ecdsa = CTEcdsaSign `elem` ct || Ecdsa `elem` map snd hsa
 	csk (RsaKey _) = rsa; csk (EcdsaKey _) = ecdsa
-	ccrt (X509.CertificateChain cs) =
-		cpk (X509.certPubKey . obj $ head cs) &&
+	ccrt (X509.CertificateChain cs@(c : _)) =
+		cpk (X509.certPubKey $ obj c) &&
 		not (null . intersect dn $ map (X509.certIssuerDN . obj) cs)
+	ccrt _ = error $ moduleName ++ ".isMatchedCert: empty certificate chain"
 	cpk X509.PubKeyRSA{} = rsa; cpk X509.PubKeyECDSA{} = ecdsa; cpk _ = False
 
 finishHandshake :: (HandleLike h, CPRG g) =>
