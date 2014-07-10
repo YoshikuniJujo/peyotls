@@ -5,7 +5,7 @@ module Network.PeyoTLS.Base (
 		hlGetRn, hlGetLineRn, hlGetContentRn,
 	HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 		getSettingsC, setSettingsC, HM.getSettingsS, HM.setSettingsS,
-		HM.withRandom, HM.randomByteString, flushAppData,
+		HM.withRandom, HM.randomByteString, HM.flushAppData,
 		HM.AlertLevel(..), HM.AlertDesc(..), HM.throwError,
 		HM.debugCipherSuite, debug,
 	HM.ValidateHandle(..), HM.handshakeValidate, validateAlert,
@@ -24,7 +24,7 @@ module Network.PeyoTLS.Base (
 	CertReq(..), certReq, ClCertType(..),
 	ServerHelloDone(..),
 	ClientKeyEx(..), Epms(..),
-		HM.generateKeys, HM.decryptRsa, HM.encryptRsa, HM.rsaPadding,
+		HM.generateKeys, HM.decryptRsa, HM.encryptRsa,
 	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
 		HM.handshakeHash,
 	HM.RW(..), HM.flushCipherSuite,
@@ -32,7 +32,7 @@ module Network.PeyoTLS.Base (
 	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 ) where
 
 import Control.Applicative
-import Control.Arrow (first, second, (***))
+import Control.Arrow (first, second)
 import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
 import Data.Word (Word8)
@@ -72,22 +72,19 @@ import Network.PeyoTLS.Types (
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as HM (
 	TlsM, run,
-	HandshakeM, execHandshakeM, rerunHandshakeM,
+	HandshakeM, AlertLevel(..), AlertDesc(..), execHandshakeM, rerunHandshakeM,
+		withRandom, randomByteString, flushAppData,
 		SettingsS, getSettingsC, setSettingsC, getSettingsS, setSettingsS,
-		withRandom, randomByteString, flushAppData_,
-		getClientFinished, setClientFinished,
-		getServerFinished, setServerFinished,
+		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-		AlertLevel(..), AlertDesc(..),
-	ValidateHandle(..), handshakeValidate,
 	TlsHandle_(..), names, CertSecretKey(..), isRsaKey, isEcdsaKey,
+	ValidateHandle(..), handshakeValidate,
 
 	generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	handshakeHash, finishedHash, throwError,
-	ContentType(..),
 	Side(..), RW(..),
 
-	getAdBuf, setAdBuf, pushAdBufH,
+	getAdBuf, setAdBuf,
 
 	hsGet, hsPut, ccsGet, ccsPut, adGet, adGetLine, adGetContent, updateHash,
 	)
@@ -150,10 +147,10 @@ putChangeCipherSpec =
 data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
 	deriving Show
 
-encodeContent :: Content -> (HM.ContentType, BS.ByteString)
-encodeContent (CCCSpec ccs) = (HM.CTCCSpec, B.encode ccs)
-encodeContent (CAlert al ad) = (HM.CTAlert, BS.pack [al, ad])
-encodeContent (CHandshake hss) = (HM.CTHandshake, B.encode hss)
+encodeContent :: Content -> (Int, BS.ByteString)
+encodeContent (CCCSpec ccs) = (0, B.encode ccs)
+encodeContent (CAlert al ad) = (0, BS.pack [al, ad])
+encodeContent (CHandshake hss) = (0, B.encode hss)
 
 class DhParam b where
 	type Secret b
@@ -212,8 +209,8 @@ finishedHash :: (HandleLike h, CPRG g) => HM.Side -> HM.HandshakeM h g Finished
 finishedHash s = (Finished `liftM`) $ do
 	fh <- HM.finishedHash s
 	case s of
-		HM.Client -> HM.setClientFinished fh
-		HM.Server -> HM.setServerFinished fh
+		HM.Client -> HM.setClFinished fh
+		HM.Server -> HM.setSvFinished fh
 	return fh
 
 hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
@@ -259,9 +256,6 @@ hlGetContentRn rn t = do
 	else do	HM.setAdBuf t ""
 		return bf
 
-flushAppData :: (HandleLike h, CPRG g) => HM.HandshakeM h g Bool
-flushAppData = uncurry (>>) . (HM.pushAdBufH *** return) =<< HM.flushAppData_
-
 isRenegoInfo :: Extension -> Bool
 isRenegoInfo (ERenegoInfo _) = True
 isRenegoInfo _ = False
@@ -270,22 +264,22 @@ emptyRenegoInfo :: Extension
 emptyRenegoInfo = ERenegoInfo ""
 
 checkClRenego, checkSvRenego :: HandleLike h => Extension -> HM.HandshakeM h g ()
-checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
+checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` HM.getClFinished >>= \ok ->
 	unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
 checkClRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
 checkSvRenego (ERenegoInfo ri) = do
-	cf <- HM.getClientFinished
-	sf <- HM.getServerFinished
+	cf <- HM.getClFinished
+	sf <- HM.getSvFinished
 	unless (ri == cf `BS.append` sf) $ HM.throwError
 		HM.ALFatal HM.ADHsFailure
 		"Network.PeyoTLS.Base.checkServerRenego: bad renegotiation"
 checkSvRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
 
 makeClRenego, makeSvRenego :: HandleLike h => HM.HandshakeM h g Extension
-makeClRenego = ERenegoInfo `liftM` HM.getClientFinished
+makeClRenego = ERenegoInfo `liftM` HM.getClFinished
 makeSvRenego = ERenegoInfo `liftM`
-	(BS.append `liftM` HM.getClientFinished `ap` HM.getServerFinished)
+	(BS.append `liftM` HM.getClFinished `ap` HM.getSvFinished)
 
 validateAlert :: [X509.FailedReason] -> HM.AlertDesc
 validateAlert vr

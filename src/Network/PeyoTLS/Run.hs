@@ -19,17 +19,16 @@ module Network.PeyoTLS.Run (
 	TH.hlPut_, TH.hlDebug_, TH.hlClose_,
 	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_, tlsGet__,
 	tGetLine_, tGetContent_,
-	getClientFinished, setClientFinished,
-	getServerFinished, setServerFinished,
+	getClFinished, getSvFinished, setClFinished, setSvFinished,
 
 	resetSequenceNumber,
 
 	getSettingsS, setSettingsS, TH.SettingsS,
 	getSettingsC, setSettingsC, TH.Settings,
-	flushAppData_,
+	flushAppData,
 
 	getAdBuf, setAdBuf,
-	pushAdBufH,
+	pushAdBuf,
 
 	TH.CertSecretKey(..)
 	) where
@@ -39,7 +38,7 @@ import Prelude hiding (read)
 import Data.Word
 import Control.Applicative
 import qualified Data.ASN1.Types as ASN1
-import Control.Arrow (first)
+import Control.Arrow (first, (***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (
@@ -262,14 +261,13 @@ handshakeHash = get >>= lift . TH.handshakeHash
 finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteString
 finishedHash p = get >>= lift . flip TH.finishedHash p
 
-getClientFinished, getServerFinished :: HandleLike h => HandshakeM h g BS.ByteString
-getClientFinished = gets fst >>= lift . TH.getClientFinishedT
-getServerFinished = gets fst >>= lift . TH.getServerFinishedT
+getClFinished, getSvFinished :: HandleLike h => HandshakeM h g BS.ByteString
+getClFinished = gets fst >>= lift . TH.getClientFinishedT
+getSvFinished = gets fst >>= lift . TH.getServerFinishedT
 
-setClientFinished, setServerFinished ::
-	HandleLike h => BS.ByteString -> HandshakeM h g ()
-setClientFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
-setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
+setClFinished, setSvFinished :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+setClFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
+setSvFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
 
 getSettingsS :: HandleLike h => HandshakeM h g TH.SettingsS
 getSettingsS = gets fst >>= lift . TH.getInitSetT
@@ -296,8 +294,8 @@ getAdBufH = gets fst >>= lift . TH.getAdBufT
 setAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 setAdBufH bs = gets fst >>= lift . flip TH.setAdBufT bs
 
-pushAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-pushAdBufH bs = do
+pushAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+pushAdBuf bs = do
 	bf <- getAdBufH
 	setAdBufH $ bf `BS.append` bs
 
@@ -350,3 +348,6 @@ ccsPut w = do
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 updateHash bs = get >>= lift . flip TH.updateHash bs >>= put
+
+flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
+flushAppData = uncurry (>>) . (pushAdBuf *** return) =<< flushAppData_
