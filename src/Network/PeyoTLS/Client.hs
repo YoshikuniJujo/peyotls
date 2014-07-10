@@ -22,7 +22,7 @@ module Network.PeyoTLS.Client (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, liftM, ap)
-import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -47,11 +47,11 @@ import Network.PeyoTLS.Base ( debug,
 	TlsHandle_, CertSecretKey(..),
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
-	ClientHello(..), ServerHello(..), SessionId(..), eRenegoInfo,
+	ClientHello(..), ServerHello(..), SessionId(..), isRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
-		checkServerRenego, makeClientRenego,
+		checkSvRenego, makeClRenego,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
 	CertReq(..), ClCertType(..),
 	ServerHelloDone(..),
@@ -122,7 +122,7 @@ clientHello cscl = do
 	cr <- randomByteString 32
 	((>>) <$> writeHandshake <*> debug "low")
 		. ClientHello (3, 3) cr (SessionId "") cscl [CompMethodNull]
-		. Just . (: []) =<< makeClientRenego
+		. Just . (: []) =<< makeClRenego
 	return cr
 
 handshake :: (ValidateHandle h, CPRG g) =>
@@ -149,8 +149,8 @@ serverHello = do
 		CompMethodNull -> return ()
 		_ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".serverHello: only compression method null"
-	case listToMaybe . mapMaybe eRenegoInfo $ fromMaybe [] e of
-		Just ri -> checkServerRenego ri
+	case find isRenegoInfo $ fromMaybe [] e of
+		Just ri -> checkSvRenego ri
 		_ -> throwError ALFatal ADInsufficientSecurity $
 			moduleName ++ ".serverHello: require secure renegotiation"
 	setCipherSuite cs

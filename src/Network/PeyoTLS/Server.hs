@@ -54,7 +54,7 @@ import Network.PeyoTLS.Base ( debug,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
-		checkClientRenego, makeServerRenego,
+		checkClRenego, makeSvRenego,
 	ServerKeyEx(..), SecretKey(..),
 	certReq, ClCertType(..),
 	ServerHelloDone(..),
@@ -186,7 +186,7 @@ clientHello cssv = do
 
 checkRenegoInfo ::
 	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
-checkRenegoInfo cscl me = (\n -> maybe n checkClientRenego mcf) . throwError
+checkRenegoInfo cscl me = (\n -> maybe n checkClRenego mcf) . throwError
 	ALFatal ADInsufficientSecurity $
 	moduleName ++ ".checkRenego: require secure renegotiation"
 	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
@@ -206,7 +206,7 @@ serverHello rcc ecc = do
 	sr <- randomByteString 32
 	writeHandshake
 		. ServerHello version sr (SessionId "") cs CompMethodNull
-		. Just . (: []) =<< makeServerRenego
+		. Just . (: []) =<< makeSvRenego
 	writeHandshake =<< case (ke, rcc, ecc) of
 		(ECDHE_ECDSA, _, Just c) -> return c
 		(_, Just c, _) -> return c

@@ -13,13 +13,12 @@ module Network.PeyoTLS.Base (
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
-	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
+	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		HM.getCipherSuite, HM.setCipherSuite,
-		checkClientRenego, makeClientRenego,
-		checkServerRenego, makeServerRenego,
+		checkClRenego, checkSvRenego, makeClRenego, makeSvRenego,
 	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 		SecretKey(..), SvSignPublicKey(..),
 	CertReq(..), certReq, ClCertType(..),
@@ -263,10 +262,6 @@ hlGetContentRn rn t = do
 flushAppData :: (HandleLike h, CPRG g) => HM.HandshakeM h g Bool
 flushAppData = uncurry (>>) . (HM.pushAdBufH *** return) =<< HM.flushAppData_
 
-eRenegoInfo :: Extension -> Maybe BS.ByteString
-eRenegoInfo (ERenegoInfo ri) = Just ri
-eRenegoInfo _ = Nothing
-
 isRenegoInfo :: Extension -> Bool
 isRenegoInfo (ERenegoInfo _) = True
 isRenegoInfo _ = False
@@ -274,23 +269,22 @@ isRenegoInfo _ = False
 emptyRenegoInfo :: Extension
 emptyRenegoInfo = ERenegoInfo ""
 
-checkClientRenego :: HandleLike h => Extension -> HM.HandshakeM h g ()
-checkClientRenego (ERenegoInfo cf) = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
+checkClRenego, checkSvRenego :: HandleLike h => Extension -> HM.HandshakeM h g ()
+checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
 	unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
-checkClientRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
-checkServerRenego ::
-	HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
-checkServerRenego ri = do
+checkClRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
+checkSvRenego (ERenegoInfo ri) = do
 	cf <- HM.getClientFinished
 	sf <- HM.getServerFinished
 	unless (ri == cf `BS.append` sf) $ HM.throwError
 		HM.ALFatal HM.ADHsFailure
 		"Network.PeyoTLS.Base.checkServerRenego: bad renegotiation"
+checkSvRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
 
-makeClientRenego, makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension
-makeClientRenego = ERenegoInfo `liftM` HM.getClientFinished
-makeServerRenego = ERenegoInfo `liftM`
+makeClRenego, makeSvRenego :: HandleLike h => HM.HandshakeM h g Extension
+makeClRenego = ERenegoInfo `liftM` HM.getClientFinished
+makeSvRenego = ERenegoInfo `liftM`
 	(BS.append `liftM` HM.getClientFinished `ap` HM.getServerFinished)
 
 validateAlert :: [X509.FailedReason] -> HM.AlertDesc
