@@ -40,10 +40,10 @@ import Network.PeyoTLS.Base (
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClientRenego, makeServerRenego,
-	ServerKeyExchange(..), SecretKey(..),
-	certificateRequest, ClientCertificateType(..),
+	ServerKeyEx(..), SecretKey(..),
+	certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyExchange(..), Epms(..), generateKeys, decryptRsa,
+	ClientKeyEx(..), Epms(..), generateKeys, decryptRsa,
 	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
@@ -201,7 +201,7 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 		. ServerKeyEx (B.encode dp) pv ha (signatureAlgorithm sk)
 		. sign ha bl sk $ BS.concat [cr, sr, B.encode dp, pv]
 	const `liftM` reqAndCert mcs `ap` do
-		ClientKeyExchange cke <- readHandshake
+		ClientKeyEx cke <- readHandshake
 		generateKeys Server rs . calculateShared dp sv =<<
 			either (throwError ALFatal ADInternalError .
 					(moduleName ++) . (".dhKeyExchange: " ++))
@@ -210,7 +210,7 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 reqAndCert :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
 reqAndCert mcs = do
-	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
+	flip (maybe $ return ()) mcs $ writeHandshake . certReq
 		[CTRsaSign, CTEcdsaSign] [(Sha256, Rsa), (Sha256, Ecdsa)]
 	writeHandshake SHDone
 	flip (maybe $ return Nothing) mcs $ liftM Just . \cs -> do

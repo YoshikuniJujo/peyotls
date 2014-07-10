@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.Run (
+	isRsaKey, isEcdsaKey,
 	checkAppData,
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
@@ -76,6 +77,14 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	CertSecretKey(..),
 	)
+
+isEcdsaKey :: TH.CertSecretKey -> Bool
+isEcdsaKey (TH.EcdsaKey _) = True
+isEcdsaKey _ = False
+
+isRsaKey :: TH.CertSecretKey -> Bool
+isRsaKey (TH.RsaKey _) = True
+isRsaKey _ = False
 
 instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandle_ h g) where
 	type HandleMonad (TH.TlsHandle_ h g) = TH.TlsM h g

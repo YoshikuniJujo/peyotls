@@ -9,7 +9,7 @@ module Network.PeyoTLS.Base (
 		HM.AlertLevel(..), HM.AlertDesc(..), HM.throwError,
 		HM.debugCipherSuite, debug,
 	HM.ValidateHandle(..), HM.handshakeValidate, validateAlert,
-	HM.TlsHandle_, HM.names, HM.CertSecretKey(..), isRsaKey, isEcdsaKey,
+	HM.TlsHandle_, HM.names, HM.CertSecretKey(..), HM.isRsaKey, HM.isEcdsaKey,
 		readHandshake, writeHandshake, writeHandshakeNH,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
@@ -19,11 +19,11 @@ module Network.PeyoTLS.Base (
 		HM.getCipherSuite, HM.setCipherSuite,
 		checkClientRenego, makeClientRenego,
 		checkServerRenego, makeServerRenego,
-	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
+	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 		SecretKey(..), SvSignPublicKey(..),
-	CertReq(..), certificateRequest, ClientCertificateType(..),
+	CertReq(..), certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyExchange(..), Epms(..),
+	ClientKeyEx(..), Epms(..),
 		HM.generateKeys, HM.decryptRsa, HM.encryptRsa, HM.rsaPadding,
 	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
 		HM.handshakeHash,
@@ -33,9 +33,8 @@ module Network.PeyoTLS.Base (
 
 import Control.Applicative
 import Control.Arrow (first, second, (***))
-import Control.Monad (liftM)
+import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
-import qualified "monads-tf" Control.Monad.Error as E
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -47,11 +46,14 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
+import qualified Data.X509 as X509
+import qualified Data.X509.Validation as X509
+import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
-import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
@@ -59,50 +61,38 @@ import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Data.X509 as X509
-import qualified Data.X509.Validation as X509
-import qualified Data.X509.CertificateStore as X509
-
-import Network.PeyoTLS.Types ( Extension(..),
+import Network.PeyoTLS.Types (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CompMethod(..),
-	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-	CertReq(..), certificateRequest, ClientCertificateType(..),
-		SignAlg(..), HashAlg(..),
-	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
+		CompMethod(..), Extension(..),
+	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
+	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
+	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as HM (
-	checkAppData,
-	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
-	withRandom, randomByteString,
+	TlsM, run, SettingsS,
+		getSettingsC, setSettingsC, getSettings, setSettings,
+	HandshakeM, execHandshakeM, rerunHandshakeM,
+		withRandom, randomByteString, flushAppData_,
+		getClientFinished, setClientFinished,
+		getServerFinished, setServerFinished,
+		resetSequenceNumber,
+		AlertLevel(..), AlertDesc(..),
 	ValidateHandle(..), handshakeValidate,
-	TlsHandle_(..), ContentType(..),
-		names,
-		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+	TlsHandle_(..), names, CertSecretKey(..), isRsaKey, isEcdsaKey,
+
+	checkAppData,
+		getCipherSuite, setCipherSuite,
+		flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
+		tlsGet_, tGetLine_, tGetContent_,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
-	AlertLevel(..), AlertDesc(..),
+	ContentType(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
-	tlsGet_,
-	tGetLine_, tGetContent_,
-	getClientFinished, setClientFinished,
-	getServerFinished, setServerFinished,
-	resetSequenceNumber,
-
-	getSettings, setSettings, SettingsS,
-	getSettingsC, setSettingsC,
-	flushAppData_,
-	getAdBuf,
-	setAdBuf,
-	pushAdBufH,
-
-	CertSecretKey(..),
+	getAdBuf, setAdBuf, pushAdBufH,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
-
--- import Network.PeyoTLS.CertSecretKey
 
 type PeyotlsM = HM.TlsM Handle SystemRNG
 
@@ -296,14 +286,6 @@ hlGetContentRn rn t = do
 flushAppData :: (HandleLike h, CPRG g) => HM.HandshakeM h g Bool
 flushAppData = uncurry (>>) . (HM.pushAdBufH *** return) =<< HM.flushAppData_
 
-isEcdsaKey :: HM.CertSecretKey -> Bool
-isEcdsaKey (HM.EcdsaKey _) = True
-isEcdsaKey _ = False
-
-isRsaKey :: HM.CertSecretKey -> Bool
-isRsaKey (HM.RsaKey _) = True
-isRsaKey _ = False
-
 eRenegoInfo :: Extension -> Maybe BS.ByteString
 eRenegoInfo (ERenegoInfo ri) = Just ri
 eRenegoInfo _ = Nothing
@@ -311,19 +293,19 @@ eRenegoInfo _ = Nothing
 checkClientRenego, checkServerRenego ::
 	HandleLike h => BS.ByteString -> HM.HandshakeM h g ()
 checkClientRenego cf = (cf ==) `liftM` HM.getClientFinished >>= \ok ->
-	E.unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
+	unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
 checkServerRenego ri = do
 	cf <- HM.getClientFinished
 	sf <- HM.getServerFinished
-	E.unless (ri == cf `BS.append` sf) $ HM.throwError
+	unless (ri == cf `BS.append` sf) $ HM.throwError
 		HM.ALFatal HM.ADHsFailure
 		"Network.PeyoTLS.Base.checkServerRenego: bad renegotiation"
 
 makeClientRenego, makeServerRenego :: HandleLike h => HM.HandshakeM h g Extension
 makeClientRenego = ERenegoInfo `liftM` HM.getClientFinished
 makeServerRenego = ERenegoInfo `liftM`
-	(BS.append `liftM` HM.getClientFinished `E.ap` HM.getServerFinished)
+	(BS.append `liftM` HM.getClientFinished `ap` HM.getServerFinished)
 
 validateAlert :: [X509.FailedReason] -> HM.AlertDesc
 validateAlert vr

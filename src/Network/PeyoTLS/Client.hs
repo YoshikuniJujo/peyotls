@@ -38,9 +38,9 @@ import Network.PeyoTLS.Base ( debug,
 		setCipherSuite,
 		checkServerRenego, makeClientRenego,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
-	CertReq(..), ClientCertificateType(..),
+	CertReq(..), ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyExchange(..), Epms(..), generateKeys, encryptRsa,
+	ClientKeyEx(..), Epms(..), generateKeys, encryptRsa,
 	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
 	DhParam(..), makeEcdsaPubKey )
@@ -171,7 +171,7 @@ succeed t pk rs@(cr, sr) crts = do
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	generateKeys Client rs $ calculateShared ps sv pv
-	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic ps sv
+	writeHandshake . ClientKeyEx . B.encode $ calculatePublic ps sv
 	finishHandshake crt
 	where pre = moduleName ++ ".succeed: "
 
@@ -202,7 +202,7 @@ clientCertificate crts = do
 			_ -> throwError ALFatal ADUnknownCa $ moduleName ++
 				".clientCertificate: no certificate"
 
-isMatchedCert :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
+isMatchedCert :: [ClCertType] -> [(HashAlg, SignAlg)] ->
 	[X509.DistinguishedName] -> (CertSecretKey, X509.CertificateChain) -> Bool
 isMatchedCert ct hsa dn = (&&) <$> csk . fst <*> ccrt . snd
 	where

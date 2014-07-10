@@ -6,10 +6,10 @@ module Network.PeyoTLS.Types ( Extension(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..),
-	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-	CertReq(..), certificateRequest, ClientCertificateType(..),
+	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
+	CertReq(..), certReq, ClCertType(..),
 		SignAlg(..), HashAlg(..),
-	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
+	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), Finished(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -28,15 +28,15 @@ import Network.PeyoTLS.Hello ( Extension(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	CompMethod(..), HashAlg(..), SignAlg(..) )
 import Network.PeyoTLS.Certificate (
-	CertReq(..), certificateRequest, ClientCertificateType(..),
-	ClientKeyExchange(..), DigitallySigned(..) )
+	CertReq(..), certReq, ClCertType(..),
+	ClientKeyEx(..), DigitallySigned(..) )
 
 data Handshake
 	= HHelloReq
 	| HClientHello ClientHello           | HServerHello ServerHello
 	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
 	| HCertificateReq CertReq | HServerHelloDone
-	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyExchange
+	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyEx
 	| HFinished BS.ByteString            | HRaw Type BS.ByteString
 	deriving Show
 
@@ -103,7 +103,7 @@ instance HandshakeItem X509.CertificateChain where
 	fromHandshake _ = Nothing
 	toHandshake = HCertificate
 
-data ServerKeyExchange = ServerKeyEx BS.ByteString BS.ByteString
+data ServerKeyEx = ServerKeyEx BS.ByteString BS.ByteString
 	HashAlg SignAlg BS.ByteString deriving Show
 
 data ServerKeyExDhe = ServerKeyExDhe DH.Params DH.PublicNumber
@@ -112,7 +112,7 @@ data ServerKeyExDhe = ServerKeyExDhe DH.Params DH.PublicNumber
 data ServerKeyExEcdhe = ServerKeyExEcdhe ECC.Curve ECC.Point
 	HashAlg SignAlg BS.ByteString deriving Show
 
-instance HandshakeItem ServerKeyExchange where
+instance HandshakeItem ServerKeyEx where
 	fromHandshake = undefined
 	toHandshake = HServerKeyEx . B.encode
 
@@ -128,7 +128,7 @@ instance HandshakeItem ServerKeyExEcdhe where
 		either (const Nothing) Just $ B.decode ske
 	fromHandshake _ = Nothing
 
-instance B.Bytable ServerKeyExchange where
+instance B.Bytable ServerKeyEx where
 	decode = undefined
 	encode (ServerKeyEx ps pv ha sa sn) = BS.concat [
 		ps, pv, B.encode ha, B.encode sa,
@@ -178,7 +178,7 @@ instance HandshakeItem DigitallySigned where
 	fromHandshake _ = Nothing
 	toHandshake = HCertVerify
 
-instance HandshakeItem ClientKeyExchange where
+instance HandshakeItem ClientKeyEx where
 	fromHandshake (HClientKeyEx cke) = Just cke
 	fromHandshake _ = Nothing
 	toHandshake = HClientKeyEx
@@ -190,13 +190,13 @@ instance HandshakeItem Epms where
 	fromHandshake _ = Nothing
 	toHandshake = HClientKeyEx . epmsToCke
 
-ckeToEpms :: ClientKeyExchange -> Maybe Epms
-ckeToEpms (ClientKeyExchange cke) = case B.runBytableM (B.take =<< B.take 2) cke of
+ckeToEpms :: ClientKeyEx -> Maybe Epms
+ckeToEpms (ClientKeyEx cke) = case B.runBytableM (B.take =<< B.take 2) cke of
 	Right (e, "") -> Just $ Epms e
 	_ -> Nothing
 
-epmsToCke :: Epms -> ClientKeyExchange
-epmsToCke (Epms epms) = ClientKeyExchange $ B.addLen (undefined :: Word16) epms
+epmsToCke :: Epms -> ClientKeyEx
+epmsToCke (Epms epms) = ClientKeyEx $ B.addLen (undefined :: Word16) epms
 
 data Finished = Finished BS.ByteString deriving (Show, Eq)
 

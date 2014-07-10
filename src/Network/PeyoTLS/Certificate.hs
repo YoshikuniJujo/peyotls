@@ -2,8 +2,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Certificate (
-	CertReq(..), certificateRequest, ClientCertificateType(..),
-	ClientKeyExchange(..), DigitallySigned(..)) where
+	CertReq(..), certReq, ClCertType(..),
+	ClientKeyEx(..), DigitallySigned(..)) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Word (Word8, Word16)
@@ -36,12 +36,12 @@ instance B.Parsable X509.CertificateChain where
 				return . X509.CertificateChain $ cs
 			Left (n, err) -> fail $ show n ++ " " ++ err
 
-data CertReq = CertReq [ClientCertificateType] [(HashAlg, SignAlg)] [X509.DistinguishedName]
+data CertReq = CertReq [ClCertType] [(HashAlg, SignAlg)] [X509.DistinguishedName]
 	deriving Show
 
-certificateRequest :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
+certReq :: [ClCertType] -> [(HashAlg, SignAlg)] ->
 	X509.CertificateStore -> CertReq
-certificateRequest t a = CertReq t a
+certReq t a = CertReq t a
 	. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
 	. X509.listCertificates
 
@@ -63,23 +63,23 @@ instance B.Bytable CertReq where
 			either (fail . show) (return . fst) $ ASN1.fromASN1 a1
 		return $ CertReq t a n
 
-data ClientCertificateType = CTRsaSign | CTEcdsaSign | CTRaw Word8
+data ClCertType = CTRsaSign | CTEcdsaSign | CTRaw Word8
 	deriving (Show, Eq)
 
-instance B.Bytable ClientCertificateType where
+instance B.Bytable ClCertType where
 	encode CTRsaSign = "\x01"
 	encode CTEcdsaSign = "\x40"
 	encode (CTRaw w) = BS.pack [w]
 	decode bs = case BS.unpack bs of
 		[w] -> Right $ case w of
 			1 -> CTRsaSign; 64 -> CTEcdsaSign; _ -> CTRaw w
-		_ -> Left "Certificate: ClientCertificateType.decode"
+		_ -> Left "Certificate: ClCertType.decode"
 
-data ClientKeyExchange = ClientKeyExchange BS.ByteString deriving Show
+data ClientKeyEx = ClientKeyEx BS.ByteString deriving Show
 
-instance B.Bytable ClientKeyExchange where
-	decode = Right . ClientKeyExchange
-	encode (ClientKeyExchange epms) = epms
+instance B.Bytable ClientKeyEx where
+	decode = Right . ClientKeyEx
+	encode (ClientKeyEx epms) = epms
 
 data DigitallySigned
 	= DigitallySigned (HashAlg, SignAlg) BS.ByteString
