@@ -10,7 +10,7 @@ module Network.PeyoTLS.Base (
 		HM.debugCipherSuite, debug,
 	HM.ValidateHandle(..), HM.handshakeValidate, validateAlert,
 	HM.TlsHandle_, HM.names, HM.CertSecretKey(..), HM.isRsaKey, HM.isEcdsaKey,
-		readHandshake, writeHandshake, writeHandshakeNH,
+		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
@@ -89,9 +89,7 @@ import qualified Network.PeyoTLS.Run as HM (
 
 	getAdBuf, setAdBuf, pushAdBufH,
 
-	hsGet, hsPut, hsPutNH,
-	ccsGet, ccsPut,
-	adGet, adGetLine, adGetContent,
+	hsGet, hsPut, ccsGet, ccsPut, adGet, adGetLine, adGetContent, updateHash,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
@@ -108,16 +106,23 @@ readHandshake = do
 	case B.decode bs of
 		Right HHelloReq -> readHandshake
 		Right hs -> case fromHandshake hs of
-			Just i -> return i
+			Just i -> do
+				HM.updateHash bs
+				return i
 			_ -> HM.throwError
 				HM.ALFatal HM.ADUnexpectedMessage $ moduleName ++
 				".readHandshake: type mismatch " ++ show hs
 		_ -> HM.throwError HM.ALFatal HM.ADInternalError "bad"
 
-writeHandshake, writeHandshakeNH ::
+writeHandshake::
 	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
-writeHandshake = HM.hsPut . snd . encodeContent . CHandshake . toHandshake
-writeHandshakeNH = HM.hsPutNH . snd . encodeContent . CHandshake . toHandshake
+writeHandshake hi = do
+	let	hs = toHandshake hi
+		bs = snd . encodeContent $ CHandshake hs
+	HM.hsPut bs
+	case hs of
+		HHelloReq -> return ()
+		_ -> HM.updateHash bs
 
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 

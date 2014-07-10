@@ -24,6 +24,8 @@ module Network.PeyoTLS.Handle (
 
 	getAdBufT, setAdBufT,
 	CertSecretKey(..),
+
+	updateHash,
 	) where
 
 import Prelude hiding (read)
@@ -119,11 +121,6 @@ tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
 tlsGet b hh@(t, _) n = do
 	r@(ct, bs) <- buffered t n
 	(r ,) `liftM` case (ct, b, bs) of
-		(CTHandshake, _, "\0") -> return hh
-		(CTHandshake, True, _)
-			| "\0\0\0\0" `BS.isPrefixOf` bs ->
-				updateHash hh $ BS.drop 4 bs
-			| otherwise -> updateHash hh bs
 		_ -> return hh
 
 tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandle_ h g -> TlsM h g ()) ->
@@ -223,7 +220,6 @@ tlsPut b hh@(t, _) ct p = do
 				flush t >> setWBuf (clientId t) (ct, p)
 			| otherwise -> setWBuf (clientId t) (ct, bp `BS.append` p)
 	case (ct, b) of
-		(CTHandshake, True) -> updateHash hh p
 		_ -> return hh
 
 flush :: (HandleLike h, CPRG g) => TlsHandle_ h g -> TlsM h g ()

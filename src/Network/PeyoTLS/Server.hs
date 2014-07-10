@@ -32,7 +32,7 @@ import Network.PeyoTLS.Base (
 		AlertLevel(..), AlertDesc(..), throwError, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandle_, CertSecretKey(..), isRsaKey, isEcdsaKey,
-		readHandshake, writeHandshake, writeHandshakeNH,
+		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
@@ -92,7 +92,7 @@ open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 	iscs _ = True
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
-renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshakeNH HHelloReq >>
+renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshake HHelloReq >>
 		flushAppData >>= flip when (handshake =<< getSettingsS)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()

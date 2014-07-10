@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.Run (
-	hsGet, hsPut, hsPutNH,
+	updateHash,
+	hsGet, hsPut,
 	ccsGet, ccsPut,
 	adGet, adGetLine, adGetContent,
 	isRsaKey, isEcdsaKey,
@@ -59,6 +60,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified Network.PeyoTLS.Handle as TH (
+	updateHash,
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandle_(..), ContentType(..),
@@ -338,11 +340,13 @@ ccsGet = do
 	resetSequenceNumber TH.Read
 	return $ let [w] = BS.unpack bs in w
 
-hsPut, hsPutNH :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
+hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
 hsPut = tlsPut TH.CTHandshake
-hsPutNH = tlsPutNH TH.CTHandshake
 
 ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
 ccsPut w = do
 	tlsPut TH.CTCCSpec $ BS.pack [w]
 	resetSequenceNumber TH.Write
+
+updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+updateHash bs = get >>= lift . flip TH.updateHash bs >>= put
