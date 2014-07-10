@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.Run (
+	checkAppData,
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
@@ -75,6 +76,28 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	CertSecretKey(..),
 	)
+
+instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandle_ h g) where
+	type HandleMonad (TH.TlsHandle_ h g) = TH.TlsM h g
+	type DebugLevel (TH.TlsHandle_ h g) = DebugLevel h
+	hlPut = TH.hlPut_
+	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .)
+		. tlsGet__ . (, undefined)
+	hlGetLine = ($) <$> checkAppData <*> TH.tGetLine
+	hlGetContent = ($) <$> checkAppData <*> TH.tGetContent
+	hlDebug = TH.hlDebug_
+	hlClose = TH.hlClose_
+
+checkAppData :: (HandleLike h, CPRG g) => TH.TlsHandle_ h g ->
+	TH.TlsM h g (TH.ContentType, BS.ByteString) -> TH.TlsM h g BS.ByteString
+checkAppData t m = m >>= \cp -> case cp of
+	(TH.CTAppData, ad) -> return ad
+	(TH.CTAlert, "\SOH\NUL") -> do
+		_ <- tlsPut_ (t, undefined) TH.CTAlert "\SOH\NUL"
+		E.throwError "TlsHandle_.checkAppData: EOF"
+	(TH.CTHandshake, _) -> E.throwError "bad"
+	_ -> do	_ <- tlsPut_ (t, undefined) TH.CTAlert "\2\10"
+		E.throwError "TlsHandle_.checkAppData: not application data"
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw

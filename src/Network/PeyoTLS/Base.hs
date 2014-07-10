@@ -1,52 +1,35 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports,
-	TupleSections #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
-module Network.PeyoTLS.Base ( Extension(..),
-	makeEcdsaPubKey,
-	ClSignPublicKey(..), ClSignSecretKey(..),
-	SvSignPublicKey(..),
-	PeyotlsM, eRenegoInfo,
-	debug, generateKs, blindSign, HM.CertSecretKey(..), isEcdsaKey, isRsaKey,
-	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
-	HM.withRandom, HM.randomByteString,
-	HM.TlsHandle_, HM.names,
-		readHandshake, getChangeCipherSpec,
-		writeHandshake, putChangeCipherSpec,
-		writeHandshakeNH,
-	HM.ValidateHandle(..), HM.handshakeValidate,
-	HM.Alert(..), HM.AlertLevel(..), HM.AlertDesc(..),
-	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-	ServerHelloDone(..),
-	ClientHello(..), ServerHello(..), SessionId(..),
+module Network.PeyoTLS.Base (
+	PeyotlsM, HM.TlsM, HM.run, HM.SettingsS,
+		getSettingsC, setSettingsC, HM.getSettings, HM.setSettings,
+		hlGetRn, hlGetLineRn, hlGetContentRn,
+	HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
+		HM.withRandom, HM.randomByteString, flushAppData,
+		HM.AlertLevel(..), HM.AlertDesc(..), HM.throwError,
+		HM.debugCipherSuite, debug,
+	HM.ValidateHandle(..), HM.handshakeValidate, validateAlert,
+	HM.TlsHandle_, HM.names, HM.CertSecretKey(..), isRsaKey, isEcdsaKey,
+		readHandshake, writeHandshake, writeHandshakeNH,
+		getChangeCipherSpec, putChangeCipherSpec,
+	Handshake(HHelloReq),
+	ClientHello(..), ServerHello(..), SessionId(..), Extension(..), eRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		HM.getCipherSuite, HM.setCipherSuite,
-	CertReq(..), certificateRequest, ClientCertificateType(..), SecretKey(..),
+		checkClientRenego, makeClientRenego,
+		checkServerRenego, makeServerRenego,
+	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
+		SecretKey(..), SvSignPublicKey(..),
+	CertReq(..), certificateRequest, ClientCertificateType(..),
+	ServerHelloDone(..),
 	ClientKeyExchange(..), Epms(..),
-		HM.generateKeys,
-		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
-	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
-	HM.Side(..), HM.RW(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1, HM.throwError,
-	HM.getClientFinished, HM.getServerFinished,
-	checkClientRenego, makeClientRenego,
-	checkServerRenego, makeServerRenego,
-	Finished(..),
-	HM.ContentType(CTAlert, CTHandshake, CTAppData),
-	Handshake(..),
-	HM.tlsHandle,
-	hlGetRn, hlGetLineRn_, hlGetLineRn, hlGetContentRn_,
-	hlGetContentRn,
-
-	HM.getSettings, HM.setSettings, HM.SettingsS,
-	getSettingsC, setSettingsC,
-	HM.flushAppData_,
-	flushAppData,
-	HM.pushAdBufH,
-
-	validateAlert,
-	) where
+		HM.generateKeys, HM.decryptRsa, HM.encryptRsa, HM.rsaPadding,
+	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
+		HM.handshakeHash,
+	HM.RW(..), HM.flushCipherSuite,
+	HM.Side(..), finishedHash,
+	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 ) where
 
 import Control.Applicative
 import Control.Arrow (first, second, (***))
@@ -91,6 +74,7 @@ import Network.PeyoTLS.Types ( Extension(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as HM (
+	checkAppData,
 	TlsM, run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
@@ -99,11 +83,10 @@ import qualified Network.PeyoTLS.Run as HM (
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
-	Alert(..), AlertLevel(..), AlertDesc(..),
+	AlertLevel(..), AlertDesc(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError,
-	hlPut_, tGetLine, tGetContent, tlsGet_, tlsPut_,
-	tGetLine_, tGetContent_, tlsGet__,
-	hlDebug_, hlClose_,
+	tlsGet_,
+	tGetLine_, tGetContent_,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
 	resetSequenceNumber,
@@ -257,43 +240,15 @@ finishedHash s = (Finished `liftM`) $ do
 		HM.Server -> HM.setServerFinished fh
 	return fh
 
-instance (HandleLike h, CPRG g) => HandleLike (HM.TlsHandle_ h g) where
-	type HandleMonad (HM.TlsHandle_ h g) = HM.TlsM h g
-	type DebugLevel (HM.TlsHandle_ h g) = DebugLevel h
-	hlPut = HM.hlPut_
-	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .)
-		. HM.tlsGet__ . (, undefined)
-	hlGetLine = ($) <$> checkAppData <*> HM.tGetLine
-	hlGetContent = ($) <$> checkAppData <*> HM.tGetContent
-	hlDebug = HM.hlDebug_
-	hlClose = HM.hlClose_
-
-checkAppData :: (HandleLike h, CPRG g) => HM.TlsHandle_ h g ->
-	HM.TlsM h g (HM.ContentType, BS.ByteString) -> HM.TlsM h g BS.ByteString
-checkAppData t m = m >>= \cp -> case cp of
-	(HM.CTAppData, ad) -> return ad
-	(HM.CTAlert, "\SOH\NUL") -> do
-		_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\SOH\NUL"
-		E.throwError "TlsHandle_.checkAppData: EOF"
-	(HM.CTHandshake, hs) -> do
-		lift . lift $ hlDebug (HM.tlsHandle t) "critical" "renegotiation?\n"
-		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack
-			. (++ "\n") $ show hs
-		lift . lift . hlDebug (HM.tlsHandle t) "critical" . BSC.pack
-			. (++ "\n") $ show (B.decode hs :: Either String Handshake)
-		return ""
-	_ -> do	_ <- HM.tlsPut_ (t, undefined) HM.CTAlert "\2\10"
-		E.throwError "TlsHandle_.checkAppData: not application data"
-
 hlGetRn_ :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
 	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
-hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
+hlGetRn_ rh = (.) <$> HM.checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
 	. (, undefined)
 
 hlGetLineRn_, hlGetContentRn_ :: (HM.ValidateHandle h, CPRG g) =>
 	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g -> HM.TlsM h g BS.ByteString
-hlGetLineRn_ rh = ($) <$> checkAppData <*> HM.tGetLine_ rh
-hlGetContentRn_ rh = ($) <$> checkAppData <*> HM.tGetContent_ rh
+hlGetLineRn_ rh = ($) <$> HM.checkAppData <*> HM.tGetLine_ rh
+hlGetContentRn_ rh = ($) <$> HM.checkAppData <*> HM.tGetContent_ rh
 
 hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
 	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
