@@ -1,8 +1,23 @@
+{-|
+
+Module		: Network.PeyoTLS.Server
+Copyright	: (c) Yoshikuni Jujo, 2014
+License		: BSD3
+Maintainer	: PAF01143@nifty.ne.jp
+Stability	: Experimental
+
+-}
+
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, renegotiate, names,
+	-- * Basic
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, names,
+	-- * Renegotiation
+	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
+	-- * Cipher Suite
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
+	-- * Others
 	ValidateHandle(..), CertSecretKey(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -77,6 +92,24 @@ renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, ca) <- getSettingsC
 	clientHello cscl >>= \cr ->
 		flushAppData >>= flip when (handshake crts ca cr)
+
+setCipherSuites :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
+	[CipherSuite] -> TlsM h g ()
+setCipherSuites (TlsHandleC t) cscl = rerunHandshakeM t $ do
+	(_, crts, cs) <- getSettingsC
+	setSettingsC (cscl, crts, cs)
+
+setKeyCerts :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
+	[(CertSecretKey, X509.CertificateChain)] -> TlsM h g ()
+setKeyCerts (TlsHandleC t) crts = rerunHandshakeM t $ do
+	(cscl, _, cs) <- getSettingsC
+	setSettingsC (cscl, crts, cs)
+
+setCertificateStore :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
+	X509.CertificateStore -> TlsM h g ()
+setCertificateStore (TlsHandleC t) cs = rerunHandshakeM t $ do
+	(cscl, crts, _) <- getSettingsC
+	setSettingsC (cscl, crts, cs)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
