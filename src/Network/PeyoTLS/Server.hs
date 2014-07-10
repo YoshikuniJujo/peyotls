@@ -25,7 +25,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run,
-		SettingsS, getSettings, setSettings,
+		SettingsS, getSettingsS, setSettingsS,
 		hlGetRn, hlGetLineRn, hlGetContentRn,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
@@ -78,7 +78,7 @@ open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> Maybe X509.CertificateStore ->
 	TlsM h g (TlsHandle h g)
 open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
-	((>>) <$> setSettings <*> handshake) (cssv',
+	((>>) <$> setSettingsS <*> handshake) (cssv',
 		first rsaKey <$> find (isRsaKey . fst) crts,
 		first ecdsaKey <$> find (isEcdsaKey . fst) crts, mcs )
 	where
@@ -93,10 +93,10 @@ open h cssv crts mcs = liftM TlsHandleS . execHandshakeM h $
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ writeHandshakeNH HHelloReq >>
-		flushAppData >>= flip when (handshake =<< getSettings)
+		flushAppData >>= flip when (handshake =<< getSettingsS)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
-rehandshake t = rerunHandshakeM t $ handshake =<< getSettings
+rehandshake t = rerunHandshakeM t $ handshake =<< getSettingsS
 
 handshake :: (ValidateHandle h, CPRG g) => SettingsS -> HandshakeM h g ()
 handshake (cssv, rcrt, ecrt, mcs) = do

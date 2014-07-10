@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
 
 module Network.PeyoTLS.Run (
+	hlGetRn_, hlGetLineRn_, hlGetContentRn_,
 	isRsaKey, isEcdsaKey,
 	checkAppData,
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
@@ -20,7 +21,7 @@ module Network.PeyoTLS.Run (
 
 	resetSequenceNumber,
 
-	getSettings, setSettings, TH.SettingsS,
+	getSettingsS, setSettingsS, TH.SettingsS,
 	getSettingsC, setSettingsC, TH.Settings,
 	flushAppData_,
 
@@ -78,6 +79,9 @@ import qualified Network.PeyoTLS.Handle as TH (
 	CertSecretKey(..),
 	)
 
+moduleName :: String
+moduleName = "Network.PeyoTLS.Run"
+
 isEcdsaKey :: TH.CertSecretKey -> Bool
 isEcdsaKey (TH.EcdsaKey _) = True
 isEcdsaKey _ = False
@@ -103,10 +107,12 @@ checkAppData t m = m >>= \cp -> case cp of
 	(TH.CTAppData, ad) -> return ad
 	(TH.CTAlert, "\SOH\NUL") -> do
 		_ <- tlsPut_ (t, undefined) TH.CTAlert "\SOH\NUL"
-		E.throwError "TlsHandle_.checkAppData: EOF"
+		E.throwError . strMsg $
+			moduleName ++ ".checkAppData: EOF"
 	(TH.CTHandshake, _) -> E.throwError "bad"
 	_ -> do	_ <- tlsPut_ (t, undefined) TH.CTAlert "\2\10"
-		E.throwError "TlsHandle_.checkAppData: not application data"
+		E.throwError . strMsg $
+			moduleName ++ ".checkAppData: not application data"
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
@@ -258,14 +264,14 @@ setClientFinished, setServerFinished ::
 setClientFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
 setServerFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
 
-getSettings :: HandleLike h => HandshakeM h g TH.SettingsS
-getSettings = gets fst >>= lift . TH.getInitSetT
+getSettingsS :: HandleLike h => HandshakeM h g TH.SettingsS
+getSettingsS = gets fst >>= lift . TH.getInitSetT
 
 getSettingsC :: HandleLike h => HandshakeM h g TH.Settings
 getSettingsC = gets fst >>= lift . TH.getSettingsT
 
-setSettings :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
-setSettings is = gets fst >>= lift . flip TH.setInitSetT is
+setSettingsS :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
+setSettingsS is = gets fst >>= lift . flip TH.setInitSetT is
 
 setSettingsC :: HandleLike h => TH.Settings -> HandshakeM h g ()
 setSettingsC is = gets fst >>= lift . flip TH.setSettingsT is
@@ -287,3 +293,14 @@ pushAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 pushAdBufH bs = do
 	bf <- getAdBufH
 	setAdBufH $ bf `BS.append` bs
+
+hlGetRn_ :: (ValidateHandle h, CPRG g) =>
+	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> Int ->
+	TH.TlsM h g BS.ByteString
+hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . TH.tlsGet_ rh
+	. (, undefined)
+
+hlGetLineRn_, hlGetContentRn_ :: (ValidateHandle h, CPRG g) =>
+	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
+hlGetLineRn_ rh = ($) <$> checkAppData <*> tGetLine_ rh
+hlGetContentRn_ rh = ($) <$> checkAppData <*> tGetContent_ rh

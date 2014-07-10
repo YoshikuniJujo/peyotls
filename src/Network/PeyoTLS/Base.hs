@@ -2,9 +2,9 @@
 
 module Network.PeyoTLS.Base (
 	PeyotlsM, HM.TlsM, HM.run, HM.SettingsS,
-		getSettingsC, setSettingsC, HM.getSettings, HM.setSettings,
 		hlGetRn, hlGetLineRn, hlGetContentRn,
 	HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
+		getSettingsC, setSettingsC, HM.getSettingsS, HM.setSettingsS,
 		HM.withRandom, HM.randomByteString, flushAppData,
 		HM.AlertLevel(..), HM.AlertDesc(..), HM.throwError,
 		HM.debugCipherSuite, debug,
@@ -71,26 +71,28 @@ import Network.PeyoTLS.Types (
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as HM (
-	TlsM, run, SettingsS,
-		getSettingsC, setSettingsC, getSettings, setSettings,
+	TlsM, run,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
+		SettingsS, getSettingsC, setSettingsC, getSettingsS, setSettingsS,
 		withRandom, randomByteString, flushAppData_,
 		getClientFinished, setClientFinished,
 		getServerFinished, setServerFinished,
+		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		resetSequenceNumber,
 		AlertLevel(..), AlertDesc(..),
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle_(..), names, CertSecretKey(..), isRsaKey, isEcdsaKey,
 
-	checkAppData,
-		getCipherSuite, setCipherSuite,
-		flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
-		tlsGet_, tGetLine_, tGetContent_,
-		generateKeys, encryptRsa, decryptRsa, rsaPadding,
+
+	generateKeys, encryptRsa, decryptRsa, rsaPadding,
+	handshakeHash, finishedHash, throwError,
 	ContentType(..),
-	Side(..), RW(..), handshakeHash, finishedHash, throwError,
+	Side(..), RW(..),
+
 	getAdBuf, setAdBuf, pushAdBufH,
+
+	hlGetRn_, hlGetLineRn_, hlGetContentRn_,
 	)
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
@@ -230,16 +232,6 @@ finishedHash s = (Finished `liftM`) $ do
 		HM.Server -> HM.setServerFinished fh
 	return fh
 
-hlGetRn_ :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
-	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
-hlGetRn_ rh = (.) <$> HM.checkAppData <*> ((fst `liftM`) .) . HM.tlsGet_ rh
-	. (, undefined)
-
-hlGetLineRn_, hlGetContentRn_ :: (HM.ValidateHandle h, CPRG g) =>
-	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g -> HM.TlsM h g BS.ByteString
-hlGetLineRn_ rh = ($) <$> HM.checkAppData <*> HM.tGetLine_ rh
-hlGetContentRn_ rh = ($) <$> HM.checkAppData <*> HM.tGetContent_ rh
-
 hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
 	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
 hlGetRn rn t n = do
@@ -248,7 +240,7 @@ hlGetRn rn t n = do
 	then do	let (ret, rest) = BS.splitAt n bf
 		HM.setAdBuf t rest
 		return ret
-	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
+	else (bf `BS.append`) `liftM` HM.hlGetRn_ rn t (n - BS.length bf)
 
 hlGetLineRn :: (HM.ValidateHandle h, CPRG g) =>
 	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g ->
@@ -259,7 +251,7 @@ hlGetLineRn rn t = do
 	then do	let (ret, rest) = splitOneLine bf
 		HM.setAdBuf t $ BS.tail rest
 		return ret
-	else (bf `BS.append`) `liftM` hlGetLineRn_ rn t
+	else (bf `BS.append`) `liftM` HM.hlGetLineRn_ rn t
 
 splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
 splitOneLine bs = case BSC.span (/= '\r') bs of
@@ -279,7 +271,7 @@ hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
 hlGetContentRn rn t = do
 	bf <- HM.getAdBuf t
 	if BS.null bf
-	then hlGetContentRn_ rn t
+	then HM.hlGetContentRn_ rn t
 	else do	HM.setAdBuf t ""
 		return bf
 
