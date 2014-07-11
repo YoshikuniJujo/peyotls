@@ -44,7 +44,7 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..),
-		hsGet,
+		hsGet, tlsGet,
 		getContentType, tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
@@ -176,6 +176,7 @@ tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
 tlsGetContentType = gets fst >>= lift . TH.getContentType
 
 tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+-- tlsGet n = do ((_, bs), t') <- lift . flip TH.tlsGet n =<< get; put t'; return bs
 tlsGet n = do (bs, t') <- lift . flip TH.hsGet n =<< get; put t'; return bs
 
 tlsPut :: (HandleLike h, CPRG g) =>

@@ -93,11 +93,11 @@ newHandle h = do
 
 getContentType :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ContentType
 getContentType t = do
-	ct <- fst `liftM` getBuf (clientId t)
-	(\gt -> case ct of CTNull -> gt; _ -> return ct) $ do
-		(ct', bf) <- getWholeWithCt t
-		setBuf (clientId t) (ct', bf)
-		return ct'
+	(ct, bs) <- getBuf (clientId t)
+	(\gt -> case (ct, bs) of (CTNull, _) -> gt; (_, "") -> gt; _ -> return ct) $
+		do	(ct', bf) <- getWholeWithCt t
+			setBuf (clientId t) (ct', bf)
+			return ct'
 
 flushAppData :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> TlsM h g (BS.ByteString, Bool)
@@ -129,12 +129,20 @@ flushAppData t = do
 
 hsGet :: (HandleLike h, CPRG g) => HandleHash h g -> Int ->
 	TlsM h g (BS.ByteString, HandleHash h g)
+hsGet hh 0 = return ("", hh)
 hsGet hh@(t, _) n = do
+	lift . lift . hlDebug (tlsHandle t) "critical" .
+		BSC.pack . (++ "\n") $ show n
 	ct <- getContentType t
+	lift . lift . hlDebug (tlsHandle t) "critical" .
+		BSC.pack . (++ "\n") $ show ct
 	case ct of
+		CTCCSpec -> do
+			((CTCCSpec, bs), hh') <- tlsGet hh n
+			return (bs, hh')
 		CTHandshake -> do
 			((CTHandshake, bs), hh') <- tlsGet hh n
-			return (bs, hh')
+			return (bs, hh)
 		CTAlert -> do
 			((CTAlert, al), _) <- tlsGet hh 2
 			throwError . strMsg $ show al
