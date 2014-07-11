@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Ecdsa (blindSign, makeKs, ecdsaPubKey) where
+module Network.PeyoTLS.Ecdsa (blSign, makeKs, ecdsaPubKey) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (mapMaybe)
@@ -9,33 +9,22 @@ import Data.Bits (shiftR, xor)
 import Crypto.Number.ModArithmetic (inverse)
 
 import qualified Data.ByteString as BS
+import qualified Data.ASN1.Types as ASN1
+import qualified Data.ASN1.Encoding as ASN1
+import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import qualified Data.ASN1.Types as ASN1
-import qualified Data.ASN1.Encoding as ASN1
-import qualified Data.ASN1.BinaryEncoding as ASN1
-
 moduleName :: String
 moduleName = "Newtork.PeyoTLS.Ecdsa"
 
-instance B.Bytable ECDSA.Signature where
-	encode (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
-		ASN1.Start ASN1.Sequence,
-			ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence ]
-	decode bs = case ASN1.decodeASN1' ASN1.DER bs of
-		Right [ASN1.Start ASN1.Sequence, ASN1.IntVal r, ASN1.IntVal s,
-			ASN1.End ASN1.Sequence] -> Right $ ECDSA.Signature r s
-		Right _ -> Left "KeyExchange.decodeSignature"
-		Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
-
 type Hash = BS.ByteString -> BS.ByteString
 
-blindSign :: Integer -> Hash -> ECDSA.PrivateKey -> [Integer] ->
+blSign :: ECDSA.PrivateKey -> Hash -> [Integer] -> Integer ->
 	BS.ByteString -> ECDSA.Signature
-blindSign bl hs (ECDSA.PrivateKey crv d) ks m = head $ bs `mapMaybe` ks
+blSign (ECDSA.PrivateKey crv d) hs ks bl m = head $ bs `mapMaybe` ks
 	where
 	bs k = do
 		r <- case bPointMul bl crv k g of
@@ -45,23 +34,57 @@ blindSign bl hs (ECDSA.PrivateKey crv d) ks m = head $ bs `mapMaybe` ks
 		ki <- inverse k n
 		case ki * (z + r * d) `mod` n of
 			0 -> Nothing
-			s -> return $ ECDSA.Signature r s
+			s -> Just $ ECDSA.Signature r s
 	ECC.CurveCommon _ _ g n _ = ECC.common_curve crv
-	Right e = B.decode $ hs m
-	dl = qlen e - qlen n
 	z = if dl > 0 then e `shiftR` dl else e
+	e = either error id . B.decode $ hs m
+	dl = qlen e - qlen n
 
 bPointMul :: Integer -> ECC.Curve -> Integer -> ECC.Point -> ECC.Point
 bPointMul bl c@(ECC.CurveFP (ECC.CurvePrime _ cc)) k p =
 	ECC.pointMul c (bl * ECC.ecc_n cc + k) p
-bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
+bPointMul _ _ _ _ = error $ moduleName ++ ".bPointMul: not implemented"
+
+ecdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
+ecdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ pnt xy
+	where pnt s = case BS.uncons s of
+		Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
+			(either error id $ B.decode x)
+			(either error id $ B.decode y)
+		_ -> error $ moduleName ++ ".decodePoint: not implemented point fmt"
+
+instance B.Bytable ECDSA.Signature where
+	encode (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
+		ASN1.Start ASN1.Sequence,
+			ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence ]
+	decode bs = case ASN1.decodeASN1' ASN1.DER bs of
+		Right [ASN1.Start ASN1.Sequence,
+			ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence] ->
+			Right $ ECDSA.Signature r s
+		Right _ -> Left $ moduleName ++ ": ECDSA.Signature.decode"
+		Left err -> Left $
+			moduleName ++ ": ECDSA.Signature.decode: " ++ show err
 
 -- RFC 6979
 
-makeKs, generateKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
-makeKs = generateKs
-generateKs hsbl@(hs, _) q x m = filter ((&&) <$> (> 0) <*> (< q)) .
-	uncurry (createKs hsbl q) . initializeKV hsbl q x $ hs m
+makeKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
+makeKs hb@(hs, _) q x = filter ((&&) <$> (> 0) <*> (< q))
+	. uncurry (createKs hb q) . initializeKV hb q x . hs
+
+createKs :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> [Integer]
+createKs hb@(hs, bls) q k v = kk : createKs hb q k' v''
+	where
+	(t, v') = createT hb q k v ""
+	kk = bits2int q t
+	k' = hmac hs bls k $ v' `BS.append` "\x00"
+	v'' = hmac hs bls k' v'
+
+createT :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString ->
+	BS.ByteString -> (BS.ByteString, BS.ByteString)
+createT hb@(hs, bls) q k v t
+	| blen t < qlen q = createT hb q k v' $ t `BS.append` v'
+	| otherwise = (t, v)
+	where v' = hmac hs bls k v
 
 initializeKV :: (Hash, Int) ->
 	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
@@ -75,22 +98,6 @@ initializeKV (hs, bls) q x h = (k2, v2)
 	k2 = hmac hs bls k1 $
 		BS.concat [v1, "\x01", int2octets q x, bits2octets q h]
 	v2 = hmac hs bls k2 v1
-
-createKs :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> [Integer]
-createKs hsbl@(hs, bls) q k v = kk : createKs hsbl q k' v''
-	where
-	(t, v') = createT hsbl q k v ""
-	kk = bits2int q t
-	k' = hmac hs bls k $ v' `BS.append` "\x00"
-	v'' = hmac hs bls k' v'
-
-createT :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString ->
-	BS.ByteString -> (BS.ByteString, BS.ByteString)
-createT hsbl@(hs, bls) q k v t
-	| blen t < qlen q = createT hsbl q k v' $ t `BS.append` v'
-	| otherwise = (t, v)
-	where
-	v' = hmac hs bls k v
 
 hmac :: (BS.ByteString -> BS.ByteString) -> Int ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString
@@ -116,29 +123,13 @@ bits2int :: Integer -> BS.ByteString -> Integer
 bits2int q bs
 	| bl > ql = i `shiftR` (bl - ql)
 	| otherwise = i
-	where
-	ql = qlen q
-	bl = blen bs
-	i = either error id $ B.decode bs
+	where ql = qlen q; bl = blen bs; i = either error id $ B.decode bs
 
 int2octets :: Integer -> Integer -> BS.ByteString
 int2octets q i
 	| bl <= rl = BS.replicate (rl - bl) 0 `BS.append` bs
-	| otherwise = error "Functions.int2octets: too large integer"
-	where
-	rl = rlen q `div` 8
-	bs = B.encode i
-	bl = BS.length bs
+	| otherwise = error $ moduleName ++ ".int2octets: too large integer"
+	where rl = rlen q `div` 8; bs = B.encode i; bl = BS.length bs
 
 bits2octets :: Integer -> BS.ByteString -> BS.ByteString
 bits2octets q bs = int2octets q $ bits2int q bs `mod` q
-
-ecdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
-ecdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
-
-decodePoint :: BS.ByteString -> ECC.Point
-decodePoint s = case BS.uncons s of
-	Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
-		(either error id $ B.decode x)
-		(either error id $ B.decode y)
-	_ -> error $ moduleName ++ ".decodePoint: not implemented point"

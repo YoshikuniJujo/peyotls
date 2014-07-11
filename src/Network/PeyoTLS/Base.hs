@@ -84,7 +84,7 @@ import Network.PeyoTLS.Run (
 		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
-import Network.PeyoTLS.Ecdsa (blindSign, makeKs, ecdsaPubKey)
+import Network.PeyoTLS.Ecdsa (blSign, makeKs, ecdsaPubKey)
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Base"
@@ -247,7 +247,7 @@ instance SvSignSecretKey ECDSA.PrivateKey where
 	generateBlinder _ g = (bl, g')
 		where
 		bl = either error id $ B.decode bs; (bs, g') = cprgGenerate 32 g
-	ssSign sk ha bl m = B.encode $ blindSign bl hs sk (makeKs (hs, bls) q x m) m
+	ssSign sk ha bl m = B.encode $ blSign sk hs (makeKs (hs, bls) q x m) bl m
 		where
 		(hs, bls) = case ha of
 			Sha1 -> (SHA1.hash, 64); Sha256 -> (SHA256.hash, 64)
@@ -277,7 +277,7 @@ instance ClSignSecretKey RSA.PrivateKey where
 
 instance ClSignSecretKey ECDSA.PrivateKey where
 	cssAlgorithm _ = (Sha256, Ecdsa)
-	csSign sk m = enc $ blindSign 0 id sk (makeKs (SHA256.hash, 64) q x m) m
+	csSign sk m = enc $ blSign sk id (makeKs (SHA256.hash, 64) q x m) 0 m
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
