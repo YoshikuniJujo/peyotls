@@ -1,31 +1,20 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Handle (
-	tGetContent_,
-	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
-		run, withRandom,
-	TlsHandleBase(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
-		newHandle, getContentType, tlsPut, makeKeys,
-		chGet, hsPut, ccsPut,
-		debugCipherSuite,
-		getCipherSuite, setCipherSuite, flushCipherSuite,
-		setKeys, finishedHash,
-	adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
-	hlPut_, hlDebug_, hlClose_, tGetLine, tGetLine_, tGetContent,
-	getClFinished, setClFinished,
-	getSvFinished, setSvFinished,
-
-	SettingsC,
-	getSettingsC, setSettingsC,
-	getSettingsS, setSettingsS,
-	SettingsS,
-
-	resetSequenceNumber,
-	flushAd,
-
-	getBuf, setBuf,
+	TlsM, run, withRandom,
+	TlsHandleBase(..), CipherSuite,
+		newHandle, chGet, ccsPut, hsPut,
+		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
+		flushAd, getBuf, setBuf,
+		getCipherSuite, setCipherSuite,
+		SettingsC, getSettingsC, setSettingsC,
+		SettingsS, getSettingsS, setSettingsS,
+		getClFinished, getSvFinished, setClFinished, setSvFinished,
+		makeKeys, setKeys,
+		Side(..), finishedHash,
+		RW(..), flushCipherSuite,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
-	) where
+	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite ) where
 
 import Prelude hiding (read)
 
@@ -363,16 +352,6 @@ hlDebug_ = thlDebug . tlsHandle
 adClose, hlClose_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
 adClose = hlClose_
 hlClose_ t = tlsPut t CTAlert "\SOH\NUL" >> flush t >> thlClose (tlsHandle t)
-
-tGetLine :: (HandleLike h, CPRG g) =>
-	TlsHandleBase h g -> TlsM h g (ContentType, BS.ByteString)
-tGetLine t = do
-	(bct, bp) <- getRBuf $ clientId t
-	case splitLine bp of
-		Just (l, ls) -> setRBuf (clientId t) (bct, ls) >> return (bct, l)
-		_ -> do	cp <- getWholeWithCt t
-			setRBuf (clientId t) cp
-			second (bp `BS.append`) `liftM` tGetLine t
 
 adGetLine, tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
 	TlsHandleBase h g -> TlsM h g BS.ByteString
