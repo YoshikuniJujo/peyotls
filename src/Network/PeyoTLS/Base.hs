@@ -44,8 +44,6 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
-import qualified Data.X509 as X509
-import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
@@ -70,8 +68,7 @@ import Network.PeyoTLS.Types (
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), ChangeCipherSpec(..), Finished(..) )
-import qualified Network.PeyoTLS.Run as RUN (
-	getSettingsC, setSettingsC, finishedHash )
+import qualified Network.PeyoTLS.Run as RUN (finishedHash)
 import Network.PeyoTLS.Run (
 	TlsM, run, TlsHandleBase(..), names,
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
@@ -79,7 +76,7 @@ import Network.PeyoTLS.Run (
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		SettingsS, getSettingsS, setSettingsS,
-		-- getSettingsC, setSettingsC,
+		getSettingsC, setSettingsC,
 		getCipherSuite, setCipherSuite,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
@@ -88,6 +85,9 @@ import Network.PeyoTLS.Run (
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey)
+
+moduleName :: String
+moduleName = "Network.PeyoTLS.Base"
 
 type PeyotlsM = TlsM Handle SystemRNG
 
@@ -110,8 +110,7 @@ readHandshake = do
 				".readHandshake: type mismatch " ++ show hs
 		_ -> throwError ALFatal ADInternalError "bad"
 
-writeHandshake::
-	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
+writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
 writeHandshake hi = do
 	let	hs = toHandshake hi
 		bs = B.encode hs
@@ -133,6 +132,31 @@ putChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 putChangeCipherSpec =
 	ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
 
+finishedHash :: (HandleLike h, CPRG g) => Side -> HandshakeM h g Finished
+finishedHash s = (Finished `liftM`) $ do
+	fh <- RUN.finishedHash s
+	case s of Client -> setClFinished fh; Server -> setSvFinished fh
+	return fh
+
+checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
+checkClRenego (ERenegoInfo cf) = do
+	ok <- (cf ==) `liftM` getClFinished
+	unless ok . throwError ALFatal ADHsFailure $
+		moduleName ++ ".checkClRenego: bad renegotiation"
+checkClRenego _ = throwError ALFatal ADInternalError $
+	moduleName ++ ".checkClRenego: not renego info"
+checkSvRenego (ERenegoInfo ri) = do
+	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
+	unless ok . throwError ALFatal ADHsFailure $
+		moduleName ++ ".checkSvRenego: bad renegotiation"
+checkSvRenego _ = throwError ALFatal ADInternalError $
+	moduleName ++ ".checkSvRenego: not renego info"
+
+makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
+makeClRenego = ERenegoInfo `liftM` getClFinished
+makeSvRenego =
+	ERenegoInfo `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
+
 class DhParam b where
 	type Secret b
 	type Public b
@@ -151,62 +175,26 @@ instance DhParam DH.Params where
 instance DhParam ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
-	generateSecret c = getRangedInteger 32 1 (n - 1)
-		where n = ECC.ecc_n $ ECC.common_curve c
+	generateSecret c = rangedI 32 1 (n - 1)
+		where
+		n = ECC.ecc_n $ ECC.common_curve c
+		rangedI b mn mx g = let
+			(i, g') = first (either error id . B.decode) $
+				cprgGenerate b g in
+			if mn <= i && i <= mx then (i, g') else rangedI b mn mx g'
 	calculatePublic cv sn =
 		ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
 	calculateShared cv sn pp =
 		let ECC.Point x _ = ECC.pointMul cv sn pp in B.encode x
 
-getRangedInteger :: CPRG g => Int -> Integer -> Integer -> g -> (Integer, g)
-getRangedInteger b mn mx g = let
-	(n, g') = first (either error id . B.decode) $ cprgGenerate b g in
-	if mn <= n && n <= mx then (n, g') else getRangedInteger b mn mx g'
+sha1, sha256 :: ASN1.ASN1
+sha1 = ASN1.OID [1, 3, 14, 3, 2, 26]
+sha256 = ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1]
 
-finishedHash :: (HandleLike h, CPRG g) => Side -> HandshakeM h g Finished
-finishedHash s = (Finished `liftM`) $ do
-	fh <- RUN.finishedHash s
-	case s of
-		Client -> setClFinished fh
-		Server -> setSvFinished fh
-	return fh
-
-checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
-checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` getClFinished >>= \ok ->
-	unless ok . throwError ALFatal ADHsFailure $
-		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
-checkClRenego _ = throwError ALFatal ADInternalError "bad"
-checkSvRenego (ERenegoInfo ri) = do
-	cf <- getClFinished
-	sf <- getSvFinished
-	unless (ri == cf `BS.append` sf) $ throwError
-		ALFatal ADHsFailure
-		"Network.PeyoTLS.Base.checkServerRenego: bad renegotiation"
-checkSvRenego _ = throwError ALFatal ADInternalError "bad"
-
-makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
-makeClRenego = ERenegoInfo `liftM` getClFinished
-makeSvRenego = ERenegoInfo `liftM`
-	(BS.append `liftM` getClFinished `ap` getSvFinished)
-
-type SettingsC = (
-	[CipherSuite],
-	[(CertSecretKey, X509.CertificateChain)],
-	X509.CertificateStore )
-
-getSettingsC :: HandleLike h => HandshakeM h g SettingsC
-getSettingsC = do
-	(css, crts, mcs) <- RUN.getSettingsC
-	case mcs of
-		Just cs -> return (css, crts, cs)
-		_ -> throwError ALFatal ADInternalError
-			"Network.PeyoTLS.Base.getSettingsC"
-
-setSettingsC :: HandleLike h => SettingsC -> HandshakeM h g ()
-setSettingsC (css, crts, cs) = RUN.setSettingsC (css, crts, Just cs)
-
-moduleName :: String
-moduleName = "Network.PeyoTLS.Base"
+rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
+rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
+			HD.digestToASN1 HD.hashDescrSHA256 bs of
+		Right pd -> pd; Left m -> error $ show m
 
 class SvSignPublicKey pk where
 	svpAlgorithm :: pk -> SignAlg
@@ -214,21 +202,21 @@ class SvSignPublicKey pk where
 
 instance SvSignPublicKey RSA.PublicKey where
 	svpAlgorithm _ = Rsa
-	verify = rsaVerify
-
-rsaVerify :: HashAlg -> RSA.PublicKey -> BS.ByteString -> BS.ByteString -> Bool
-rsaVerify ha pk sn m = let
-	(hs, oid0) = case ha of
-		Sha1 -> (SHA1.hash, ASN1.OID [1, 3, 14, 3, 2, 26])
-		Sha256 -> (SHA256.hash, ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
-		_ -> error "not implemented"
-	(o, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
-		. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
-		Right [ASN1.Start ASN1.Sequence,
-			ASN1.Start ASN1.Sequence, oid_, ASN1.Null, ASN1.End ASN1.Sequence,
-			ASN1.OctetString o_, ASN1.End ASN1.Sequence ] -> (o_, oid_)
-		e -> error $ show e in
-	oid == oid0 && o == hs m
+	verify ha pk sn m =
+		oid == oid0 && o == hs m
+		where
+		(hs, oid0) = case ha of
+			Sha1 -> (SHA1.hash, sha1)
+			Sha256 -> (SHA256.hash, sha256)
+			_ -> error "not implemented"
+		(o, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
+			. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
+			Right [ASN1.Start ASN1.Sequence,
+				ASN1.Start ASN1.Sequence,
+					oid_, ASN1.Null, ASN1.End ASN1.Sequence,
+				ASN1.OctetString o_,
+				ASN1.End ASN1.Sequence ] -> (o_, oid_)
+			e -> error $ show e
 
 instance SvSignPublicKey ECDSA.PublicKey where
 	svpAlgorithm _ = Ecdsa
@@ -248,10 +236,8 @@ instance SvSignSecretKey RSA.PrivateKey where
 		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
 	sign hs bl sk bs = let
 		(h, oid) = first ($ bs) $ case hs of
-			Sha1 -> (SHA1.hash,
-				ASN1.OID [1, 3, 14, 3, 2, 26])
-			Sha256 -> (SHA256.hash,
-				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
+			Sha1 -> (SHA1.hash, sha1)
+			Sha256 -> (SHA256.hash, sha256)
 			_ -> error $ "HandshakeBase: " ++
 				"not implemented bulk encryption type"
 		a = [ASN1.Start ASN1.Sequence,
@@ -282,30 +268,6 @@ instance SvSignSecretKey ECDSA.PrivateKey where
 		x = ECDSA.private_d sk
 	signatureAlgorithm _ = Ecdsa
 
-class ClSignSecretKey sk where
-	csSign :: sk -> BS.ByteString -> BS.ByteString
-	csAlgorithm :: sk -> (HashAlg, SignAlg)
-
-instance ClSignSecretKey RSA.PrivateKey where
-	csSign sk m = let pd = rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
-	csAlgorithm _ = (Sha256, Rsa)
-
-rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
-rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
-			HD.digestToASN1 HD.hashDescrSHA256 bs of
-		Right pd -> pd; Left m -> error $ show m
-
-instance ClSignSecretKey ECDSA.PrivateKey where
-	csSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
-		where
-		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
-		x = ECDSA.private_d sk
-		enc (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
-			ASN1.Start ASN1.Sequence,
-				ASN1.IntVal r, ASN1.IntVal s,
-				ASN1.End ASN1.Sequence]
-	csAlgorithm _ = (Sha256, Ecdsa)
-
 class ClSignPublicKey pk where
 	cspAlgorithm :: pk -> SignAlg
 	csVerify :: pk -> BS.ByteString -> BS.ByteString -> Bool
@@ -317,3 +279,22 @@ instance ClSignPublicKey RSA.PublicKey where
 instance ClSignPublicKey ECDSA.PublicKey where
 	cspAlgorithm _ = Ecdsa
 	csVerify k = ECDSA.verify id k . either error id . B.decode
+
+class ClSignSecretKey sk where
+	csSign :: sk -> BS.ByteString -> BS.ByteString
+	csAlgorithm :: sk -> (HashAlg, SignAlg)
+
+instance ClSignSecretKey RSA.PrivateKey where
+	csSign sk m = let pd = rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
+	csAlgorithm _ = (Sha256, Rsa)
+
+instance ClSignSecretKey ECDSA.PrivateKey where
+	csSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
+		where
+		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
+		x = ECDSA.private_d sk
+		enc (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
+			ASN1.Start ASN1.Sequence,
+				ASN1.IntVal r, ASN1.IntVal s,
+				ASN1.End ASN1.Sequence]
+	csAlgorithm _ = (Sha256, Ecdsa)

@@ -254,14 +254,30 @@ setSvFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
 getSettingsS :: HandleLike h => HandshakeM h g TH.SettingsS
 getSettingsS = gets fst >>= lift . TH.getInitSetT
 
-getSettingsC :: HandleLike h => HandshakeM h g TH.Settings
-getSettingsC = gets fst >>= lift . TH.getSettingsT
+getSettingsC_ :: HandleLike h => HandshakeM h g TH.Settings
+getSettingsC_ = gets fst >>= lift . TH.getSettingsT
 
 setSettingsS :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
 setSettingsS is = gets fst >>= lift . flip TH.setInitSetT is
 
-setSettingsC :: HandleLike h => TH.Settings -> HandshakeM h g ()
-setSettingsC is = gets fst >>= lift . flip TH.setSettingsT is
+setSettingsC_ :: HandleLike h => TH.Settings -> HandshakeM h g ()
+setSettingsC_ is = gets fst >>= lift . flip TH.setSettingsT is
+
+type SettingsC = (
+	[TH.CipherSuite],
+	[(TH.CertSecretKey, X509.CertificateChain)],
+	X509.CertificateStore )
+
+getSettingsC :: HandleLike h => HandshakeM h g SettingsC
+getSettingsC = do
+	(css, crts, mcs) <- getSettingsC_
+	case mcs of
+		Just cs -> return (css, crts, cs)
+		_ -> throwError TH.ALFatal TH.ADInternalError
+			"Network.PeyoTLS.Base.getSettingsC"
+
+setSettingsC :: HandleLike h => SettingsC -> HandshakeM h g ()
+setSettingsC (css, crts, cs) = setSettingsC_ (css, crts, Just cs)
 
 getAdBuf :: HandleLike h => TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
 getAdBuf = TH.getAdBufT
