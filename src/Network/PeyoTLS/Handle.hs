@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Handle (
+	tGetContent_,
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandleBase(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
+		hsGet,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
 		setKeys,
@@ -115,7 +117,7 @@ flushAppData t = do
 			return (ad `BS.append` bs, b)
 --			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
 		CTAlert -> do
-			((_, a), _) <- tlsGet True (t, undefined) 2
+			((_, a), _) <- tlsGet (t, undefined) 2
 			lift . lift $ hlDebug (tlsHandle t) "low" .
 				BSC.pack $ show a
 			case a of
@@ -125,11 +127,24 @@ flushAppData t = do
 				BSC.pack $ show ct
 			return ("", True)
 
-tlsGet :: (HandleLike h, CPRG g) => Bool -> HandleHash h g ->
+hsGet :: (HandleLike h, CPRG g) => HandleHash h g -> Int ->
+	TlsM h g (BS.ByteString, HandleHash h g)
+hsGet hh@(t, _) n = do
+	ct <- getContentType t
+	case ct of
+		CTHandshake -> do
+			((CTHandshake, bs), hh') <- tlsGet hh n
+			return (bs, hh')
+		CTAlert -> do
+			((CTAlert, al), _) <- tlsGet hh 2
+			throwError . strMsg $ show al
+		_ -> throwError "not handshake"
+
+tlsGet :: (HandleLike h, CPRG g) => HandleHash h g ->
 	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
-tlsGet b hh@(t, _) n = do
+tlsGet hh@(t, _) n = do
 	r@(ct, bs) <- buffered t n
-	(r ,) `liftM` case (ct, b, bs) of
+	(r ,) `liftM` case (ct, bs) of
 		_ -> return hh
 
 buffered :: (HandleLike h, CPRG g) =>
@@ -150,24 +165,41 @@ buffered t n = do
 
 tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
 	HandleHash h g -> Int ->
-	TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
+	TlsM h g (BS.ByteString, HandleHash h g)
 tlsGet_ rn hh@(t, _) n = (, hh) `liftM` buffered_ rn t n
 
 buffered_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
-	TlsHandleBase h g -> Int -> TlsM h g (ContentType, BS.ByteString)
+	TlsHandleBase h g -> Int -> TlsM h g BS.ByteString
 buffered_ rn t n = do
 	ct0 <- getContentType t
 	case ct0 of
 		CTHandshake -> rn t >> buffered_ rn t n
+		CTAlert -> do
+			(CTAlert, b) <- getBuf $ clientId t
+			let rl = 2 - BS.length b
+			al <- if rl <= 0
+				then snd `liftM` splitRetBuf t 2 CTAlert b
+				else do (ct', b') <- getWholeWithCt t
+					unless (ct' == CTAlert) . throwError . strMsg $
+						"Content Type confliction\n"
+					when (BS.null b') $ throwError "buffered: No data"
+					setBuf (clientId t) (ct', b')
+					(b `BS.append`) `liftM` buffered_ rn t rl
+			case al of
+				"\SOH\NULL" -> do
+					_ <- tlsPut True (t, undefined) CTAlert "\SOH\NULL"
+					throwError . strMsg $ "EOF"
+				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> do	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
 			if rl <= 0
-			then splitRetBuf t n ct b
-			else do (ct', b') <- getWholeWithCt t
+			then snd `liftM` splitRetBuf t n ct b
+			else do
+				(ct', b') <- getWholeWithCt t
 				unless (ct' == ct) . throwError . strMsg $
 					"Content Type confliction\n"
 				when (BS.null b') $ throwError "buffered: No data"
 				setBuf (clientId t) (ct', b')
-				second (b `BS.append`) `liftM` buffered_ rn t rl
+				(b `BS.append`) `liftM` buffered_ rn t rl
 
 splitRetBuf :: HandleLike h =>
 	TlsHandleBase h g -> Int -> ContentType -> BS.ByteString ->
@@ -347,20 +379,35 @@ tGetLine t = do
 			second (bp `BS.append`) `liftM` tGetLine t
 
 tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
-	TlsHandleBase h g -> TlsM h g (ContentType, BS.ByteString)
+	TlsHandleBase h g -> TlsM h g BS.ByteString
 tGetLine_ rn t = do
 	ct <- getContentType t
 	case ct of
 		CTHandshake -> rn t >> tGetLine_ rn t
+		CTAlert -> do
+			(CTAlert, b) <- getBuf $ clientId t
+			let rl = 2 - BS.length b
+			al <- if rl <= 0
+				then snd `liftM` splitRetBuf t 2 CTAlert b
+				else do (ct', b') <- getWholeWithCt t
+					unless (ct' == CTAlert) . throwError . strMsg $
+						"Content Type confliction\n"
+					when (BS.null b') $ throwError "buffered: No data"
+					setBuf (clientId t) (ct', b')
+					(b `BS.append`) `liftM` buffered_ rn t rl
+			case al of
+				"\SOH\NULL" -> do
+					_ <- tlsPut True (t, undefined) CTAlert "\SOH\NULL"
+					throwError . strMsg $ "EOF"
+				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> do	(bct, bp) <- getBuf $ clientId t
 			case splitLine bp of
 				Just (l, ls) -> do
 					setBuf (clientId t) (if BS.null ls then CTNull else bct, ls)
-					return (bct, l)
+					return l
 				_ -> do	cp <- getWholeWithCt t
 					setBuf (clientId t) cp
-					second (bp `BS.append`) `liftM`
-						tGetLine_ rn t
+					(bp `BS.append`) `liftM` tGetLine_ rn t
 
 splitLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
 splitLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
@@ -409,3 +456,19 @@ getAdBufT = getAdBuf . clientId
 
 setAdBufT :: HandleLike h => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
 setAdBufT = setAdBuf . clientId
+
+tGetContent_ :: (HandleLike h, CPRG g) =>
+	(TlsHandleBase h g -> TlsM h g ()) ->
+	TlsHandleBase h g -> TlsM h g BS.ByteString
+tGetContent_ rn t = do
+	ct <- getContentType t
+	case ct of
+		CTHandshake -> rn t >> tGetContent_ rn t
+		CTAlert -> do
+			((CTAlert, al), _) <- tlsGet (t, undefined) 2
+			case al of
+				"\SOH\NULL" -> do
+					_ <- tlsPut True (t, undefined) CTAlert "\SOH\NUL"
+					throwError . strMsg $ ".checkAppData: EOF"
+				_ -> throwError . strMsg $ "Alert: " ++ show al
+		_ -> snd `liftM` tGetContent t
