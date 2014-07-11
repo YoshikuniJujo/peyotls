@@ -35,8 +35,7 @@ import Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom,
 		getRBuf, setRBuf, getWBuf, setWBuf, getAdBuf, setAdBuf,
-		getReadSn, getWriteSn, succReadSn, succWriteSn,
-		resetReadSn, resetWriteSn,
+		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
@@ -278,19 +277,19 @@ updateSequenceNumber :: HandleLike h => TlsHandleBase h g -> RW -> TlsM h g Word
 updateSequenceNumber t rw = do
 	ks <- getKeys $ clientId t
 	(sn, cs) <- case rw of
-		Read -> (, kReadCS ks) `liftM` getReadSn (clientId t)
-		Write -> (, kWriteCS ks) `liftM` getWriteSn (clientId t)
+		Read -> (, kReadCS ks) `liftM` getRSn (clientId t)
+		Write -> (, kWriteCS ks) `liftM` getWSn (clientId t)
 	case cs of
 		CipherSuite _ BE_NULL -> return ()
 		_ -> case rw of
-			Read -> succReadSn $ clientId t
-			Write -> succWriteSn $ clientId t
+			Read -> sccRSn $ clientId t
+			Write -> sccWSn $ clientId t
 	return sn
 
 resetSequenceNumber :: HandleLike h => TlsHandleBase h g -> RW -> TlsM h g ()
 resetSequenceNumber t rw = case rw of
-	Read -> resetReadSn $ clientId t
-	Write -> resetWriteSn $ clientId t
+	Read -> rstRSn $ clientId t
+	Write -> rstWSn $ clientId t
 
 makeKeys :: HandleLike h =>
 	TlsHandleBase h g -> Side -> BS.ByteString -> BS.ByteString ->

@@ -6,8 +6,7 @@ module Network.PeyoTLS.Monad (
 		withRandom,
 		getRBuf, setRBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
-		getReadSn, getWriteSn, succReadSn, succWriteSn,
-		resetReadSn, resetWriteSn,
+		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
 		getCipherSuiteSt, setCipherSuiteSt,
 		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
 		getSettings, setSettings,
@@ -70,14 +69,14 @@ setRBuf, setWBuf :: HandleLike h =>
 	S.PartnerId -> (S.ContentType, BS.ByteString) -> TlsM h g ()
 setRBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
 
-getWriteSn, getReadSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
-getWriteSn = gets . S.getWriteSN; getReadSn = gets . S.getReadSN
+getWSn, getRSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
+getWSn = gets . S.getWriteSN; getRSn = gets . S.getReadSN
 
-succWriteSn, succReadSn :: HandleLike h => S.PartnerId -> TlsM h g ()
-succWriteSn = modify . S.succWriteSN; succReadSn = modify . S.succReadSN
+sccWSn, sccRSn :: HandleLike h => S.PartnerId -> TlsM h g ()
+sccWSn = modify . S.succWriteSN; sccRSn = modify . S.succReadSN
 
-resetWriteSn, resetReadSn :: HandleLike h => S.PartnerId -> TlsM h g ()
-resetWriteSn = modify . S.resetWriteSN; resetReadSn = modify . S.resetReadSN
+rstWSn, rstRSn :: HandleLike h => S.PartnerId -> TlsM h g ()
+rstWSn = modify . S.resetWriteSN; rstRSn = modify . S.resetReadSN
 
 getCipherSuiteSt :: HandleLike h => S.PartnerId -> TlsM h g S.CipherSuite
 getCipherSuiteSt = gets . S.getCipherSuite
