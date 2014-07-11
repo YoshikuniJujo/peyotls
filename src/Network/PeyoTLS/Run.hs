@@ -40,10 +40,9 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Network.PeyoTLS.Handle as TH (
 	TlsM, run, withRandom, randomByteString,
 	TlsHandleBase(..),
-		newHandle,
+		newHandle, hsGet, hsPut, ccsPut, adGet,
 
 	Alert(..), AlertLevel(..), AlertDesc(..),
-		hsGet, hsPut_, ccsPut_,
 		generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
@@ -56,7 +55,6 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	getSettingsT, setSettingsT, Settings,
 	getInitSetT, setInitSetT, SettingsS,
-	tlsGet_,
 	flushAppData,
 	getAdBufT,
 	setAdBufT,
@@ -77,10 +75,6 @@ instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandleBase h g) where
 	hlGetContent = undefined
 	hlDebug = TH.hlDebug_
 	hlClose = TH.hlClose_
-
-checkAppData' :: (HandleLike h, CPRG g) => TH.TlsHandleBase h g ->
-	TH.TlsM h g BS.ByteString -> TH.TlsM h g BS.ByteString
-checkAppData' _ m = m >>= \cp -> case cp of ad -> return ad
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
@@ -176,11 +170,11 @@ hsGet_ :: (HandleLike h, CPRG g) =>
 hsGet_ n = do (bs, t') <- lift . flip TH.hsGet n =<< get; put t'; return bs
 
 hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
-hsPut bs = get >>= lift . (\t -> TH.hsPut_ t bs) >>= put
+hsPut bs = get >>= lift . (\t -> TH.hsPut t bs) >>= put
 
 ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
 ccsPut w = do
-	get >>= lift . (\t -> TH.ccsPut_ t w) >>= put
+	get >>= lift . (\t -> TH.ccsPut t w) >>= put
 	resetSequenceNumber TH.Write
 
 generateKeys :: HandleLike h => TH.Side ->
@@ -251,20 +245,10 @@ pushAdBuf bs = do
 	bf <- getAdBufH
 	setAdBufH $ bf `BS.append` bs
 
-adGet, hlGetRn_ :: (ValidateHandle h, CPRG g) =>
+hlGetRn_ :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g -> Int ->
 	TH.TlsM h g BS.ByteString
-adGet = hlGetRn
-hlGetRn_ rh = (.) <$> checkAppData' <*> ((fst `liftM`) .) . TH.tlsGet_ rh
-	. (, undefined)
-
-hlGetLineRn_, hlGetContentRn_, adGetLine, adGetContent ::
-	(ValidateHandle h, CPRG g) =>
-	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
-adGetLine = hlGetLineRn
-hlGetLineRn_ rh = ($) <$> checkAppData' <*> tGetLine_ rh
-adGetContent = hlGetContentRn
-hlGetContentRn_ rh = ($) <$> checkAppData' <*> TH.tGetContent_ rh
+hlGetRn_ rh = ((fst `liftM`) .) . TH.adGet rh . (, undefined)
 
 hsGet__ :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 hsGet__ n = do
@@ -298,9 +282,9 @@ updateHash = modify . second . flip SHA256.update
 flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
 flushAppData = uncurry (>>) . (pushAdBuf *** return) =<< flushAppData_
 
-hlGetRn :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
+adGet :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
 	TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
-hlGetRn rn t n = do
+adGet rn t n = do
 	bf <- getAdBuf t
 	if BS.length bf >= n
 	then do	let (ret, rest) = BS.splitAt n bf
@@ -308,16 +292,16 @@ hlGetRn rn t n = do
 		return ret
 	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
 
-hlGetLineRn :: (ValidateHandle h, CPRG g) =>
+adGetLine :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g ->
 	TH.TlsM h g BS.ByteString
-hlGetLineRn rn t = do
+adGetLine rn t = do
 	bf <- getAdBuf t
 	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
 	then do	let (ret, rest) = splitOneLine bf
 		setAdBuf t $ BS.tail rest
 		return ret
-	else (bf `BS.append`) `liftM` hlGetLineRn_ rn t
+	else (bf `BS.append`) `liftM` tGetLine_ rn t
 
 splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
 splitOneLine bs = case BSC.span (/= '\r') bs of
@@ -331,12 +315,12 @@ dropRet bs = case BSC.uncons bs of
 		_ -> bs'
 	_ -> bs
 
-hlGetContentRn :: (ValidateHandle h, CPRG g) =>
+adGetContent :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
 	TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
-hlGetContentRn rn t = do
+adGetContent rn t = do
 	bf <- getAdBuf t
 	if BS.null bf
-	then hlGetContentRn_ rn t
+	then TH.tGetContent_ rn t
 	else do	setAdBuf t ""
 		return bf
