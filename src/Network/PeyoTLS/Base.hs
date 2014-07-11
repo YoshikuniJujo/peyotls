@@ -20,7 +20,7 @@ module Network.PeyoTLS.Base (
 		HM.getCipherSuite, HM.setCipherSuite,
 		checkClRenego, checkSvRenego, makeClRenego, makeSvRenego,
 	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-		SecretKey(..), SvSignPublicKey(..),
+		SvSignSecretKey(..), SvSignPublicKey(..),
 	CertReq(..), certReq, ClCertType(..),
 	ServerHelloDone(..),
 	ClientKeyEx(..), Epms(..), HM.generateKeys,
@@ -297,13 +297,13 @@ instance SvSignPublicKey ECDSA.PublicKey where
 	verify Sha256 pk = ECDSA.verify SHA256.hash pk . either error id . B.decode
 	verify _ _ = error "TlsClient: ECDSA.PublicKey.verify: not implemented"
 
-class SecretKey sk where
+class SvSignSecretKey sk where
 	type Blinder sk
 	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
 	sign :: HashAlg -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
 	signatureAlgorithm :: sk -> SignAlg
 
-instance SecretKey RSA.PrivateKey where
+instance SvSignSecretKey RSA.PrivateKey where
 	type Blinder RSA.PrivateKey = RSA.Blinder
 	generateBlinder sk rng =
 		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
@@ -326,7 +326,7 @@ instance SecretKey RSA.PrivateKey where
 		RSA.dp (Just bl) sk pd
 	signatureAlgorithm _ = Rsa
 
-instance SecretKey ECDSA.PrivateKey where
+instance SvSignSecretKey ECDSA.PrivateKey where
 	type Blinder ECDSA.PrivateKey = Integer
 	generateBlinder _ rng = let
 		(Right bl, rng') = first B.decode $ cprgGenerate 32 rng in

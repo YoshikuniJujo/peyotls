@@ -58,7 +58,7 @@ import Network.PeyoTLS.Base ( debug,
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClRenego, makeSvRenego,
-	ServerKeyEx(..), SecretKey(..),
+	ServerKeyEx(..), SvSignSecretKey(..),
 	certReq, ClCertType(..),
 	ServerHelloDone(..),
 	ClientKeyEx(..), Epms(..), generateKeys,
@@ -232,7 +232,7 @@ rsaKeyExchange sk (vj, vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
 		unless (pvj == vj && pvn == vn) $ throwError ALFatal ADHsFailure ""
 		return pms
 
-dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
+dhKeyExchange :: (ValidateHandle h, CPRG g, SvSignSecretKey sk,
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
 	HashAlg -> dp -> sk -> (BS.ByteString, BS.ByteString) ->
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
