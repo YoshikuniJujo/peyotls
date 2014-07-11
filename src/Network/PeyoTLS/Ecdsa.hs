@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Ecdsa (blindSign, generateKs) where
+module Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (mapMaybe)
@@ -17,6 +17,9 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
+
+moduleName :: String
+moduleName = "Newtork.PeyoTLS.Ecdsa"
 
 instance B.Bytable ECDSA.Signature where
 	encode (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
@@ -128,3 +131,13 @@ int2octets q i
 
 bits2octets :: Integer -> BS.ByteString -> BS.ByteString
 bits2octets q bs = int2octets q $ bits2int q bs `mod` q
+
+makeEcdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
+makeEcdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
+
+decodePoint :: BS.ByteString -> ECC.Point
+decodePoint s = case BS.uncons s of
+	Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
+		(either error id $ B.decode x)
+		(either error id $ B.decode y)
+	_ -> error $ moduleName ++ ".decodePoint: not implemented point"

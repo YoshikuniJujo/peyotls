@@ -86,7 +86,7 @@ import qualified Network.PeyoTLS.Run as HM (
 		Side(..), handshakeHash, finishedHash,
 	ValidateHandle(..), handshakeValidate,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
-import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
+import Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey)
 
 type PeyotlsM = HM.TlsM Handle SystemRNG
 
@@ -262,13 +262,6 @@ setSettingsC (css, crts, cs) = HM.setSettingsC (css, crts, Just cs)
 moduleName :: String
 moduleName = "Network.PeyoTLS.Base"
 
-decodePoint :: BS.ByteString -> ECC.Point
-decodePoint s = case BS.uncons s of
-	Just (4, p) -> let (x, y) = BS.splitAt 32 p in ECC.Point
-		(either error id $ B.decode x)
-		(either error id $ B.decode y)
-	_ -> error $ moduleName ++ ".decodePoint: not implemented point"
-
 class SvSignPublicKey pk where
 	svpAlgorithm :: pk -> SignAlg
 	verify :: HashAlg -> pk -> BS.ByteString -> BS.ByteString -> Bool
@@ -378,6 +371,3 @@ instance ClSignPublicKey RSA.PublicKey where
 instance ClSignPublicKey ECDSA.PublicKey where
 	cspAlgorithm _ = Ecdsa
 	csVerify k = ECDSA.verify id k . either error id . B.decode
-
-makeEcdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
-makeEcdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
