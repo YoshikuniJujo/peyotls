@@ -68,7 +68,7 @@ import Network.PeyoTLS.Base ( debug,
 	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
-	DhParam(..), makeEcdsaPubKey )
+	DhParam(..), ecdsaPubKey )
 
 type PeyotlsHandle = TlsHandle Handle SystemRNG
 
@@ -162,7 +162,7 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 				"no applicable certificate files"
 	flip (maybe $ return ()) mpk $ \pk -> case pk of
 		X509.PubKeyRSA rpk -> certVerify rpk
-		X509.PubKeyECDSA c xy -> certVerify $ makeEcdsaPubKey c xy
+		X509.PubKeyECDSA c xy -> certVerify $ ecdsaPubKey c xy
 		_ -> throwError ALFatal ADUnsupportedCertificate $
 			pre ++ "not implement: " ++ show pk
 	getChangeCipherSpec >> flushCipherSuite Read

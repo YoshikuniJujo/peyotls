@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Ecdsa (blindSign, makeKs, makeEcdsaPubKey) where
+module Network.PeyoTLS.Ecdsa (blindSign, makeKs, ecdsaPubKey) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (mapMaybe)
@@ -133,8 +133,8 @@ int2octets q i
 bits2octets :: Integer -> BS.ByteString -> BS.ByteString
 bits2octets q bs = int2octets q $ bits2int q bs `mod` q
 
-makeEcdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
-makeEcdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
+ecdsaPubKey :: ECC.CurveName -> BS.ByteString -> ECDSA.PublicKey
+ecdsaPubKey c xy = ECDSA.PublicKey (ECC.getCurveByName c) $ decodePoint xy
 
 decodePoint :: BS.ByteString -> ECC.Point
 decodePoint s = case BS.uncons s of

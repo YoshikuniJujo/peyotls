@@ -29,7 +29,7 @@ module Network.PeyoTLS.Base (
 		handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
-	DhParam(..), makeEcdsaPubKey ) where
+	DhParam(..), ecdsaPubKey ) where
 
 import Control.Arrow (first)
 import Control.Monad (unless, liftM, ap)
@@ -84,7 +84,7 @@ import Network.PeyoTLS.Run (
 		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
-import Network.PeyoTLS.Ecdsa (blindSign, makeKs, makeEcdsaPubKey)
+import Network.PeyoTLS.Ecdsa (blindSign, makeKs, ecdsaPubKey)
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Base"

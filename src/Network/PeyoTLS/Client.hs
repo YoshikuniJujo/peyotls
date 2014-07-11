@@ -63,7 +63,7 @@ import Network.PeyoTLS.Base ( debug,
 	ClientKeyEx(..), Epms(..), generateKeys, -- encryptRsa,
 	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
-	DhParam(..), makeEcdsaPubKey )
+	DhParam(..), ecdsaPubKey )
 
 type PeyotlsHandle = TlsHandle Handle SystemRNG
 
@@ -196,7 +196,7 @@ dheHandshake t rs crts ca = do
 		moduleName ++ ".succeed: validate failure"
 	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
-		X509.PubKeyECDSA cv pt -> succeed t (makeEcdsaPubKey cv pt) rs crts
+		X509.PubKeyECDSA cv pt -> succeed t (ecdsaPubKey cv pt) rs crts
 		_ -> throwError ALFatal ADHsFailure $
 			moduleName ++ ".dheHandshake: not implemented"
 
