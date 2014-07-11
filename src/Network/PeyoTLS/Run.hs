@@ -10,7 +10,7 @@ module Network.PeyoTLS.Run (
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
-	TH.TlsHandle_(..), TH.ContentType(..),
+	TH.TlsHandleBase(..), TH.ContentType(..),
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
 		generateKeys,
@@ -60,7 +60,7 @@ import qualified Network.PeyoTLS.Handle as TH (
 	updateHash,
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
-	TlsHandle_(..), ContentType(..),
+	TlsHandleBase(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
@@ -86,9 +86,9 @@ import qualified Codec.Bytable.BigEndian as B
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
 
-instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandle_ h g) where
-	type HandleMonad (TH.TlsHandle_ h g) = TH.TlsM h g
-	type DebugLevel (TH.TlsHandle_ h g) = DebugLevel h
+instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandleBase h g) where
+	type HandleMonad (TH.TlsHandleBase h g) = TH.TlsM h g
+	type DebugLevel (TH.TlsHandleBase h g) = DebugLevel h
 	hlPut = TH.hlPut_
 	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .)
 		. tlsGet__ . (, undefined)
@@ -97,7 +97,7 @@ instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandle_ h g) where
 	hlDebug = TH.hlDebug_
 	hlClose = TH.hlClose_
 
-checkAppData :: (HandleLike h, CPRG g) => TH.TlsHandle_ h g ->
+checkAppData :: (HandleLike h, CPRG g) => TH.TlsHandleBase h g ->
 	TH.TlsM h g (TH.ContentType, BS.ByteString) -> TH.TlsM h g BS.ByteString
 checkAppData t m = m >>= \cp -> case cp of
 	(TH.CTAppData, ad) -> return ad
@@ -114,17 +114,17 @@ resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
 
 tlsGet_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
-	(TH.TlsHandle_ h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle_ h g, SHA256.Ctx))
+	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
+	(TH.TlsHandleBase h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandleBase h g, SHA256.Ctx))
 tlsGet_ = TH.tlsGet_
 
 tlsGet__ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle_ h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandle_ h g, SHA256.Ctx))
+	(TH.TlsHandleBase h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandleBase h g, SHA256.Ctx))
 tlsGet__ = TH.tlsGet True
 
 tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
-	TH.TlsHandle_ h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
+	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
+	TH.TlsHandleBase h g -> TH.TlsM h g (TH.ContentType, BS.ByteString)
 tGetLine_ = TH.tGetLine_
 
 flushAppData_ :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, Bool)
@@ -137,22 +137,22 @@ tGetContent_ rn t = do
 		_ -> TH.tGetContent t
 
 tlsPut_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandle_ h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandle_ h g, SHA256.Ctx)
+	(TH.TlsHandleBase h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandleBase h g, SHA256.Ctx)
 tlsPut_ = TH.tlsPut True
 
 throwError :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
 throwError al ad m = E.throwError $ TH.Alert al ad m
 
-type HandshakeM h g = StateT (TH.TlsHandle_ h g, SHA256.Ctx) (TH.TlsM h g)
+type HandshakeM h g = StateT (TH.TlsHandleBase h g, SHA256.Ctx) (TH.TlsM h g)
 
 execHandshakeM :: HandleLike h =>
-	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle_ h g)
+	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandleBase h g)
 execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
 rerunHandshakeM ::
-	HandleLike h => TH.TlsHandle_ h g -> HandshakeM h g a -> TH.TlsM h g a
+	HandleLike h => TH.TlsHandleBase h g -> HandshakeM h g a -> TH.TlsM h g a
 rerunHandshakeM t hm = evalStateT hm (t, SHA256.init)
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
@@ -256,11 +256,11 @@ setSettingsS is = gets fst >>= lift . flip TH.setInitSetT is
 setSettingsC :: HandleLike h => TH.Settings -> HandshakeM h g ()
 setSettingsC is = gets fst >>= lift . flip TH.setSettingsT is
 
-getAdBuf :: HandleLike h => TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
+getAdBuf :: HandleLike h => TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
 getAdBuf = TH.getAdBufT
 
 setAdBuf :: HandleLike h =>
-	TH.TlsHandle_ h g -> BS.ByteString -> TH.TlsM h g ()
+	TH.TlsHandleBase h g -> BS.ByteString -> TH.TlsM h g ()
 setAdBuf = TH.setAdBufT
 
 getAdBufH :: HandleLike h => HandshakeM h g BS.ByteString
@@ -275,7 +275,7 @@ pushAdBuf bs = do
 	setAdBufH $ bf `BS.append` bs
 
 adGet, hlGetRn_ :: (ValidateHandle h, CPRG g) =>
-	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> Int ->
+	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g -> Int ->
 	TH.TlsM h g BS.ByteString
 adGet = hlGetRn
 hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . TH.tlsGet_ rh
@@ -283,7 +283,7 @@ hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . TH.tlsGet_ rh
 
 hlGetLineRn_, hlGetContentRn_, adGetLine, adGetContent ::
 	(ValidateHandle h, CPRG g) =>
-	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
+	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
 adGetLine = hlGetLineRn
 hlGetLineRn_ rh = ($) <$> checkAppData <*> tGetLine_ rh
 adGetContent = hlGetContentRn
@@ -327,8 +327,8 @@ updateHash bs = get >>= lift . flip TH.updateHash bs >>= put
 flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
 flushAppData = uncurry (>>) . (pushAdBuf *** return) =<< flushAppData_
 
-hlGetRn :: (ValidateHandle h, CPRG g) => (TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
-	TH.TlsHandle_ h g -> Int -> TH.TlsM h g BS.ByteString
+hlGetRn :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
+	TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
 hlGetRn rn t n = do
 	bf <- getAdBuf t
 	if BS.length bf >= n
@@ -338,7 +338,7 @@ hlGetRn rn t n = do
 	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
 
 hlGetLineRn :: (ValidateHandle h, CPRG g) =>
-	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g ->
+	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g ->
 	TH.TlsM h g BS.ByteString
 hlGetLineRn rn t = do
 	bf <- getAdBuf t
@@ -361,8 +361,8 @@ dropRet bs = case BSC.uncons bs of
 	_ -> bs
 
 hlGetContentRn :: (ValidateHandle h, CPRG g) =>
-	(TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
-	TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
+	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
+	TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
 hlGetContentRn rn t = do
 	bf <- getAdBuf t
 	if BS.null bf

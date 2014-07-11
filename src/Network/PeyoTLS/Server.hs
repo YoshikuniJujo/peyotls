@@ -48,7 +48,7 @@ import Network.PeyoTLS.Base ( debug,
 		withRandom, randomByteString, flushAppData,
 		AlertLevel(..), AlertDesc(..), throwError, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TlsHandle_, CertSecretKey(..), isRsaKey, isEcdsaKey,
+	TlsHandleBase, CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
@@ -69,7 +69,7 @@ import Network.PeyoTLS.Base ( debug,
 
 type PeyotlsHandle = TlsHandle Handle SystemRNG
 
-newtype TlsHandle h g = TlsHandleS { tlsHandleS :: TlsHandle_ h g } deriving Show
+newtype TlsHandle h g = TlsHandleS { tlsHandleS :: TlsHandleBase h g } deriving Show
 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
@@ -137,7 +137,7 @@ renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
 	debug "low" ("after flushAppData" :: String)
 	when ne (handshake =<< getSettingsS)
 
-rehandshake :: (ValidateHandle h, CPRG g) => TlsHandle_ h g -> TlsM h g ()
+rehandshake :: (ValidateHandle h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ handshake =<< getSettingsS
 
 handshake :: (ValidateHandle h, CPRG g) => SettingsS -> HandshakeM h g ()

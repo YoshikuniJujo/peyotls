@@ -9,7 +9,7 @@ module Network.PeyoTLS.Base (
 		AlertLevel(..), AlertDesc(..), throwError,
 		debugCipherSuite, debug,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TlsHandle_, names,
+	TlsHandleBase, names,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
@@ -76,7 +76,7 @@ import Network.PeyoTLS.Types (
 import qualified Network.PeyoTLS.Run as RUN (
 	getSettingsC, setSettingsC, finishedHash )
 import Network.PeyoTLS.Run (
-	TlsM, run, TlsHandle_(..), names,
+	TlsM, run, TlsHandleBase(..), names,
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
 		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
