@@ -39,11 +39,13 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Handle as TH (
-	updateHash,
-	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
-		run, withRandom, randomByteString,
-	TlsHandleBase(..), ContentType(..),
-		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
+	TlsM, run, withRandom, randomByteString,
+	TlsHandleBase(..),
+		newHandle,
+
+	Alert(..), AlertLevel(..), AlertDesc(..),
+	ContentType(..),
+		getContentType, tlsGet, tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
@@ -312,7 +314,7 @@ ccsPut w = do
 	resetSequenceNumber TH.Write
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-updateHash bs = get >>= lift . flip TH.updateHash bs >>= put
+updateHash = modify . second . flip SHA256.update
 
 flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
 flushAppData = uncurry (>>) . (pushAdBuf *** return) =<< flushAppData_

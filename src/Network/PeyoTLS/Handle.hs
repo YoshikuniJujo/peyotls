@@ -24,8 +24,6 @@ module Network.PeyoTLS.Handle (
 
 	getAdBufT, setAdBufT,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
-
-	updateHash,
 	) where
 
 import Prelude hiding (read)
@@ -134,11 +132,6 @@ tlsGet b hh@(t, _) n = do
 	(r ,) `liftM` case (ct, b, bs) of
 		_ -> return hh
 
-tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
-	HandleHash h g -> Int ->
-	TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
-tlsGet_ rn hh@(t, _) n = (, hh) `liftM` buffered_ rn t n
-
 buffered :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> Int -> TlsM h g (ContentType, BS.ByteString)
 buffered t n = do
@@ -154,6 +147,11 @@ buffered t n = do
 		when (BS.null b') $ throwError "buffered: No data available"
 		setBuf (clientId t) (ct', b')
 		second (b `BS.append`) `liftM` buffered t rl
+
+tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
+	HandleHash h g -> Int ->
+	TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
+tlsGet_ rn hh@(t, _) n = (, hh) `liftM` buffered_ rn t n
 
 buffered_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
 	TlsHandleBase h g -> Int -> TlsM h g (ContentType, BS.ByteString)
@@ -261,10 +259,6 @@ encrypt_ t ks ct p = do
 		AES_128_CBC_SHA256 -> return CT.hashSha256
 		_ -> throwError "TlsHandleBase.encrypt: not implemented bulk encryption"
 	withRandom $ CT.encrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") p
-
-updateHash ::
-	HandleLike h => HandleHash h g -> BS.ByteString -> TlsM h g (HandleHash h g)
-updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
 
 updateSequenceNumber :: HandleLike h => TlsHandleBase h g -> RW -> TlsM h g Word64
 updateSequenceNumber t rw = do
