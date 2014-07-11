@@ -35,7 +35,7 @@ import Control.Monad (liftM, when, unless)
 import "monads-tf" Control.Monad.State (get, put, lift)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Word (Word16, Word64)
+import Data.Word (Word8, Word16, Word64)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
@@ -128,8 +128,8 @@ flushAppData t = do
 			return ("", True)
 
 hsGet :: (HandleLike h, CPRG g) => HandleHash h g -> Int ->
-	TlsM h g (BS.ByteString, HandleHash h g)
-hsGet hh 0 = return ("", hh)
+	TlsM h g (Either Word8 BS.ByteString, HandleHash h g)
+hsGet hh 0 = return (Right "", hh)
 hsGet hh@(t, _) n = do
 	lift . lift . hlDebug (tlsHandle t) "critical" .
 		BSC.pack . (++ "\n") $ show n
@@ -138,11 +138,11 @@ hsGet hh@(t, _) n = do
 		BSC.pack . (++ "\n") $ show ct
 	case ct of
 		CTCCSpec -> do
-			((CTCCSpec, bs), hh') <- tlsGet hh n
-			return (bs, hh')
+			((CTCCSpec, bs), hh') <- tlsGet hh 1
+			return (Left . (\[w] -> w) $ BS.unpack bs, hh')
 		CTHandshake -> do
 			((CTHandshake, bs), hh') <- tlsGet hh n
-			return (bs, hh)
+			return (Right bs, hh')
 		CTAlert -> do
 			((CTAlert, al), _) <- tlsGet hh 2
 			throwError . strMsg $ show al
@@ -195,7 +195,7 @@ buffered_ rn t n = do
 					(b `BS.append`) `liftM` buffered_ rn t rl
 			case al of
 				"\SOH\NULL" -> do
-					_ <- tlsPut True (t, undefined) CTAlert "\SOH\NULL"
+					_ <- tlsPut (t, undefined) CTAlert "\SOH\NULL"
 					throwError . strMsg $ "EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> do	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
@@ -259,17 +259,16 @@ decrypt_ t ks ct e = do
 	either (throwError . strMsg) return $
 		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
-tlsPut :: (HandleLike h, CPRG g) => Bool ->
+tlsPut :: (HandleLike h, CPRG g) =>
 	HandleHash h g -> ContentType -> BS.ByteString -> TlsM h g (HandleHash h g)
-tlsPut b hh@(t, _) ct p = do
+tlsPut hh@(t, _) ct p = do
 	(bct, bp) <- getWBuf $ clientId t
 	case ct of
 		CTCCSpec -> flush t >> setWBuf (clientId t) (ct, p) >> flush t
 		_	| bct /= CTNull && ct /= bct ->
 				flush t >> setWBuf (clientId t) (ct, p)
 			| otherwise -> setWBuf (clientId t) (ct, bp `BS.append` p)
-	case (ct, b) of
-		_ -> return hh
+	return hh
 
 flush :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
 flush t = do
@@ -366,14 +365,14 @@ finishedHash (t, ctx) partner = do
 	return $ CT.finishedHash (partner == Client) ms sha256
 
 hlPut_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
-hlPut_ = ((>> return ()) .) . flip (tlsPut True) CTAppData . (, undefined)
+hlPut_ = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
 
 hlDebug_ :: HandleLike h =>
 	TlsHandleBase h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
 hlDebug_ t l = lift . lift . hlDebug (tlsHandle t) l
 
 hlClose_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
-hlClose_ t = tlsPut True (t, undefined) CTAlert "\SOH\NUL" >>
+hlClose_ t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
 	flush t >> thlClose (tlsHandle t)
 
 tGetLine :: (HandleLike h, CPRG g) =>
@@ -405,7 +404,7 @@ tGetLine_ rn t = do
 					(b `BS.append`) `liftM` buffered_ rn t rl
 			case al of
 				"\SOH\NULL" -> do
-					_ <- tlsPut True (t, undefined) CTAlert "\SOH\NULL"
+					_ <- tlsPut (t, undefined) CTAlert "\SOH\NULL"
 					throwError . strMsg $ "EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> do	(bct, bp) <- getBuf $ clientId t
@@ -476,7 +475,7 @@ tGetContent_ rn t = do
 			((CTAlert, al), _) <- tlsGet (t, undefined) 2
 			case al of
 				"\SOH\NULL" -> do
-					_ <- tlsPut True (t, undefined) CTAlert "\SOH\NUL"
+					_ <- tlsPut (t, undefined) CTAlert "\SOH\NUL"
 					throwError . strMsg $ ".checkAppData: EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> snd `liftM` tGetContent t

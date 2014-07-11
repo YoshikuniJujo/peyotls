@@ -44,8 +44,8 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..),
-		hsGet, tlsGet,
-		getContentType, tlsPut, generateKeys,
+		hsGet,
+		tlsPut, generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
@@ -172,16 +172,13 @@ flushCipherSuite p = do
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 
-tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
-tlsGetContentType = gets fst >>= lift . TH.getContentType
-
-tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
--- tlsGet n = do ((_, bs), t') <- lift . flip TH.tlsGet n =<< get; put t'; return bs
-tlsGet n = do (bs, t') <- lift . flip TH.hsGet n =<< get; put t'; return bs
+hsGet_ :: (HandleLike h, CPRG g) =>
+	Int -> HandshakeM h g (Either Word8 BS.ByteString)
+hsGet_ n = do (bs, t') <- lift . flip TH.hsGet n =<< get; put t'; return bs
 
 tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
-tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut True t ct bs) >>= put
+tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
@@ -266,28 +263,31 @@ hlGetLineRn_ rh = ($) <$> checkAppData' <*> tGetLine_ rh
 adGetContent = hlGetContentRn
 hlGetContentRn_ rh = ($) <$> checkAppData' <*> TH.tGetContent_ rh
 
+hsGet__ :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+hsGet__ n = do
+	ch <- hsGet_ n
+	case ch of
+		Right bs -> return bs
+		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
+			moduleName ++ ".hsGet__: not handshake"
+
 hsGet :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
 hsGet = do
-	ct <- tlsGetContentType
-	case ct of
-		TH.CTHandshake -> do
-			t <- tlsGet 1
-			len <- tlsGet 3
-			body <- tlsGet . either error id $ B.decode len
-			return $ BS.concat [t, len, body]
-		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
-			"HandshakeBase.readHandshake: not handshake: " ++ show ct
+	t <- hsGet__ 1
+	len <- hsGet__ 3
+	body <- hsGet__ . either error id $ B.decode len
+	return $ BS.concat [t, len, body]
 
 ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
 ccsGet = do
-	ct <- tlsGetContentType
-	bs <- case ct of
-		TH.CTCCSpec -> tlsGet 1
+	ch <- hsGet_ 1
+	case ch of
+		Left w -> do
+			resetSequenceNumber TH.Read
+			return w
 		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
 			"HandshakeBase.getChangeCipherSpec: " ++
-			"not change cipher spec: " ++ show ct
-	resetSequenceNumber TH.Read
-	return $ let [w] = BS.unpack bs in w
+			"not change cipher spec: " ++ show ch
 
 hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
 hsPut = tlsPut TH.CTHandshake
