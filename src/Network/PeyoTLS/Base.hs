@@ -70,7 +70,7 @@ import Network.PeyoTLS.Types (
 	DigitallySigned(..), ChangeCipherSpec(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as RUN (finishedHash)
 import Network.PeyoTLS.Run (
-	TlsM, run, TlsHandleBase(..), names,
+	TlsM, run, TlsHandleBase(..),
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
 		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,

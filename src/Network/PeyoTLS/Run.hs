@@ -1,39 +1,20 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Run (
-	updateHash,
-	hsGet, hsPut,
-	ccsGet, ccsPut,
-	adGet, adGetLine, adGetContent,
-	TH.isRsaKey, TH.isEcdsaKey,
-	checkAppData,
-	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
-	withRandom, randomByteString,
+	TH.TlsM, TH.run, TH.TlsHandleBase(..),
+		hsGet, hsPut, updateHash, ccsGet, ccsPut,
+		adGet, adGetLine, adGetContent,
+	HandshakeM, execHandshakeM, rerunHandshakeM,
+		withRandom, randomByteString, flushAppData,
+		TH.SettingsS, getSettingsS, setSettingsS,
+		getSettingsC, setSettingsC,
+		getCipherSuite, setCipherSuite,
+		TH.CertSecretKey(..), TH.isRsaKey, TH.isEcdsaKey,
+		getClFinished, getSvFinished, setClFinished, setSvFinished,
+		TH.RW(..), flushCipherSuite, generateKeys,
+		TH.Side(..), handshakeHash, finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TH.TlsHandleBase(..), TH.ContentType(..),
-		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
-		generateKeys,
-	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
-	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError,
-	TH.hlPut_, TH.hlDebug_, TH.hlClose_,
-	TH.tGetLine, TH.tGetContent, tlsGet_, tlsPut_, tlsGet__,
-	tGetLine_, tGetContent_,
-	getClFinished, getSvFinished, setClFinished, setSvFinished,
-
-	resetSequenceNumber,
-
-	getSettingsS, setSettingsS, TH.SettingsS,
-	getSettingsC, setSettingsC, TH.Settings,
-	flushAppData,
-
-	getAdBuf, setAdBuf,
-	pushAdBuf,
-
-	TH.CertSecretKey(..)
-	) where
-
-import Prelude hiding (read)
+	TH.AlertLevel(..), TH.AlertDesc(..), debugCipherSuite, throwError ) where
 
 import Data.Word
 import Control.Applicative
@@ -112,11 +93,6 @@ checkAppData t m = m >>= \cp -> case cp of
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
-
-tlsGet_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
-	(TH.TlsHandleBase h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandleBase h g, SHA256.Ctx))
-tlsGet_ = TH.tlsGet_
 
 tlsGet__ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandleBase h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandleBase h g, SHA256.Ctx))
@@ -224,10 +200,9 @@ tlsGetContentType = gets fst >>= lift . TH.getContentType
 tlsGet :: (HandleLike h, CPRG g) => Bool -> Int -> HandshakeM h g BS.ByteString
 tlsGet b n = do ((_, bs), t') <- lift . flip (TH.tlsGet b) n =<< get; put t'; return bs
 
-tlsPut, tlsPutNH :: (HandleLike h, CPRG g) =>
+tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
 tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut True t ct bs) >>= put
-tlsPutNH ct bs = get >>= lift . (\t -> TH.tlsPut False t ct bs) >>= put
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
