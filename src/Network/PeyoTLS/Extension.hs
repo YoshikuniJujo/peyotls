@@ -134,6 +134,17 @@ instance B.Parsable EcCurveType where
 			w -> ECTRaw w
 
 instance B.Bytable ECC.CurveName where
+	encode ECC.SEC_t163k1 = B.encode (1 :: Word16)
+	encode ECC.SEC_t163r1 = B.encode (2 :: Word16)
+	encode ECC.SEC_t163r2 = B.encode (3 :: Word16)
+	encode ECC.SEC_t193r1 = B.encode (4 :: Word16)
+	encode ECC.SEC_t193r2 = B.encode (5 :: Word16)
+	encode ECC.SEC_t233k1 = B.encode (6 :: Word16)
+	encode ECC.SEC_t233r1 = B.encode (7 :: Word16)
+	encode ECC.SEC_t409k1 = B.encode (11 :: Word16)
+	encode ECC.SEC_t409r1 = B.encode (12 :: Word16)
+	encode ECC.SEC_t571k1 = B.encode (13 :: Word16)
+	encode ECC.SEC_t571r1 = B.encode (14 :: Word16)
 	encode ECC.SEC_p256r1 = B.encode (23 :: Word16)
 	encode ECC.SEC_p384r1 = B.encode (24 :: Word16)
 	encode ECC.SEC_p521r1 = B.encode (25 :: Word16)
@@ -141,6 +152,15 @@ instance B.Bytable ECC.CurveName where
 	decode bs = case BS.unpack bs of
 		[w1, w2] -> case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
 			(1 :: Word16) -> Right ECC.SEC_t163k1
+			(2 :: Word16) -> Right ECC.SEC_t163r1
+			(3 :: Word16) -> Right ECC.SEC_t163r2
+			(4 :: Word16) -> Right ECC.SEC_t193r1
+			(5 :: Word16) -> Right ECC.SEC_t193r2
+			(6 :: Word16) -> Right ECC.SEC_t233k1
+			(7 :: Word16) -> Right ECC.SEC_t233r1
+			(11 :: Word16) -> Right ECC.SEC_t409k1
+			(12 :: Word16) -> Right ECC.SEC_t409r1
+			(13 :: Word16) -> Right ECC.SEC_t571k1
 			(14 :: Word16) -> Right ECC.SEC_t571r1
 			(23 :: Word16) -> Right ECC.SEC_p256r1
 			(24 :: Word16) -> Right ECC.SEC_p384r1
