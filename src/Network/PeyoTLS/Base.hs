@@ -29,16 +29,14 @@ module Network.PeyoTLS.Base (
 		handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
-	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 ) where
+	DhParam(..), makeEcdsaPubKey ) where
 
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
-import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
-import Numeric (readHex)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG, cprgGenerate)
 
 import qualified Data.ByteString as BS
@@ -47,7 +45,6 @@ import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Data.X509 as X509
-import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA1 as SHA1
@@ -68,11 +65,11 @@ import Network.PeyoTLS.Types (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CompMethod(..), Extension(..),
+		CompMethod(..), Extension(..), isRenegoInfo, emptyRenegoInfo,
 	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
-	DigitallySigned(..), Finished(..) )
+	DigitallySigned(..), ChangeCipherSpec(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as RUN (
 	getSettingsC, setSettingsC, finishedHash )
 import Network.PeyoTLS.Run (
@@ -81,14 +78,14 @@ import Network.PeyoTLS.Run (
 		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
-		SettingsS, -- getSettingsC, setSettingsC,
-		getSettingsS, setSettingsS,
+		SettingsS, getSettingsS, setSettingsS,
+		-- getSettingsC, setSettingsC,
 		getCipherSuite, setCipherSuite,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		RW(..), flushCipherSuite, generateKeys,
 		Side(..), handshakeHash, -- finishedHash,
-	ValidateHandle(..), handshakeValidate,
+	ValidateHandle(..), handshakeValidate, validateAlert,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey)
 
@@ -117,21 +114,11 @@ writeHandshake::
 	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
 writeHandshake hi = do
 	let	hs = toHandshake hi
-		bs = snd . encodeContent $ CHandshake hs
+		bs = B.encode hs
 	hsPut bs
 	case hs of
 		HHelloReq -> return ()
 		_ -> updateHash bs
-
-data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
-
-instance B.Bytable ChangeCipherSpec where
-	decode bs = case BS.unpack bs of
-		[1] -> Right ChangeCipherSpec
-		[w] -> Right $ ChangeCipherSpecRaw w
-		_ -> Left "HandshakeBase: ChangeCipherSpec.decode"
-	encode ChangeCipherSpec = BS.pack [1]
-	encode (ChangeCipherSpecRaw w) = BS.pack [w]
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 getChangeCipherSpec = do
@@ -145,14 +132,6 @@ getChangeCipherSpec = do
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 putChangeCipherSpec =
 	ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
-
-data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
-	deriving Show
-
-encodeContent :: Content -> (Int, BS.ByteString)
-encodeContent (CCCSpec ccs) = (0, B.encode ccs)
-encodeContent (CAlert al ad) = (0, BS.pack [al, ad])
-encodeContent (CHandshake hss) = (0, B.encode hss)
 
 class DhParam b where
 	type Secret b
@@ -169,26 +148,6 @@ instance DhParam DH.Params where
 	calculateShared ps sn pn = B.encode .
 		(\(DH.SharedKey s) -> s) $ DH.getShared ps sn pn
 
-dh3072Modp :: DH.Params
-dh3072Modp = DH.Params p 2
-	where [(p, "")] = readHex $
-		"ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd1" ++
-		"29024e088a67cc74020bbea63b139b22514a08798e3404dd" ++
-		"ef9519b3cd3a431b302b0a6df25f14374fe1356d6d51c245" ++
-		"e485b576625e7ec6f44c42e9a637ed6b0bff5cb6f406b7ed" ++
-		"ee386bfb5a899fa5ae9f24117c4b1fe649286651ece45b3d" ++
-		"c2007cb8a163bf0598da48361c55d39a69163fa8fd24cf5f" ++
-		"83655d23dca3ad961c62f356208552bb9ed529077096966d" ++
-		"670c354e4abc9804f1746c08ca18217c32905e462e36ce3b" ++
-		"e39e772c180e86039b2783a2ec07a28fb5c55df06f4c52c9" ++
-		"de2bcbf6955817183995497cea956ae515d2261898fa0510" ++
-		"15728e5a8aaac42dad33170d04507a33a85521abdf1cba64" ++
-		"ecfb850458dbef0a8aea71575d060c7db3970f85a6e1e4c7" ++
-		"abf5ae8cdb0933d71e8c94e04a25619dcee3d2261ad2ee6b" ++
-		"f12ffa06d98a0864d87602733ec86a64521f2b18177b200c" ++
-		"bbe117577a615d6c770988c0bad946e208e24fa074e5ab31" ++
-		"43db5bfce0fd108e4b82d120a93ad2caffffffffffffffff"
-
 instance DhParam ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
@@ -204,9 +163,6 @@ getRangedInteger b mn mx g = let
 	(n, g') = first (either error id . B.decode) $ cprgGenerate b g in
 	if mn <= n && n <= mx then (n, g') else getRangedInteger b mn mx g'
 
-secp256r1 :: ECC.Curve
-secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
-
 finishedHash :: (HandleLike h, CPRG g) => Side -> HandshakeM h g Finished
 finishedHash s = (Finished `liftM`) $ do
 	fh <- RUN.finishedHash s
@@ -214,13 +170,6 @@ finishedHash s = (Finished `liftM`) $ do
 		Client -> setClFinished fh
 		Server -> setSvFinished fh
 	return fh
-
-isRenegoInfo :: Extension -> Bool
-isRenegoInfo (ERenegoInfo _) = True
-isRenegoInfo _ = False
-
-emptyRenegoInfo :: Extension
-emptyRenegoInfo = ERenegoInfo ""
 
 checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
 checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` getClFinished >>= \ok ->
@@ -239,13 +188,6 @@ makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
 makeClRenego = ERenegoInfo `liftM` getClFinished
 makeSvRenego = ERenegoInfo `liftM`
 	(BS.append `liftM` getClFinished `ap` getSvFinished)
-
-validateAlert :: [X509.FailedReason] -> AlertDesc
-validateAlert vr
-	| X509.UnknownCA `elem` vr = ADUnknownCa
-	| X509.Expired `elem` vr = ADCertificateExpired
-	| X509.InFuture `elem` vr = ADCertificateExpired
-	| otherwise = ADCertificateUnknown
 
 type SettingsC = (
 	[CipherSuite],

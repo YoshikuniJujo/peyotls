@@ -1,16 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Types ( Extension(..),
+module Network.PeyoTLS.Types (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CompMethod(..),
+		CompMethod(..), Extension(..), isRenegoInfo, emptyRenegoInfo,
 	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..),
 		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
-	DigitallySigned(..), Finished(..) ) where
+	DigitallySigned(..), Finished(..),
+	ChangeCipherSpec(..), ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless)
@@ -238,3 +239,20 @@ instance B.Bytable Type where
 	encode TClientKeyEx = BS.pack [16]
 	encode TFinished = BS.pack [20]
 	encode (TRaw w) = BS.pack [w]
+
+data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
+
+instance B.Bytable ChangeCipherSpec where
+	decode bs = case BS.unpack bs of
+		[1] -> Right ChangeCipherSpec
+		[w] -> Right $ ChangeCipherSpecRaw w
+		_ -> Left "HandshakeBase: ChangeCipherSpec.decode"
+	encode ChangeCipherSpec = BS.pack [1]
+	encode (ChangeCipherSpecRaw w) = BS.pack [w]
+
+isRenegoInfo :: Extension -> Bool
+isRenegoInfo (ERenegoInfo _) = True
+isRenegoInfo _ = False
+
+emptyRenegoInfo :: Extension
+emptyRenegoInfo = ERenegoInfo ""

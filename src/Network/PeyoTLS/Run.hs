@@ -9,7 +9,7 @@ module Network.PeyoTLS.Run (
 	checkAppData,
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
-	ValidateHandle(..), handshakeValidate,
+	ValidateHandle(..), handshakeValidate, validateAlert,
 	TH.TlsHandleBase(..), TH.ContentType(..),
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
@@ -164,6 +164,13 @@ randomByteString = lift . TH.randomByteString
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
 		HandleMonad h [X509.FailedReason]
+
+validateAlert :: [X509.FailedReason] -> TH.AlertDesc
+validateAlert vr
+	| X509.UnknownCA `elem` vr = TH.ADUnknownCa
+	| X509.Expired `elem` vr = TH.ADCertificateExpired
+	| X509.InFuture `elem` vr = TH.ADCertificateExpired
+	| otherwise = TH.ADCertificateUnknown
 
 instance ValidateHandle Handle where
 	validate _ cs (X509.CertificateChain cc) =
