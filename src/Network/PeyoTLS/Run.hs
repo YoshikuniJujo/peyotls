@@ -13,7 +13,7 @@ module Network.PeyoTLS.Run (
 	TH.TlsHandle_(..), TH.ContentType(..),
 		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, tlsPutNH,
-		generateKeys, encryptRsa, decryptRsa, rsaPadding,
+		generateKeys,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
 	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError,
 	TH.hlPut_, TH.hlDebug_, TH.hlClose_,
@@ -38,7 +38,7 @@ import Prelude hiding (read)
 import Data.Word
 import Control.Applicative
 import qualified Data.ASN1.Types as ASN1
-import Control.Arrow (first, (***))
+import Control.Arrow (first, second, (***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (
@@ -50,13 +50,11 @@ import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Crypto.Hash.SHA256 as SHA256
-import qualified Crypto.PubKey.HashDescr as HD
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified Network.PeyoTLS.Handle as TH (
 	updateHash,
@@ -240,21 +238,6 @@ generateKeys p (cr, sr) pms = do
 	k <- lift $ TH.generateKeys t p cs cr sr pms
 	lift $ TH.setKeys (TH.clientId t) k
 
-encryptRsa :: (HandleLike h, CPRG g) =>
-	RSA.PublicKey -> BS.ByteString -> HandshakeM h g BS.ByteString
-encryptRsa pk p = either (E.throwError . strMsg . show) return =<<
-	withRandom (\g -> RSA.encrypt g pk p)
-
-decryptRsa :: (HandleLike h, CPRG g) =>
-	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
-decryptRsa sk e = either (E.throwError . strMsg . show) return =<<
-	withRandom (\g -> RSA.decryptSafer g sk e)
-
-rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
-rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
-			HD.digestToASN1 HD.hashDescrSHA256 bs of
-		Right pd -> pd; Left m -> error $ show m
-
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
 handshakeHash = get >>= lift . TH.handshakeHash
 
@@ -302,16 +285,16 @@ pushAdBuf bs = do
 adGet, hlGetRn_ :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> Int ->
 	TH.TlsM h g BS.ByteString
-adGet = hlGetRn_
+adGet = hlGetRn
 hlGetRn_ rh = (.) <$> checkAppData <*> ((fst `liftM`) .) . TH.tlsGet_ rh
 	. (, undefined)
 
 hlGetLineRn_, hlGetContentRn_, adGetLine, adGetContent ::
 	(ValidateHandle h, CPRG g) =>
 	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
-adGetLine = hlGetLineRn_
+adGetLine = hlGetLineRn
 hlGetLineRn_ rh = ($) <$> checkAppData <*> tGetLine_ rh
-adGetContent = hlGetContentRn_
+adGetContent = hlGetContentRn
 hlGetContentRn_ rh = ($) <$> checkAppData <*> tGetContent_ rh
 
 hsGet :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
@@ -351,3 +334,46 @@ updateHash bs = get >>= lift . flip TH.updateHash bs >>= put
 
 flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
 flushAppData = uncurry (>>) . (pushAdBuf *** return) =<< flushAppData_
+
+hlGetRn :: (ValidateHandle h, CPRG g) => (TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
+	TH.TlsHandle_ h g -> Int -> TH.TlsM h g BS.ByteString
+hlGetRn rn t n = do
+	bf <- getAdBuf t
+	if BS.length bf >= n
+	then do	let (ret, rest) = BS.splitAt n bf
+		setAdBuf t rest
+		return ret
+	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
+
+hlGetLineRn :: (ValidateHandle h, CPRG g) =>
+	(TH.TlsHandle_ h g -> TH.TlsM h g ()) -> TH.TlsHandle_ h g ->
+	TH.TlsM h g BS.ByteString
+hlGetLineRn rn t = do
+	bf <- getAdBuf t
+	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
+	then do	let (ret, rest) = splitOneLine bf
+		setAdBuf t $ BS.tail rest
+		return ret
+	else (bf `BS.append`) `liftM` hlGetLineRn_ rn t
+
+splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
+splitOneLine bs = case BSC.span (/= '\r') bs of
+	(_, "") -> second BS.tail $ BSC.span (/= '\n') bs
+	(l, ls) -> (l, dropRet ls)
+
+dropRet :: BS.ByteString -> BS.ByteString
+dropRet bs = case BSC.uncons bs of
+	Just ('\r', bs') -> case BSC.uncons bs' of
+		Just ('\n', bs'') -> bs''
+		_ -> bs'
+	_ -> bs
+
+hlGetContentRn :: (ValidateHandle h, CPRG g) =>
+	(TH.TlsHandle_ h g -> TH.TlsM h g ()) ->
+	TH.TlsHandle_ h g -> TH.TlsM h g BS.ByteString
+hlGetContentRn rn t = do
+	bf <- getAdBuf t
+	if BS.null bf
+	then hlGetContentRn_ rn t
+	else do	setAdBuf t ""
+		return bf

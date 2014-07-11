@@ -24,23 +24,26 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
+import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
+import qualified "monads-tf" Control.Monad.Error as E
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		SettingsS, getSettingsS, setSettingsS,
-		hlGetRn, hlGetLineRn, hlGetContentRn,
+		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		AlertLevel(..), AlertDesc(..), throwError, debugCipherSuite,
@@ -58,7 +61,7 @@ import Network.PeyoTLS.Base ( debug,
 	ServerKeyEx(..), SecretKey(..),
 	certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), generateKeys, decryptRsa,
+	ClientKeyEx(..), Epms(..), generateKeys,
 	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
@@ -72,9 +75,9 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
 	hlPut (TlsHandleS t) = hlPut t
-	hlGet = hlGetRn rehandshake . tlsHandleS
-	hlGetLine = hlGetLineRn rehandshake . tlsHandleS
-	hlGetContent = hlGetContentRn rehandshake . tlsHandleS
+	hlGet = adGet rehandshake . tlsHandleS
+	hlGetLine = adGetLine rehandshake . tlsHandleS
+	hlGetContent = adGetContent rehandshake . tlsHandleS
 	hlDebug (TlsHandleS t) = hlDebug t
 	hlClose (TlsHandleS t) = hlClose t
 
@@ -222,7 +225,8 @@ rsaKeyExchange sk (vj, vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
 	generateKeys Server rs =<< mkpms epms `catchError` const
 		((BS.cons vj . BS.cons vn) `liftM` randomByteString 46)
 	where mkpms epms = do
-		pms <- decryptRsa sk epms
+		pms <- either (E.throwError . strMsg . show) return =<<
+			withRandom (\g -> RSA.decryptSafer g sk epms)
 		unless (BS.length pms == 48) $ throwError ALFatal ADHsFailure ""
 		let [pvj, pvn] = BS.unpack $ BS.take 2 pms
 		unless (pvj == vj && pvn == vn) $ throwError ALFatal ADHsFailure ""

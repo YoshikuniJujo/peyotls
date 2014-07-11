@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Base (
 	PeyotlsM, HM.TlsM, HM.run, HM.SettingsS,
-		hlGetRn, hlGetLineRn, hlGetContentRn,
+		HM.adGet, HM.adGetLine, HM.adGetContent,
 	HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
 		getSettingsC, setSettingsC, HM.getSettingsS, HM.setSettingsS,
 		HM.withRandom, HM.randomByteString, HM.flushAppData,
@@ -23,8 +23,7 @@ module Network.PeyoTLS.Base (
 		SecretKey(..), SvSignPublicKey(..),
 	CertReq(..), certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..),
-		HM.generateKeys, HM.decryptRsa, HM.encryptRsa,
+	ClientKeyEx(..), Epms(..), HM.generateKeys,
 	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
 		HM.handshakeHash,
 	HM.RW(..), HM.flushCipherSuite,
@@ -32,7 +31,7 @@ module Network.PeyoTLS.Base (
 	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 ) where
 
 import Control.Applicative
-import Control.Arrow (first, second)
+import Control.Arrow (first)
 import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
 import Data.Word (Word8)
@@ -61,6 +60,9 @@ import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
+import qualified Crypto.PubKey.HashDescr as HD
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
+
 import Network.PeyoTLS.Types (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
@@ -71,23 +73,19 @@ import Network.PeyoTLS.Types (
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as HM (
-	TlsM, run,
-	HandshakeM, AlertLevel(..), AlertDesc(..), execHandshakeM, rerunHandshakeM,
+	TlsM, run, TlsHandle_(..), names,
+		hsGet, hsPut, updateHash, ccsGet, ccsPut,
+		adGet, adGetLine, adGetContent,
+	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		SettingsS, getSettingsC, setSettingsC, getSettingsS, setSettingsS,
+		getCipherSuite, setCipherSuite,
+		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		getCipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-	TlsHandle_(..), names, CertSecretKey(..), isRsaKey, isEcdsaKey,
+		RW(..), flushCipherSuite, generateKeys,
+		Side(..), handshakeHash, finishedHash,
 	ValidateHandle(..), handshakeValidate,
-
-	generateKeys, encryptRsa, decryptRsa, rsaPadding,
-	handshakeHash, finishedHash, throwError,
-	Side(..), RW(..),
-
-	getAdBuf, setAdBuf,
-
-	hsGet, hsPut, ccsGet, ccsPut, adGet, adGetLine, adGetContent, updateHash,
-	)
+	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
 type PeyotlsM = HM.TlsM Handle SystemRNG
@@ -212,49 +210,6 @@ finishedHash s = (Finished `liftM`) $ do
 		HM.Client -> HM.setClFinished fh
 		HM.Server -> HM.setSvFinished fh
 	return fh
-
-hlGetRn :: (HM.ValidateHandle h, CPRG g) => (HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
-	HM.TlsHandle_ h g -> Int -> HM.TlsM h g BS.ByteString
-hlGetRn rn t n = do
-	bf <- HM.getAdBuf t
-	if BS.length bf >= n
-	then do	let (ret, rest) = BS.splitAt n bf
-		HM.setAdBuf t rest
-		return ret
-	else (bf `BS.append`) `liftM` HM.adGet rn t (n - BS.length bf)
-
-hlGetLineRn :: (HM.ValidateHandle h, CPRG g) =>
-	(HM.TlsHandle_ h g -> HM.TlsM h g ()) -> HM.TlsHandle_ h g ->
-	HM.TlsM h g BS.ByteString
-hlGetLineRn rn t = do
-	bf <- HM.getAdBuf t
-	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
-	then do	let (ret, rest) = splitOneLine bf
-		HM.setAdBuf t $ BS.tail rest
-		return ret
-	else (bf `BS.append`) `liftM` HM.adGetLine rn t
-
-splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
-splitOneLine bs = case BSC.span (/= '\r') bs of
-	(_, "") -> second BS.tail $ BSC.span (/= '\n') bs
-	(l, ls) -> (l, dropRet ls)
-
-dropRet :: BS.ByteString -> BS.ByteString
-dropRet bs = case BSC.uncons bs of
-	Just ('\r', bs') -> case BSC.uncons bs' of
-		Just ('\n', bs'') -> bs''
-		_ -> bs'
-	_ -> bs
-
-hlGetContentRn :: (HM.ValidateHandle h, CPRG g) =>
-	(HM.TlsHandle_ h g -> HM.TlsM h g ()) ->
-	HM.TlsHandle_ h g -> HM.TlsM h g BS.ByteString
-hlGetContentRn rn t = do
-	bf <- HM.getAdBuf t
-	if BS.null bf
-	then HM.adGetContent rn t
-	else do	HM.setAdBuf t ""
-		return bf
 
 isRenegoInfo :: Extension -> Bool
 isRenegoInfo (ERenegoInfo _) = True
@@ -393,8 +348,13 @@ class ClSignSecretKey sk where
 	csAlgorithm :: sk -> (HashAlg, SignAlg)
 
 instance ClSignSecretKey RSA.PrivateKey where
-	csSign sk m = let pd = HM.rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
+	csSign sk m = let pd = rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
 	csAlgorithm _ = (Sha256, Rsa)
+
+rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
+rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
+			HD.digestToASN1 HD.hashDescrSHA256 bs of
+		Right pd -> pd; Left m -> error $ show m
 
 instance ClSignSecretKey ECDSA.PrivateKey where
 	csSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
@@ -413,7 +373,7 @@ class ClSignPublicKey pk where
 
 instance ClSignPublicKey RSA.PublicKey where
 	cspAlgorithm _ = Rsa
-	csVerify k s h = RSA.ep k s == HM.rsaPadding k h
+	csVerify k s h = RSA.ep k s == rsaPadding k h
 
 instance ClSignPublicKey ECDSA.PublicKey where
 	cspAlgorithm _ = Ecdsa

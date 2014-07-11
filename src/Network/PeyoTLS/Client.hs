@@ -22,6 +22,7 @@ module Network.PeyoTLS.Client (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, liftM, ap)
+import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (fromMaybe)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
@@ -35,11 +36,15 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
+import qualified "monads-tf" Control.Monad.Error as E
+
 import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		getSettingsC, setSettingsC,
-		hlGetRn, hlGetLineRn, hlGetContentRn,
+		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		AlertLevel(..), AlertDesc(..), throwError,
@@ -55,7 +60,7 @@ import Network.PeyoTLS.Base ( debug,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
 	CertReq(..), ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), generateKeys, encryptRsa,
+	ClientKeyEx(..), Epms(..), generateKeys, -- encryptRsa,
 	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
 	DhParam(..), makeEcdsaPubKey )
@@ -68,9 +73,9 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
 	hlPut (TlsHandleC t) = hlPut t
-	hlGet = hlGetRn rehandshake . tlsHandleC
-	hlGetLine = hlGetLineRn rehandshake . tlsHandleC
-	hlGetContent = hlGetContentRn rehandshake . tlsHandleC
+	hlGet = adGet rehandshake . tlsHandleC
+	hlGetLine = adGetLine rehandshake . tlsHandleC
+	hlGetContent = adGetContent rehandshake . tlsHandleC
 	hlDebug (TlsHandleC t) = hlDebug t
 	hlClose (TlsHandleC t) = hlClose t
 
@@ -173,6 +178,11 @@ rsaHandshake rs crts ca = do
 	generateKeys Client rs pms
 	writeHandshake . Epms =<< encryptRsa pk pms
 	finishHandshake crt
+
+encryptRsa :: (HandleLike h, CPRG g) =>
+	RSA.PublicKey -> BS.ByteString -> HandshakeM h g BS.ByteString
+encryptRsa pk p = either (E.throwError . strMsg . show) return =<<
+	withRandom (\g -> RSA.encrypt g pk p)
 
 dheHandshake :: (ValidateHandle h, CPRG g,
 		KeyExchangeClass ke, Show (Secret ke), Show (Public ke)) =>
