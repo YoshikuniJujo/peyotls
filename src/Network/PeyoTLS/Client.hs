@@ -207,9 +207,9 @@ succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 succeed t pk rs@(cr, sr) crts = do
 	(ps, pv, ha, sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
-	unless (sa == svpAlgorithm pk) . throwError ALFatal ADHsFailure $
+	unless (sa == sspAlgorithm pk) . throwError ALFatal ADHsFailure $
 		pre ++ "sign algorithm unmatch"
-	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
+	unless (ssVerify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
 		throwError ALFatal ADDecryptError $ pre ++ "verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
@@ -265,9 +265,9 @@ finishHandshake crt = do
 	hs <- handshakeHash
 	case fst <$> crt of
 		Just (RsaKey sk) -> writeHandshake $
-			DigitallySigned (csAlgorithm sk) $ csSign sk hs
+			DigitallySigned (cssAlgorithm sk) $ csSign sk hs
 		Just (EcdsaKey sk) -> writeHandshake $
-			DigitallySigned (csAlgorithm sk) $ csSign sk hs
+			DigitallySigned (cssAlgorithm sk) $ csSign sk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Client

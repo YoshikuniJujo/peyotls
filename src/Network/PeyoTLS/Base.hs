@@ -31,10 +31,10 @@ module Network.PeyoTLS.Base (
 	Side(..), finishedHash,
 	DhParam(..), makeEcdsaPubKey ) where
 
-import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
+import Data.Bits (shiftR)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG, cprgGenerate)
@@ -84,7 +84,7 @@ import Network.PeyoTLS.Run (
 		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
-import Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey)
+import Network.PeyoTLS.Ecdsa (blindSign, makeKs, makeEcdsaPubKey)
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Base"
@@ -161,104 +161,99 @@ instance DhParam DH.Params where
 	type Public DH.Params = DH.PublicNumber
 	generateSecret = flip DH.generatePrivate
 	calculatePublic = DH.calculatePublic
-	calculateShared ps sn pn = B.encode .
-		(\(DH.SharedKey s) -> s) $ DH.getShared ps sn pn
+	calculateShared =
+		(((B.encode . (\(DH.SharedKey s) -> s)) .) .) . DH.getShared
 
 instance DhParam ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
-	generateSecret c = rangedI 32 1 (n - 1)
+	generateSecret c = rec
 		where
-		n = ECC.ecc_n $ ECC.common_curve c
-		rangedI b mn mx g = let
-			(i, g') = first (either error id . B.decode) $
-				cprgGenerate b g in
-			if mn <= i && i <= mx then (i, g') else rangedI b mn mx g'
-	calculatePublic cv sn =
-		ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
+		rec g = let
+			(bs, g') = cprgGenerate bl g
+			i = either error id $ B.decode bs in
+			if 1 <= i && i <= mx then (i, g') else rec g'
+		bl = len mx `div` 8 + signum (len mx `mod` 8)
+		mx = ECC.ecc_n (ECC.common_curve c) - 1
+		len 0 = 0; len i = succ . len $ i `shiftR` 1
+	calculatePublic cv sn = ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
 	calculateShared cv sn pp =
 		let ECC.Point x _ = ECC.pointMul cv sn pp in B.encode x
+
 
 sha1, sha256 :: ASN1.ASN1
 sha1 = ASN1.OID [1, 3, 14, 3, 2, 26]
 sha256 = ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1]
 
-rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
-rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
-			HD.digestToASN1 HD.hashDescrSHA256 bs of
-		Right pd -> pd; Left m -> error $ show m
+padding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
+padding pk bs = case RSA.padSignature (RSA.public_size pk) $
+				HD.digestToASN1 HD.hashDescrSHA256 bs of
+	Left m -> error $ show m; Right pd -> pd
 
 class SvSignPublicKey pk where
-	svpAlgorithm :: pk -> SignAlg
-	verify :: HashAlg -> pk -> BS.ByteString -> BS.ByteString -> Bool
+	sspAlgorithm :: pk -> SignAlg
+	ssVerify :: HashAlg -> pk -> BS.ByteString -> BS.ByteString -> Bool
 
 instance SvSignPublicKey RSA.PublicKey where
-	svpAlgorithm _ = Rsa
-	verify ha pk sn m =
-		oid == oid0 && o == hs m
+	sspAlgorithm _ = Rsa
+	ssVerify ha pk sn m = oid == oid0 && e == hs m
 		where
 		(hs, oid0) = case ha of
-			Sha1 -> (SHA1.hash, sha1)
-			Sha256 -> (SHA256.hash, sha256)
-			_ -> error "not implemented"
-		(o, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
+			Sha1 -> (SHA1.hash, sha1); Sha256 -> (SHA256.hash, sha256)
+			_ -> error $ moduleName ++ ": RSA.PublicKey.ssVerify"
+		(e, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
 			. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
 			Right [ASN1.Start ASN1.Sequence,
 				ASN1.Start ASN1.Sequence,
-					oid_, ASN1.Null, ASN1.End ASN1.Sequence,
-				ASN1.OctetString o_,
-				ASN1.End ASN1.Sequence ] -> (o_, oid_)
-			e -> error $ show e
+					i, ASN1.Null, ASN1.End ASN1.Sequence,
+				ASN1.OctetString o,
+				ASN1.End ASN1.Sequence ] -> (o, i)
+			em -> error $
+				moduleName ++ ": RSA.PublicKey.ssVerify" ++ show em
 
 instance SvSignPublicKey ECDSA.PublicKey where
-	svpAlgorithm _ = Ecdsa
-	verify Sha1 pk = ECDSA.verify SHA1.hash pk . either error id . B.decode
-	verify Sha256 pk = ECDSA.verify SHA256.hash pk . either error id . B.decode
-	verify _ _ = error "TlsClient: ECDSA.PublicKey.verify: not implemented"
+	sspAlgorithm _ = Ecdsa
+	ssVerify Sha1 pk = ECDSA.verify SHA1.hash pk . either error id . B.decode
+	ssVerify Sha256 pk =
+		ECDSA.verify SHA256.hash pk . either error id . B.decode
+	ssVerify _ _ = error $ moduleName ++ ": ECDSA.PublicKey.verify"
 
 class SvSignSecretKey sk where
 	type Blinder sk
+	sssAlgorithm :: sk -> SignAlg
 	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
-	sign :: HashAlg -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
-	signatureAlgorithm :: sk -> SignAlg
+	ssSign :: sk -> HashAlg -> Blinder sk -> BS.ByteString -> BS.ByteString
 
 instance SvSignSecretKey RSA.PrivateKey where
 	type Blinder RSA.PrivateKey = RSA.Blinder
-	generateBlinder sk rng =
-		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
-	sign hs bl sk bs = let
-		(h, oid) = first ($ bs) $ case hs of
-			Sha1 -> (SHA1.hash, sha1)
-			Sha256 -> (SHA256.hash, sha256)
-			_ -> error $ "HandshakeBase: " ++
-				"not implemented bulk encryption type"
-		a = [ASN1.Start ASN1.Sequence,
+	sssAlgorithm _ = Rsa
+	generateBlinder sk g =
+		RSA.generateBlinder g . RSA.public_n $ RSA.private_pub sk
+	ssSign sk ha bl m = RSA.dp (Just bl) sk e
+		where
+		(hs, oid) = first ($ m) $ case ha of
+			Sha1 -> (SHA1.hash, sha1); Sha256 -> (SHA256.hash, sha256)
+			_ -> error $ moduleName ++ ": RSA.PrivateKey.ssSign"
+		b = ASN1.encodeASN1' ASN1.DER [ASN1.Start ASN1.Sequence,
 			ASN1.Start ASN1.Sequence,
 				oid, ASN1.Null, ASN1.End ASN1.Sequence,
-			ASN1.OctetString h, ASN1.End ASN1.Sequence]
-		b = ASN1.encodeASN1' ASN1.DER a
-		pd = BS.concat [ "\x00\x01",
-			BS.replicate (ps - 3 - BS.length b) 0xff, "\NUL", b ]
-		ps = RSA.public_size $ RSA.private_pub sk in
-		RSA.dp (Just bl) sk pd
-	signatureAlgorithm _ = Rsa
+			ASN1.OctetString hs, ASN1.End ASN1.Sequence]
+		e = BS.concat ["\0\1", BS.replicate (s - BS.length b) 255, "\0", b]
+		s = RSA.public_size (RSA.private_pub sk) - 3
 
 instance SvSignSecretKey ECDSA.PrivateKey where
 	type Blinder ECDSA.PrivateKey = Integer
-	generateBlinder _ rng = let
-		(Right bl, rng') = first B.decode $ cprgGenerate 32 rng in
-		(bl, rng')
-	sign ha bl sk = B.encode .
-		(($) <$> blindSign bl hs sk . generateKs (hs, bls) q x <*> id)
+	sssAlgorithm _ = Ecdsa
+	generateBlinder _ g = (bl, g')
+		where
+		bl = either error id $ B.decode bs; (bs, g') = cprgGenerate 32 g
+	ssSign sk ha bl m = B.encode $ blindSign bl hs sk (makeKs (hs, bls) q x m) m
 		where
 		(hs, bls) = case ha of
-			Sha1 -> (SHA1.hash, 64)
-			Sha256 -> (SHA256.hash, 64)
-			_ -> error $ "HandshakeBase: " ++
-				"not implemented bulk encryption type"
+			Sha1 -> (SHA1.hash, 64); Sha256 -> (SHA256.hash, 64)
+			_ -> error $ moduleName ++ ": ECDSA.PrivateKey.ssSign"
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
-	signatureAlgorithm _ = Ecdsa
 
 class ClSignPublicKey pk where
 	cspAlgorithm :: pk -> SignAlg
@@ -266,22 +261,23 @@ class ClSignPublicKey pk where
 
 instance ClSignPublicKey RSA.PublicKey where
 	cspAlgorithm _ = Rsa
-	csVerify k s h = RSA.ep k s == rsaPadding k h
+	csVerify pk s h = RSA.ep pk s == padding pk h
 
 instance ClSignPublicKey ECDSA.PublicKey where
 	cspAlgorithm _ = Ecdsa
-	csVerify k = ECDSA.verify id k . either error id . B.decode
+	csVerify pk = ECDSA.verify id pk . either error id . B.decode
 
 class ClSignSecretKey sk where
+	cssAlgorithm :: sk -> (HashAlg, SignAlg)
 	csSign :: sk -> BS.ByteString -> BS.ByteString
-	csAlgorithm :: sk -> (HashAlg, SignAlg)
 
 instance ClSignSecretKey RSA.PrivateKey where
-	csSign sk m = let pd = rsaPadding (RSA.private_pub sk) m in RSA.dp Nothing sk pd
-	csAlgorithm _ = (Sha256, Rsa)
+	cssAlgorithm _ = (Sha256, Rsa)
+	csSign sk m = RSA.dp Nothing sk $ padding (RSA.private_pub sk) m
 
 instance ClSignSecretKey ECDSA.PrivateKey where
-	csSign sk m = enc $ blindSign 0 id sk (generateKs (SHA256.hash, 64) q x m) m
+	cssAlgorithm _ = (Sha256, Ecdsa)
+	csSign sk m = enc $ blindSign 0 id sk (makeKs (SHA256.hash, 64) q x m) m
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
@@ -289,4 +285,3 @@ instance ClSignSecretKey ECDSA.PrivateKey where
 			ASN1.Start ASN1.Sequence,
 				ASN1.IntVal r, ASN1.IntVal s,
 				ASN1.End ASN1.Sequence]
-	csAlgorithm _ = (Sha256, Ecdsa)

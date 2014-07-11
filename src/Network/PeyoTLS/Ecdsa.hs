@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey) where
+module Network.PeyoTLS.Ecdsa (blindSign, makeKs, makeEcdsaPubKey) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (mapMaybe)
@@ -58,7 +58,8 @@ bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
 
 -- RFC 6979
 
-generateKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
+makeKs, generateKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
+makeKs = generateKs
 generateKs hsbl@(hs, _) q x m = filter ((&&) <$> (> 0) <*> (< q)) .
 	uncurry (createKs hsbl q) . initializeKV hsbl q x $ hs m
 

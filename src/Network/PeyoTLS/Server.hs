@@ -267,8 +267,8 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 	bl <- withRandom $ generateBlinder sk
 	let pv = B.encode $ calculatePublic dp sv
 	writeHandshake
-		. ServerKeyEx (B.encode dp) pv ha (signatureAlgorithm sk)
-		. sign ha bl sk $ BS.concat [cr, sr, B.encode dp, pv]
+		. ServerKeyEx (B.encode dp) pv ha (sssAlgorithm sk)
+		. ssSign sk ha bl $ BS.concat [cr, sr, B.encode dp, pv]
 	const `liftM` reqAndCert mcs `ap` do
 		ClientKeyEx cke <- readHandshake
 		generateKeys Server rs . calculateShared dp sv =<<
