@@ -44,7 +44,7 @@ import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		getSettingsC, setSettingsC,
-		adGet, adGetLine, adGetContent,
+		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		AlertLevel(..), AlertDesc(..), throw,
@@ -72,12 +72,12 @@ newtype TlsHandle h g = TlsHandleC { tlsHandleC :: TlsHandleBase h g } deriving 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
-	hlPut (TlsHandleC t) = hlPut t
+	hlPut = adPut . tlsHandleC
 	hlGet = adGet rehandshake . tlsHandleC
 	hlGetLine = adGetLine rehandshake . tlsHandleC
 	hlGetContent = adGetContent rehandshake . tlsHandleC
-	hlDebug (TlsHandleC t) = hlDebug t
-	hlClose (TlsHandleC t) = hlClose t
+	hlDebug = adDebug . tlsHandleC
+	hlClose = adClose . tlsHandleC
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Client"

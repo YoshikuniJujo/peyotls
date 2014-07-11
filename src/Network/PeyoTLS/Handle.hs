@@ -6,25 +6,26 @@ module Network.PeyoTLS.Handle (
 		run, withRandom, randomByteString,
 	TlsHandleBase(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
-		hsGet, hsPut, ccsPut,
+		chGet, hsPut, ccsPut,
 		debugCipherSuite,
-		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
+		getCipherSuite, setCipherSuite, flushCipherSuite,
 		setKeys,
 		handshakeHash, finishedHash,
+	adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	hlPut_, hlDebug_, hlClose_, tGetLine, tGetLine_, tGetContent,
-	getClientFinishedT, setClientFinishedT,
-	getServerFinishedT, setServerFinishedT,
+	getClFinished, setClFinished,
+	getSvFinished, setSvFinished,
 
-	Settings,
-	getSettingsT, setSettingsT,
-	getInitSetT, setInitSetT,
+	SettingsC,
+	getSettingsC, setSettingsC,
+	getSettingsS, setSettingsS,
 	SettingsS,
 
 	resetSequenceNumber,
-	tlsGet_, adGet,
+	tlsGet_,
 	flushAppData,
 
-	getAdBufT, setAdBufT,
+	getAdBuf, setAdBuf,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	) where
 
@@ -43,16 +44,18 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 
+import qualified Network.PeyoTLS.Monad as M
 import Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString,
 		getBuf, setBuf, getWBuf, setWBuf,
-		getAdBuf, setAdBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
 		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
-		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys, setKeys,
+		flushCipherSuiteRead, flushCipherSuiteWrite, getKeys,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), BulkEnc(..),
 	PartnerId, newPartnerId, Keys(..),
@@ -127,10 +130,10 @@ flushAppData t = do
 				BSC.pack $ show ct
 			return ("", True)
 
-hsGet :: (HandleLike h, CPRG g) => HandleHash h g -> Int ->
+chGet :: (HandleLike h, CPRG g) => HandleHash h g -> Int ->
 	TlsM h g (Either Word8 BS.ByteString, HandleHash h g)
-hsGet hh 0 = return (Right "", hh)
-hsGet hh@(t, _) n = do
+chGet hh 0 = return (Right "", hh)
+chGet hh@(t, _) n = do
 	lift . lift . hlDebug (tlsHandle t) "critical" .
 		BSC.pack . (++ "\n") $ show n
 	ct <- getContentType t
@@ -139,6 +142,7 @@ hsGet hh@(t, _) n = do
 	case ct of
 		CTCCSpec -> do
 			((CTCCSpec, bs), hh') <- tlsGet hh 1
+			resetSequenceNumber t Read
 			return (Left . (\[w] -> w) $ BS.unpack bs, hh')
 		CTHandshake -> do
 			((CTHandshake, bs), hh') <- tlsGet hh n
@@ -342,8 +346,8 @@ generateKeys t p cs cr sr pms = do
 
 data RW = Read | Write deriving Show
 
-flushCipherSuiteSt :: HandleLike h => RW -> PartnerId -> TlsM h g ()
-flushCipherSuiteSt p = case p of
+flushCipherSuite :: HandleLike h => RW -> TlsHandleBase h g -> TlsM h g ()
+flushCipherSuite rw = (. clientId) $ case rw of
 	Read -> flushCipherSuiteRead
 	Write -> flushCipherSuiteWrite
 
@@ -364,14 +368,17 @@ finishedHash (t, ctx) partner = do
 	sha256 <- handshakeHash (t, ctx)
 	return $ CT.finishedHash (partner == Client) ms sha256
 
-hlPut_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
+adPut, hlPut_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
+adPut = hlPut_
 hlPut_ = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
 
-hlDebug_ :: HandleLike h =>
+adDebug, hlDebug_ :: HandleLike h =>
 	TlsHandleBase h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
-hlDebug_ t l = lift . lift . hlDebug (tlsHandle t) l
+adDebug = hlDebug_
+hlDebug_ = thlDebug . tlsHandle
 
-hlClose_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
+adClose, hlClose_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
+adClose = hlClose_
 hlClose_ t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
 	flush t >> thlClose (tlsHandle t)
 
@@ -385,8 +392,9 @@ tGetLine t = do
 			setBuf (clientId t) cp
 			second (bp `BS.append`) `liftM` tGetLine t
 
-tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
+adGetLine, tGetLine_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
 	TlsHandleBase h g -> TlsM h g BS.ByteString
+adGetLine = tGetLine_
 tGetLine_ rn t = do
 	ct <- getContentType t
 	case ct of
@@ -436,37 +444,38 @@ tGetContent t = do
 	if BS.null bp then getWholeWithCt t else
 		setBuf (clientId t) (CTNull, BS.empty) >> return bcp
 
-getClientFinishedT, getServerFinishedT ::
+getClFinished, getSvFinished ::
 	HandleLike h => TlsHandleBase h g -> TlsM h g BS.ByteString
-getClientFinishedT = getClientFinished . clientId
-getServerFinishedT = getServerFinished . clientId
+getClFinished = getClientFinished . clientId
+getSvFinished = getServerFinished . clientId
 
-setClientFinishedT, setServerFinishedT ::
+setClFinished, setSvFinished ::
 	HandleLike h => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
-setClientFinishedT = setClientFinished . clientId
-setServerFinishedT = setServerFinished . clientId
+setClFinished = setClientFinished . clientId
+setSvFinished = setServerFinished . clientId
 
 getSettingsT :: HandleLike h => TlsHandleBase h g -> TlsM h g Settings
 getSettingsT = getSettings . clientId
 
-getInitSetT :: HandleLike h => TlsHandleBase h g -> TlsM h g SettingsS
-getInitSetT = getInitSet . clientId
+getSettingsS :: HandleLike h => TlsHandleBase h g -> TlsM h g SettingsS
+getSettingsS = getInitSet . clientId
 
 setSettingsT :: HandleLike h => TlsHandleBase h g -> Settings -> TlsM h g ()
 setSettingsT = setSettings . clientId
 
-setInitSetT :: HandleLike h => TlsHandleBase h g -> SettingsS -> TlsM h g ()
-setInitSetT = setInitSet . clientId
+setSettingsS :: HandleLike h => TlsHandleBase h g -> SettingsS -> TlsM h g ()
+setSettingsS = setInitSet . clientId
 
-getAdBufT :: HandleLike h => TlsHandleBase h g -> TlsM h g BS.ByteString
-getAdBufT = getAdBuf . clientId
+getAdBuf :: HandleLike h => TlsHandleBase h g -> TlsM h g BS.ByteString
+getAdBuf = M.getAdBuf . clientId
 
-setAdBufT :: HandleLike h => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
-setAdBufT = setAdBuf . clientId
+setAdBuf :: HandleLike h => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
+setAdBuf = M.setAdBuf . clientId
 
-tGetContent_ :: (HandleLike h, CPRG g) =>
+adGetContent, tGetContent_ :: (HandleLike h, CPRG g) =>
 	(TlsHandleBase h g -> TlsM h g ()) ->
 	TlsHandleBase h g -> TlsM h g BS.ByteString
+adGetContent = tGetContent_
 tGetContent_ rn t = do
 	ct <- getContentType t
 	case ct of
@@ -486,4 +495,32 @@ hsPut = flip tlsPut CTHandshake
 
 ccsPut :: (HandleLike h, CPRG g) => (TlsHandleBase h g, SHA256.Ctx) ->
 	Word8 -> TlsM h g (TlsHandleBase h g, SHA256.Ctx)
-ccsPut t = tlsPut t CTCCSpec . BS.pack . (: [])
+ccsPut t w = do
+	ret <- tlsPut t CTCCSpec $ BS.pack [w]
+	resetSequenceNumber (fst t) Write
+	return ret
+
+type SettingsC = (
+	[CipherSuite],
+	[(CertSecretKey, X509.CertificateChain)],
+	X509.CertificateStore )
+
+getSettingsC :: HandleLike h => TlsHandleBase h g -> TlsM h g SettingsC
+getSettingsC t = do
+	(css, crts, mcs) <- getSettingsT t
+	case mcs of
+		Just cs -> return (css, crts, cs)
+		_ -> throwError "Network.PeyoTLS.Base.getSettingsC"
+
+setSettingsC :: HandleLike h => TlsHandleBase h g ->
+	SettingsC -> TlsM h g ()
+setSettingsC t (css, crts, cs) = setSettingsT t (css, crts, Just cs)
+
+getCipherSuite :: HandleLike h => TlsHandleBase h g -> TlsM h g CipherSuite
+getCipherSuite = getCipherSuiteSt . clientId
+
+setCipherSuite :: HandleLike h => TlsHandleBase h g -> CipherSuite -> TlsM h g ()
+setCipherSuite = setCipherSuiteSt . clientId
+
+setKeys :: HandleLike h => TlsHandleBase h g -> Keys -> TlsM h g ()
+setKeys = M.setKeys . clientId

@@ -3,7 +3,7 @@
 module Network.PeyoTLS.Run (
 	TH.TlsM, TH.run, TH.TlsHandleBase(..),
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
-		adGet, adGetLine, adGetContent,
+		adGet, adGetLine, adGetContent, TH.adPut, TH.adDebug, TH.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		TH.SettingsS, getSettingsS, setSettingsS,
@@ -39,53 +39,26 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Handle as TH (
 	TlsM, run, withRandom, randomByteString,
-	TlsHandleBase(..),
-		newHandle, hsGet, hsPut, ccsPut, adGet,
-
-	Alert(..), AlertLevel(..), AlertDesc(..),
-		generateKeys,
-		debugCipherSuite,
-		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
-	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
-	hlPut_, hlDebug_, hlClose_, tGetLine_,
-	getClientFinishedT, setClientFinishedT,
-	getServerFinishedT, setServerFinishedT,
-
-	resetSequenceNumber,
-
-	getSettingsT, setSettingsT, Settings,
-	getInitSetT, setInitSetT, SettingsS,
-	flushAppData,
-	getAdBufT,
-	setAdBufT,
-
+	TlsHandleBase(..), CipherSuite,
+		newHandle, chGet, ccsPut, hsPut,
+		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
+		flushAppData, getAdBuf, setAdBuf,
+		getCipherSuite, setCipherSuite,
+		SettingsC, getSettingsC, setSettingsC,
+		SettingsS, getSettingsS, setSettingsS,
+		getClFinished, getSvFinished, setClFinished, setSvFinished,
+		generateKeys, setKeys,
+		Side(..), handshakeHash, finishedHash,
+		RW(..), flushCipherSuite,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
-	tGetContent_,
-	)
+	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite )
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
 
-instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandleBase h g) where
-	type HandleMonad (TH.TlsHandleBase h g) = TH.TlsM h g
-	type DebugLevel (TH.TlsHandleBase h g) = DebugLevel h
-	hlPut = TH.hlPut_
-	hlGet = undefined
-	hlGetLine = undefined
-	hlGetContent = undefined
-	hlDebug = TH.hlDebug_
-	hlClose = TH.hlClose_
-
-resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
-resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
-
-tGetLine_ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
-	TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
-tGetLine_ = TH.tGetLine_
-
-flushAppData_ :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, Bool)
-flushAppData_ = gets fst >>= lift . TH.flushAppData
+flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
+flushAppData = uncurry (>>) . (pushAdBuf *** return) =<<
+	lift . TH.flushAppData =<< gets fst
 
 throw :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
@@ -148,42 +121,34 @@ handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
-setCipherSuite cs = do
-	t <- gets fst
-	lift $ TH.setCipherSuiteSt (TH.clientId t) cs
+setCipherSuite cs = gets fst >>= lift . flip TH.setCipherSuite cs
 
 getCipherSuite :: HandleLike h => HandshakeM h g TH.CipherSuite
-getCipherSuite = do
-	t <- gets fst
-	lift . TH.getCipherSuiteSt $ TH.clientId t
+getCipherSuite = gets fst >>= lift . TH.getCipherSuite
 
 flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
-flushCipherSuite p = do
-	t <- gets fst
-	lift $ TH.flushCipherSuiteSt p (TH.clientId t)
+flushCipherSuite p = gets fst >>= lift . TH.flushCipherSuite p
 
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 
 hsGet_ :: (HandleLike h, CPRG g) =>
 	Int -> HandshakeM h g (Either Word8 BS.ByteString)
-hsGet_ n = do (bs, t') <- lift . flip TH.hsGet n =<< get; put t'; return bs
+hsGet_ n = do (bs, t') <- lift . flip TH.chGet n =<< get; put t'; return bs
 
 hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
 hsPut bs = get >>= lift . (\t -> TH.hsPut t bs) >>= put
 
 ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
-ccsPut w = do
-	get >>= lift . (\t -> TH.ccsPut t w) >>= put
-	resetSequenceNumber TH.Write
+ccsPut w = get >>= lift . (\t -> TH.ccsPut t w) >>= put
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
 generateKeys p (cr, sr) pms = do
 	t <- gets fst
-	cs <- lift $ TH.getCipherSuiteSt (TH.clientId t)
+	cs <- lift $ TH.getCipherSuite t
 	k <- lift $ TH.generateKeys t p cs cr sr pms
-	lift $ TH.setKeys (TH.clientId t) k
+	lift $ TH.setKeys t k
 
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
 handshakeHash = get >>= lift . TH.handshakeHash
@@ -192,58 +157,29 @@ finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteStrin
 finishedHash p = get >>= lift . flip TH.finishedHash p
 
 getClFinished, getSvFinished :: HandleLike h => HandshakeM h g BS.ByteString
-getClFinished = gets fst >>= lift . TH.getClientFinishedT
-getSvFinished = gets fst >>= lift . TH.getServerFinishedT
+getClFinished = gets fst >>= lift . TH.getClFinished
+getSvFinished = gets fst >>= lift . TH.getSvFinished
 
 setClFinished, setSvFinished :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-setClFinished cf = gets fst >>= lift . flip TH.setClientFinishedT cf
-setSvFinished cf = gets fst >>= lift . flip TH.setServerFinishedT cf
+setClFinished cf = gets fst >>= lift . flip TH.setClFinished cf
+setSvFinished cf = gets fst >>= lift . flip TH.setSvFinished cf
 
 getSettingsS :: HandleLike h => HandshakeM h g TH.SettingsS
-getSettingsS = gets fst >>= lift . TH.getInitSetT
-
-getSettingsC_ :: HandleLike h => HandshakeM h g TH.Settings
-getSettingsC_ = gets fst >>= lift . TH.getSettingsT
+getSettingsS = gets fst >>= lift . TH.getSettingsS
 
 setSettingsS :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
-setSettingsS is = gets fst >>= lift . flip TH.setInitSetT is
+setSettingsS is = gets fst >>= lift . flip TH.setSettingsS is
 
-setSettingsC_ :: HandleLike h => TH.Settings -> HandshakeM h g ()
-setSettingsC_ is = gets fst >>= lift . flip TH.setSettingsT is
+getSettingsC :: HandleLike h => HandshakeM h g TH.SettingsC
+getSettingsC = gets fst >>= lift . TH.getSettingsC
 
-type SettingsC = (
-	[TH.CipherSuite],
-	[(TH.CertSecretKey, X509.CertificateChain)],
-	X509.CertificateStore )
-
-getSettingsC :: HandleLike h => HandshakeM h g SettingsC
-getSettingsC = do
-	(css, crts, mcs) <- getSettingsC_
-	case mcs of
-		Just cs -> return (css, crts, cs)
-		_ -> throw TH.ALFatal TH.ADInternalError
-			"Network.PeyoTLS.Base.getSettingsC"
-
-setSettingsC :: HandleLike h => SettingsC -> HandshakeM h g ()
-setSettingsC (css, crts, cs) = setSettingsC_ (css, crts, Just cs)
-
-getAdBuf :: HandleLike h => TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
-getAdBuf = TH.getAdBufT
-
-setAdBuf :: HandleLike h =>
-	TH.TlsHandleBase h g -> BS.ByteString -> TH.TlsM h g ()
-setAdBuf = TH.setAdBufT
-
-getAdBufH :: HandleLike h => HandshakeM h g BS.ByteString
-getAdBufH = gets fst >>= lift . TH.getAdBufT
-
-setAdBufH :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-setAdBufH bs = gets fst >>= lift . flip TH.setAdBufT bs
+setSettingsC :: HandleLike h => TH.SettingsC -> HandshakeM h g ()
+setSettingsC s = gets fst >>= lift . flip TH.setSettingsC s
 
 pushAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 pushAdBuf bs = do
-	bf <- getAdBufH
-	setAdBufH $ bf `BS.append` bs
+	bf <- gets fst >>= lift . TH.getAdBuf
+	gets fst >>= lift . flip TH.setAdBuf (bf `BS.append` bs)
 
 hlGetRn_ :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g -> Int ->
@@ -269,9 +205,7 @@ ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
 ccsGet = do
 	ch <- hsGet_ 1
 	case ch of
-		Left w -> do
-			resetSequenceNumber TH.Read
-			return w
+		Left w -> return w
 		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
 			"HandshakeBase.getChangeCipherSpec: " ++
 			"not change cipher spec: " ++ show ch
@@ -279,16 +213,13 @@ ccsGet = do
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 updateHash = modify . second . flip SHA256.update
 
-flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
-flushAppData = uncurry (>>) . (pushAdBuf *** return) =<< flushAppData_
-
 adGet :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
 	TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
 adGet rn t n = do
-	bf <- getAdBuf t
+	bf <- TH.getAdBuf t
 	if BS.length bf >= n
 	then do	let (ret, rest) = BS.splitAt n bf
-		setAdBuf t rest
+		TH.setAdBuf t rest
 		return ret
 	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
 
@@ -296,12 +227,12 @@ adGetLine :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g ->
 	TH.TlsM h g BS.ByteString
 adGetLine rn t = do
-	bf <- getAdBuf t
+	bf <- TH.getAdBuf t
 	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
 	then do	let (ret, rest) = splitOneLine bf
-		setAdBuf t $ BS.tail rest
+		TH.setAdBuf t $ BS.tail rest
 		return ret
-	else (bf `BS.append`) `liftM` tGetLine_ rn t
+	else (bf `BS.append`) `liftM` TH.adGetLine rn t
 
 splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
 splitOneLine bs = case BSC.span (/= '\r') bs of
@@ -319,8 +250,8 @@ adGetContent :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
 	TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
 adGetContent rn t = do
-	bf <- getAdBuf t
+	bf <- TH.getAdBuf t
 	if BS.null bf
-	then TH.tGetContent_ rn t
-	else do	setAdBuf t ""
+	then TH.adGetContent rn t
+	else do	TH.setAdBuf t ""
 		return bf

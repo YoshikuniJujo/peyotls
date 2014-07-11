@@ -46,7 +46,7 @@ import qualified Network.PeyoTLS.Base as BASE (names)
 import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		SettingsS, getSettingsS, setSettingsS,
-		adGet, adGetLine, adGetContent,
+		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		AlertLevel(..), AlertDesc(..), throw, debugCipherSuite,
@@ -77,12 +77,12 @@ newtype TlsHandle h g = TlsHandleS { tlsHandleS :: TlsHandleBase h g } deriving 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
-	hlPut (TlsHandleS t) = hlPut t
+	hlPut = adPut . tlsHandleS
 	hlGet = adGet rehandshake . tlsHandleS
 	hlGetLine = adGetLine rehandshake . tlsHandleS
 	hlGetContent = adGetContent rehandshake . tlsHandleS
-	hlDebug (TlsHandleS t) = hlDebug t
-	hlClose (TlsHandleS t) = hlClose t
+	hlDebug = adDebug . tlsHandleS
+	hlClose = adClose . tlsHandleS
 
 type Version = (Word8, Word8)
 

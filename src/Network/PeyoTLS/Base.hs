@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Base (
 	PeyotlsM, TlsM, run, SettingsS,
-		adGet, adGetLine, adGetContent,
+		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		getSettingsC, setSettingsC, getSettingsS, setSettingsS,
 		withRandom, randomByteString, flushAppData,
@@ -72,7 +72,7 @@ import qualified Network.PeyoTLS.Run as RUN (finishedHash)
 import Network.PeyoTLS.Run (
 	TlsM, run, TlsHandleBase(..),
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
-		adGet, adGetLine, adGetContent,
+		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
 		SettingsS, getSettingsS, setSettingsS,
