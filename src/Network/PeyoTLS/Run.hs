@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Run (
 	TH.TlsM, TH.run, TH.TlsHandleBase(..),
-		chGet, ccsGet, ccsPut, hsGet, hsPut, updateHash,
+		chGet, ccsPut, hsPut, updateHash,
 		adGet, adGetLine, adGetContent, TH.adPut, TH.adDebug, TH.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, flushAppData,
@@ -56,43 +56,39 @@ import qualified Network.PeyoTLS.Handle as TH (
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
 
-ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
-ccsGet = do
-	ch <- chGet_ 1
-	case ch of
-		Left w -> return w
-		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
-			"HandshakeBase.getChangeCipherSpec: " ++
-			"not change cipher spec: " ++ show ch
-
-hsGet :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
-hsGet = do
-	t <- hsGet__ 1
-	len <- hsGet__ 3
-	body <- hsGet__ . either error id $ B.decode len
-	return $ BS.concat [t, len, body]
-
 chGet :: (HandleLike h, CPRG g) => HandshakeM h g (Either Word8 BS.ByteString)
 chGet = do
-	ch <- chGet_ 1
+	ch <- lift . flip TH.chGet 1 =<< gets fst
 	case ch of
 		Left w -> return $ Left w
 		Right t -> Right `liftM` do
-			len <- hsGet__ 3
-			body <- hsGet__ . either error id $ B.decode len
+			len <- hsGet 3
+			body <- hsGet . either error id $ B.decode len
 			return $ BS.concat [t, len, body]
 
-hsGet__ :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-hsGet__ n = do
-	ch <- chGet_ n
+hsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+hsGet n = do
+	ch <- lift . flip TH.chGet n =<< gets fst
 	case ch of
 		Right bs -> return bs
 		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
-			moduleName ++ ".hsGet__: not handshake"
+			moduleName ++ ".hsGet: not handshake"
 
-chGet_ :: (HandleLike h, CPRG g) =>
-	Int -> HandshakeM h g (Either Word8 BS.ByteString)
-chGet_ n = do lift . flip TH.chGet n . fst =<< get
+ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
+ccsPut w = lift . flip TH.ccsPut w =<< gets fst
+
+hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
+hsPut bs = lift . flip TH.hsPut bs =<< gets fst
+
+adGet :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
+	TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
+adGet rn t n = do
+	bf <- TH.getAdBuf t
+	if BS.length bf >= n
+	then do	let (ret, rest) = BS.splitAt n bf
+		TH.setAdBuf t rest
+		return ret
+	else (bf `BS.append`) `liftM` TH.adGet rn t (n - BS.length bf)
 
 type HandshakeM h g = StateT (TH.TlsHandleBase h g, SHA256.Ctx) (TH.TlsM h g)
 
@@ -166,12 +162,6 @@ flushCipherSuite p = gets fst >>= lift . TH.flushCipherSuite p
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 
-hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
-hsPut bs = gets fst >>= lift . flip TH.hsPut bs
-
-ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
-ccsPut w = gets fst >>= lift . flip TH.ccsPut w
-
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
 generateKeys p (cr, sr) pms = do
@@ -213,16 +203,6 @@ pushAdBuf bs = do
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 updateHash = modify . second . flip SHA256.update
-
-adGet :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
-	TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
-adGet rn t n = do
-	bf <- TH.getAdBuf t
-	if BS.length bf >= n
-	then do	let (ret, rest) = BS.splitAt n bf
-		TH.setAdBuf t rest
-		return ret
-	else (bf `BS.append`) `liftM` TH.adGet rn t (n - BS.length bf)
 
 adGetLine :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g ->
