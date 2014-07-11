@@ -6,7 +6,7 @@ module Network.PeyoTLS.Handle (
 		run, withRandom, randomByteString,
 	TlsHandleBase(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
-		hsGet,
+		hsGet, hsPut_, ccsPut_,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt,
 		setKeys,
@@ -479,3 +479,11 @@ tGetContent_ rn t = do
 					throwError . strMsg $ ".checkAppData: EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> snd `liftM` tGetContent t
+
+hsPut_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g, SHA256.Ctx) ->
+	BS.ByteString -> TlsM h g (TlsHandleBase h g, SHA256.Ctx)
+hsPut_ = flip tlsPut CTHandshake
+
+ccsPut_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g, SHA256.Ctx) ->
+	Word8 -> TlsM h g (TlsHandleBase h g, SHA256.Ctx)
+ccsPut_ t = tlsPut t CTCCSpec . BS.pack . (: [])

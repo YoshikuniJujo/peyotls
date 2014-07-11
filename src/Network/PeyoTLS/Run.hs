@@ -43,9 +43,8 @@ import qualified Network.PeyoTLS.Handle as TH (
 		newHandle,
 
 	Alert(..), AlertLevel(..), AlertDesc(..),
-	ContentType(..),
-		hsGet,
-		tlsPut, generateKeys,
+		hsGet, hsPut_, ccsPut_,
+		generateKeys,
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
@@ -176,9 +175,13 @@ hsGet_ :: (HandleLike h, CPRG g) =>
 	Int -> HandshakeM h g (Either Word8 BS.ByteString)
 hsGet_ n = do (bs, t') <- lift . flip TH.hsGet n =<< get; put t'; return bs
 
-tlsPut :: (HandleLike h, CPRG g) =>
-	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
-tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
+hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
+hsPut bs = get >>= lift . (\t -> TH.hsPut_ t bs) >>= put
+
+ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
+ccsPut w = do
+	get >>= lift . (\t -> TH.ccsPut_ t w) >>= put
+	resetSequenceNumber TH.Write
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
@@ -288,14 +291,6 @@ ccsGet = do
 		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
 			"HandshakeBase.getChangeCipherSpec: " ++
 			"not change cipher spec: " ++ show ch
-
-hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
-hsPut = tlsPut TH.CTHandshake
-
-ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
-ccsPut w = do
-	tlsPut TH.CTCCSpec $ BS.pack [w]
-	resetSequenceNumber TH.Write
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 updateHash = modify . second . flip SHA256.update
