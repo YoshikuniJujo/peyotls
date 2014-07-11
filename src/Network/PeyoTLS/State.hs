@@ -159,7 +159,7 @@ data AlertDesc
 	| ADUnsupportedCertificate | ADCertificateExpired   | ADCertificateUnknown
 	| ADIllegalParameter       | ADUnknownCa            | ADDecodeError
 	| ADDecryptError           | ADProtocolVersion      | ADInsufficientSecurity
-	| ADInternalError
+	| ADInternalError          | ADUnclasified
 	| ADRaw Word8
 	deriving Show
 

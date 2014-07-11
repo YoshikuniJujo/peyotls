@@ -16,13 +16,10 @@ module Network.PeyoTLS.Handle (
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite ) where
 
-import Prelude hiding (read)
-
 import Control.Arrow (second)
-import Control.Monad (liftM, when, unless)
-import "monads-tf" Control.Monad.State (get, put, lift)
-import "monads-tf" Control.Monad.Error (throwError, catchError)
-import "monads-tf" Control.Monad.Error.Class (strMsg)
+import Control.Monad (when, unless, liftM)
+import "monads-tf" Control.Monad.State (lift, get, put)
+import "monads-tf" Control.Monad.Error (catchError, throwError)
 import Data.Word (Word8, Word16, Word64)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
@@ -33,11 +30,11 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
-import qualified Network.PeyoTLS.Monad as M
+import qualified Network.PeyoTLS.Monad as M (setKeys)
 import Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom,
-		getRBuf, setRBuf, getWBuf, setWBuf,
+		getRBuf, setRBuf, getWBuf, setWBuf, getAdBuf, setAdBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
 		resetReadSn, resetWriteSn,
 		getCipherSuiteSt, setCipherSuiteSt,
@@ -132,7 +129,7 @@ chGet t n = do
 			return $ Right bs
 		CTAlert -> do
 			(CTAlert, al) <- buffered t 2
-			throwError . strMsg $ show al
+			throw ALFatal ADUnclasified $ show al
 		_ -> throwError "not handshake"
 
 buffered :: (HandleLike h, CPRG g) =>
@@ -142,7 +139,7 @@ buffered t n = do
 	if rl <= 0
 	then splitRetBuf t n ct b
 	else do	(ct', b') <- getWholeWithCt t
-		unless (ct' == ct) . throwError . strMsg $
+		unless (ct' == ct) . throw ALFatal ADUnclasified $
 			"Content Type confliction\n" ++
 				"\tExpected: " ++ show ct ++ "\n" ++
 				"\tActual  : " ++ show ct' ++ "\n" ++
@@ -167,7 +164,8 @@ buffered_ rn t n = do
 			al <- if rl <= 0
 				then snd `liftM` splitRetBuf t 2 CTAlert b
 				else do (ct', b') <- getWholeWithCt t
-					unless (ct' == CTAlert) . throwError . strMsg $
+					unless (ct' == CTAlert) $ throw
+						ALFatal ADUnclasified
 						"Content Type confliction\n"
 					when (BS.null b') $ throwError "buffered: No data"
 					setRBuf (clientId t) (ct', b')
@@ -175,14 +173,15 @@ buffered_ rn t n = do
 			case al of
 				"\SOH\NULL" -> do
 					tlsPut t CTAlert "\SOH\NULL"
-					throwError . strMsg $ "EOF"
-				_ -> throwError . strMsg $ "Alert: " ++ show al
+					throw ALFatal ADUnclasified "EOF"
+				_ -> throw ALFatal ADUnclasified $
+					"Alert: " ++ show al
 		_ -> do	(ct, b) <- getRBuf $ clientId t; let rl = n - BS.length b
 			if rl <= 0
 			then snd `liftM` splitRetBuf t n ct b
 			else do
 				(ct', b') <- getWholeWithCt t
-				unless (ct' == ct) . throwError . strMsg $
+				unless (ct' == ct) $ throw ALFatal ADUnclasified
 					"Content Type confliction\n"
 				when (BS.null b') $ throwError "buffered: No data"
 				setRBuf (clientId t) (ct', b')
@@ -200,22 +199,20 @@ getWholeWithCt :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> TlsM h g (ContentType, BS.ByteString)
 getWholeWithCt t = do
 	flush t
-	ct <- (either (throwError . strMsg) return . B.decode) =<< read t 1
-	[_vmj, _vmn] <- BS.unpack `liftM` read t 2
-	e <- read t =<< either (throwError . strMsg) return . B.decode =<< read t 2
+	ct <- (either (throw ALFatal ADUnclasified) return . B.decode) =<< rd 1
+	[_vmj, _vmn] <- BS.unpack `liftM` rd 2
+	e <- rd =<< either (throw ALFatal ADUnclasified) return . B.decode =<< rd 2
 	when (BS.null e) $ throwError "TlsHandleBase.getWholeWithCt: e is null"
 	p <- decrypt t ct e
 	thlDebug (tlsHandle t) "medium" . BSC.pack . (++ ": ") $ show ct
 	thlDebug (tlsHandle t) "medium" . BSC.pack . (++  "\n") . show $ BS.head p
 	thlDebug (tlsHandle t) "low" . BSC.pack . (++ "\n") $ show p
 	return (ct, p)
-
-read :: (HandleLike h, CPRG g) => TlsHandleBase h g -> Int -> TlsM h g BS.ByteString
-read t n = do
-	r <- thlGet (tlsHandle t) n
-	unless (BS.length r == n) . throwError . strMsg $
-		"TlsHandleBase.read: can't read " ++ show (BS.length r) ++ " " ++ show n
-	return r
+	where rd n = do
+		r <- thlGet (tlsHandle t) n
+		unless (BS.length r == n) . throw ALFatal ADUnclasified $
+			"TlsHandleBase.rd: can't read " ++ show (BS.length r) ++ " " ++ show n
+		return r
 
 decrypt :: HandleLike h =>
 	TlsHandleBase h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
@@ -235,7 +232,7 @@ decrypt_ t ks ct e = do
 		AES_128_CBC_SHA -> return CT.hashSha1
 		AES_128_CBC_SHA256 -> return CT.hashSha256
 		_ -> throwError "TlsHandleBase.decrypt: not implement bulk encryption"
-	either (throwError . strMsg) return $
+	either (throw ALFatal ADUnclasified) return $
 		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
 tlsPut :: (HandleLike h, CPRG g) =>
@@ -366,7 +363,7 @@ tGetLine_ rn t = do
 			al <- if rl <= 0
 				then snd `liftM` splitRetBuf t 2 CTAlert b
 				else do (ct', b') <- getWholeWithCt t
-					unless (ct' == CTAlert) . throwError . strMsg $
+					unless (ct' == CTAlert) . throw ALFatal ADUnclasified $
 						"Content Type confliction\n"
 					when (BS.null b') $ throwError "buffered: No data"
 					setRBuf (clientId t) (ct', b')
@@ -374,8 +371,9 @@ tGetLine_ rn t = do
 			case al of
 				"\SOH\NULL" -> do
 					tlsPut t CTAlert "\SOH\NULL"
-					throwError . strMsg $ "EOF"
-				_ -> throwError . strMsg $ "Alert: " ++ show al
+					throw ALFatal ADUnclasified "EOF"
+				_ -> throw ALFatal ADUnclasified $
+					"Alert: " ++ show al
 		_ -> do	(bct, bp) <- getRBuf $ clientId t
 			case splitLine bp of
 				Just (l, ls) -> do
@@ -428,10 +426,10 @@ setSettingsS :: HandleLike h => TlsHandleBase h g -> SettingsS -> TlsM h g ()
 setSettingsS = setInitSet . clientId
 
 getBuf :: HandleLike h => TlsHandleBase h g -> TlsM h g BS.ByteString
-getBuf = M.getAdBuf . clientId
+getBuf = getAdBuf . clientId
 
 setBuf :: HandleLike h => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
-setBuf = M.setAdBuf . clientId
+setBuf = setAdBuf . clientId
 
 adGetContent, tGetContent_ :: (HandleLike h, CPRG g) =>
 	(TlsHandleBase h g -> TlsM h g ()) ->
@@ -446,8 +444,10 @@ tGetContent_ rn t = do
 			case al of
 				"\SOH\NULL" -> do
 					tlsPut t CTAlert "\SOH\NUL"
-					throwError . strMsg $ ".checkAppData: EOF"
-				_ -> throwError . strMsg $ "Alert: " ++ show al
+					throw ALFatal ADUnclasified $
+						".checkAppData: EOF"
+				_ -> throw ALFatal ADUnclasified $
+					"Alert: " ++ show al
 		_ -> snd `liftM` tGetContent t
 
 hsPut :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
@@ -483,3 +483,6 @@ setCipherSuite = setCipherSuiteSt . clientId
 
 setKeys :: HandleLike h => TlsHandleBase h g -> Keys -> TlsM h g ()
 setKeys = M.setKeys . clientId
+
+throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
+throw = ((throwError .) .) . Alert
