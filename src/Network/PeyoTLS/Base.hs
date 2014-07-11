@@ -102,22 +102,16 @@ readHandshake = do
 	case B.decode bs of
 		Right HHelloReq -> readHandshake
 		Right hs -> case fromHandshake hs of
-			Just i -> do
-				updateHash bs
-				return i
-			_ -> throwError
-				ALFatal ADUnexpectedMessage $ moduleName ++
-				".readHandshake: type mismatch " ++ show hs
-		_ -> throwError ALFatal ADInternalError "bad"
+			Just i -> updateHash bs >> return i
+			_ -> throwError ALFatal ADUnexpectedMessage $
+				moduleName ++ ".readHandshake: " ++ show hs
+		Left em -> throwError ALFatal ADInternalError $
+			moduleName ++ ".readHandshake: " ++ em
 
 writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
-writeHandshake hi = do
-	let	hs = toHandshake hi
-		bs = B.encode hs
-	hsPut bs
-	case hs of
-		HHelloReq -> return ()
-		_ -> updateHash bs
+writeHandshake hi =
+	hsPut bs >> case hs of HHelloReq -> return (); _ -> updateHash bs
+	where hs = toHandshake hi; bs = B.encode hs
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 getChangeCipherSpec = do
@@ -125,30 +119,28 @@ getChangeCipherSpec = do
 	case B.decode $ BS.pack [w] of
 		Right ChangeCipherSpec -> return ()
 		_ -> throwError ALFatal ADUnexpectedMessage $
-			"HandshakeBase.getChangeCipherSpec: " ++
-			"not change cipher spec"
+			moduleName ++ ".getChangeCipherSpec: not change cipher spec"
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
-putChangeCipherSpec =
-	ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
+putChangeCipherSpec = ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
 
 finishedHash :: (HandleLike h, CPRG g) => Side -> HandshakeM h g Finished
-finishedHash s = (Finished `liftM`) $ do
+finishedHash s = Finished `liftM` do
 	fh <- RUN.finishedHash s
 	case s of Client -> setClFinished fh; Server -> setSvFinished fh
 	return fh
 
 checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
-checkClRenego (ERenegoInfo cf) = do
-	ok <- (cf ==) `liftM` getClFinished
+checkClRenego (ERenegoInfo ri) = do
+	ok <- (ri ==) `liftM` getClFinished
 	unless ok . throwError ALFatal ADHsFailure $
-		moduleName ++ ".checkClRenego: bad renegotiation"
+		moduleName ++ ".checkClRenego: renego info is not match"
 checkClRenego _ = throwError ALFatal ADInternalError $
 	moduleName ++ ".checkClRenego: not renego info"
 checkSvRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
 	unless ok . throwError ALFatal ADHsFailure $
-		moduleName ++ ".checkSvRenego: bad renegotiation"
+		moduleName ++ ".checkSvRenego: renego info is not match"
 checkSvRenego _ = throwError ALFatal ADInternalError $
 	moduleName ++ ".checkSvRenego: not renego info"
 
