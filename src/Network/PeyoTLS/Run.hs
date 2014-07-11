@@ -14,27 +14,28 @@ module Network.PeyoTLS.Run (
 		TH.RW(..), flushCipherSuite, generateKeys,
 		TH.Side(..), handshakeHash, finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TH.AlertLevel(..), TH.AlertDesc(..), debugCipherSuite, throwError ) where
+	TH.AlertLevel(..), TH.AlertDesc(..), debugCipherSuite, throw ) where
 
-import Data.Word
-import Control.Applicative
-import qualified Data.ASN1.Types as ASN1
+import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first, second, (***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (
-	StateT, evalStateT, execStateT, get, gets, put, modify)
-import qualified "monads-tf" Control.Monad.Error as E (throwError)
+	StateT, evalStateT, execStateT, get, gets, put, modify )
+import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
+import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ASN1.Types as ASN1
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
+import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Handle as TH (
@@ -46,7 +47,7 @@ import qualified Network.PeyoTLS.Handle as TH (
 		debugCipherSuite,
 		getCipherSuiteSt, setCipherSuiteSt, flushCipherSuiteSt, setKeys,
 	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..),
-	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine, tGetLine_,
+	hlPut_, hlDebug_, hlClose_, tGetContent, tGetLine_,
 	getClientFinishedT, setClientFinishedT,
 	getServerFinishedT, setServerFinishedT,
 
@@ -62,8 +63,6 @@ import qualified Network.PeyoTLS.Handle as TH (
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
 
-import qualified Codec.Bytable.BigEndian as B
-
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
 
@@ -71,10 +70,9 @@ instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandleBase h g) where
 	type HandleMonad (TH.TlsHandleBase h g) = TH.TlsM h g
 	type DebugLevel (TH.TlsHandleBase h g) = DebugLevel h
 	hlPut = TH.hlPut_
-	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .)
-		. tlsGet__ . (, undefined)
-	hlGetLine = ($) <$> checkAppData <*> TH.tGetLine
-	hlGetContent = ($) <$> checkAppData <*> TH.tGetContent
+	hlGet = undefined
+	hlGetLine = undefined
+	hlGetContent = undefined
 	hlDebug = TH.hlDebug_
 	hlClose = TH.hlClose_
 
@@ -84,19 +82,14 @@ checkAppData t m = m >>= \cp -> case cp of
 	(TH.CTAppData, ad) -> return ad
 	(TH.CTAlert, "\SOH\NUL") -> do
 		_ <- tlsPut_ (t, undefined) TH.CTAlert "\SOH\NUL"
-		E.throwError . strMsg $
-			moduleName ++ ".checkAppData: EOF"
-	(TH.CTHandshake, _) -> E.throwError "bad"
+		throwError . strMsg $ moduleName ++ ".checkAppData: EOF"
+	(TH.CTHandshake, _) -> throwError "bad"
 	_ -> do	_ <- tlsPut_ (t, undefined) TH.CTAlert "\2\10"
-		E.throwError . strMsg $
+		throwError . strMsg $
 			moduleName ++ ".checkAppData: not application data"
 
 resetSequenceNumber :: HandleLike h => TH.RW -> HandshakeM h g ()
 resetSequenceNumber rw = gets fst >>= lift . flip TH.resetSequenceNumber rw
-
-tlsGet__ :: (HandleLike h, CPRG g) =>
-	(TH.TlsHandleBase h g, SHA256.Ctx) -> Int -> TH.TlsM h g ((TH.ContentType, BS.ByteString), (TH.TlsHandleBase h g, SHA256.Ctx))
-tlsGet__ = TH.tlsGet True
 
 tGetLine_, tGetContent_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
@@ -116,9 +109,9 @@ tlsPut_ :: (HandleLike h, CPRG g) =>
 	(TH.TlsHandleBase h g, SHA256.Ctx) -> TH.ContentType -> BS.ByteString -> TH.TlsM h g (TH.TlsHandleBase h g, SHA256.Ctx)
 tlsPut_ = TH.tlsPut True
 
-throwError :: HandleLike h =>
+throw :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
-throwError al ad m = E.throwError $ TH.Alert al ad m
+throw al ad m = throwError $ TH.Alert al ad m
 
 type HandshakeM h g = StateT (TH.TlsHandleBase h g, SHA256.Ctx) (TH.TlsM h g)
 
@@ -248,7 +241,7 @@ getSettingsC = do
 	(css, crts, mcs) <- getSettingsC_
 	case mcs of
 		Just cs -> return (css, crts, cs)
-		_ -> throwError TH.ALFatal TH.ADInternalError
+		_ -> throw TH.ALFatal TH.ADInternalError
 			"Network.PeyoTLS.Base.getSettingsC"
 
 setSettingsC :: HandleLike h => SettingsC -> HandshakeM h g ()
@@ -296,8 +289,7 @@ hsGet = do
 			len <- tlsGet (t /= "\0") 3
 			body <- tlsGet True . either error id $ B.decode len
 			return $ BS.concat [t, len, body]
-		_ -> throwError
-			TH.ALFatal TH.ADUnexpectedMessage $
+		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
 			"HandshakeBase.readHandshake: not handshake: " ++ show ct
 
 ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
@@ -305,7 +297,7 @@ ccsGet = do
 	ct <- tlsGetContentType
 	bs <- case ct of
 		TH.CTCCSpec -> tlsGet True 1
-		_ -> throwError TH.ALFatal TH.ADUnexpectedMessage $
+		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
 			"HandshakeBase.getChangeCipherSpec: " ++
 			"not change cipher spec: " ++ show ct
 	resetSequenceNumber TH.Read

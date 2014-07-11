@@ -47,7 +47,7 @@ import Network.PeyoTLS.Base ( debug,
 		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
-		AlertLevel(..), AlertDesc(..), throwError,
+		AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..),
 		readHandshake, writeHandshake,
@@ -140,7 +140,7 @@ handshake crts ca cr = do
 		DHE_RSA -> dheHandshake (undefined :: DH.Params)
 		ECDHE_RSA -> dheHandshake (undefined :: ECC.Curve)
 		ECDHE_ECDSA -> dheHandshake (undefined :: ECC.Curve)
-		_ -> \_ _ _ -> throwError ALFatal ADHsFailure $
+		_ -> \_ _ _ -> throw ALFatal ADHsFailure $
 			moduleName ++ ".handshake: not implemented"
 
 serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
@@ -148,15 +148,15 @@ serverHello = do
 	ServerHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
 	case v of
 		(3, 3) -> return ()
-		_ -> throwError ALFatal ADProtocolVersion $
+		_ -> throw ALFatal ADProtocolVersion $
 			moduleName ++ ".serverHello: only TLS 1.2"
 	case cm of
 		CompMethodNull -> return ()
-		_ -> throwError ALFatal ADHsFailure $
+		_ -> throw ALFatal ADHsFailure $
 			moduleName ++ ".serverHello: only compression method null"
 	case find isRenegoInfo $ fromMaybe [] e of
 		Just ri -> checkSvRenego ri
-		_ -> throwError ALFatal ADInsufficientSecurity $
+		_ -> throw ALFatal ADInsufficientSecurity $
 			moduleName ++ ".serverHello: require secure renegotiation"
 	setCipherSuite cs
 	return (sr, ke)
@@ -167,11 +167,11 @@ rsaHandshake :: (ValidateHandle h, CPRG g) => (BS.ByteString, BS.ByteString) ->
 rsaHandshake rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) . throwError ALFatal (validateAlert vr) $
+	unless (null vr) . throw ALFatal (validateAlert vr) $
 		moduleName ++ ".rsaHandshake: validate failure"
 	pk <- case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA k -> return k
-		_ -> throwError ALFatal ADIllegalParameter $
+		_ -> throw ALFatal ADIllegalParameter $
 			moduleName ++ ".rsaHandshake: require RSA public key"
 	crt <- clientCertificate crts
 	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
@@ -192,12 +192,12 @@ dheHandshake :: (ValidateHandle h, CPRG g,
 dheHandshake t rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) . throwError ALFatal (validateAlert vr) $
+	unless (null vr) . throw ALFatal (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
 	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
 		X509.PubKeyECDSA cv pt -> succeed t (ecdsaPubKey cv pt) rs crts
-		_ -> throwError ALFatal ADHsFailure $
+		_ -> throw ALFatal ADHsFailure $
 			moduleName ++ ".dheHandshake: not implemented"
 
 succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
@@ -207,10 +207,10 @@ succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 succeed t pk rs@(cr, sr) crts = do
 	(ps, pv, ha, sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
-	unless (sa == sspAlgorithm pk) . throwError ALFatal ADHsFailure $
+	unless (sa == sspAlgorithm pk) . throw ALFatal ADHsFailure $
 		pre ++ "sign algorithm unmatch"
 	unless (ssVerify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
-		throwError ALFatal ADDecryptError $ pre ++ "verify failure"
+		throw ALFatal ADDecryptError $ pre ++ "verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	generateKeys Client rs $ calculateShared ps sv pv
@@ -242,7 +242,7 @@ clientCertificate crts = do
 		case find (isMatchedCert cct a dn) crts of
 			Just c ->
 				(>>) <$> writeHandshake . snd <*> return . Just $ c
-			_ -> throwError ALFatal ADUnknownCa $ moduleName ++
+			_ -> throw ALFatal ADUnknownCa $ moduleName ++
 				".clientCertificate: no certificate"
 
 isMatchedCert :: [ClCertType] -> [(HashAlg, SignAlg)] ->
@@ -273,5 +273,5 @@ finishHandshake crt = do
 	writeHandshake =<< finishedHash Client
 	getChangeCipherSpec >> flushCipherSuite Read
 	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
-		(throwError ALFatal ADDecryptError $
+		(throw ALFatal ADDecryptError $
 			moduleName ++ ".finishHandshake: finished hash failure")

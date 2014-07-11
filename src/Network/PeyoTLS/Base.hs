@@ -6,7 +6,7 @@ module Network.PeyoTLS.Base (
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		getSettingsC, setSettingsC, getSettingsS, setSettingsS,
 		withRandom, randomByteString, flushAppData,
-		AlertLevel(..), AlertDesc(..), throwError,
+		AlertLevel(..), AlertDesc(..), throw,
 		debugCipherSuite, debug,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, names,
@@ -83,7 +83,7 @@ import Network.PeyoTLS.Run (
 		RW(..), flushCipherSuite, generateKeys,
 		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
+	AlertLevel(..), AlertDesc(..), debugCipherSuite, throw )
 import Network.PeyoTLS.Ecdsa (blSign, makeKs, ecdsaPubKey)
 
 moduleName :: String
@@ -103,9 +103,9 @@ readHandshake = do
 		Right HHelloReq -> readHandshake
 		Right hs -> case fromHandshake hs of
 			Just i -> updateHash bs >> return i
-			_ -> throwError ALFatal ADUnexpectedMessage $
+			_ -> throw ALFatal ADUnexpectedMessage $
 				moduleName ++ ".readHandshake: " ++ show hs
-		Left em -> throwError ALFatal ADInternalError $
+		Left em -> throw ALFatal ADInternalError $
 			moduleName ++ ".readHandshake: " ++ em
 
 writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
@@ -118,7 +118,7 @@ getChangeCipherSpec = do
 	w <- ccsGet
 	case B.decode $ BS.pack [w] of
 		Right ChangeCipherSpec -> return ()
-		_ -> throwError ALFatal ADUnexpectedMessage $
+		_ -> throw ALFatal ADUnexpectedMessage $
 			moduleName ++ ".getChangeCipherSpec: not change cipher spec"
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
@@ -133,15 +133,15 @@ finishedHash s = Finished `liftM` do
 checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
 checkClRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` getClFinished
-	unless ok . throwError ALFatal ADHsFailure $
+	unless ok . throw ALFatal ADHsFailure $
 		moduleName ++ ".checkClRenego: renego info is not match"
-checkClRenego _ = throwError ALFatal ADInternalError $
+checkClRenego _ = throw ALFatal ADInternalError $
 	moduleName ++ ".checkClRenego: not renego info"
 checkSvRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
-	unless ok . throwError ALFatal ADHsFailure $
+	unless ok . throw ALFatal ADHsFailure $
 		moduleName ++ ".checkSvRenego: renego info is not match"
-checkSvRenego _ = throwError ALFatal ADInternalError $
+checkSvRenego _ = throw ALFatal ADInternalError $
 	moduleName ++ ".checkSvRenego: not renego info"
 
 makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
