@@ -1,15 +1,16 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Base (
-	PeyotlsM, HM.TlsM, HM.run, HM.SettingsS,
-		HM.adGet, HM.adGetLine, HM.adGetContent,
-	HM.HandshakeM, HM.execHandshakeM, HM.rerunHandshakeM,
-		getSettingsC, setSettingsC, HM.getSettingsS, HM.setSettingsS,
-		HM.withRandom, HM.randomByteString, HM.flushAppData,
-		HM.AlertLevel(..), HM.AlertDesc(..), HM.throwError,
-		HM.debugCipherSuite, debug,
-	HM.ValidateHandle(..), HM.handshakeValidate, validateAlert,
-	HM.TlsHandle_, HM.names, HM.CertSecretKey(..), HM.isRsaKey, HM.isEcdsaKey,
+	PeyotlsM, TlsM, run, SettingsS,
+		adGet, adGetLine, adGetContent,
+	HandshakeM, execHandshakeM, rerunHandshakeM,
+		getSettingsC, setSettingsC, getSettingsS, setSettingsS,
+		withRandom, randomByteString, flushAppData,
+		AlertLevel(..), AlertDesc(..), throwError,
+		debugCipherSuite, debug,
+	ValidateHandle(..), handshakeValidate, validateAlert,
+	TlsHandle_, names,
+		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
 	Handshake(HHelloReq),
@@ -17,17 +18,17 @@ module Network.PeyoTLS.Base (
 		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
-		HM.getCipherSuite, HM.setCipherSuite,
+		getCipherSuite, setCipherSuite,
 		checkClRenego, checkSvRenego, makeClRenego, makeSvRenego,
 	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 		SvSignSecretKey(..), SvSignPublicKey(..),
 	CertReq(..), certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), HM.generateKeys,
+	ClientKeyEx(..), Epms(..), generateKeys,
 	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
-		HM.handshakeHash,
-	HM.RW(..), HM.flushCipherSuite,
-	HM.Side(..), finishedHash,
+		handshakeHash,
+	RW(..), flushCipherSuite,
+	Side(..), finishedHash,
 	DhParam(..), makeEcdsaPubKey, dh3072Modp, secp256r1 ) where
 
 import Control.Applicative
@@ -72,52 +73,55 @@ import Network.PeyoTLS.Types (
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
-import qualified Network.PeyoTLS.Run as HM (
+import qualified Network.PeyoTLS.Run as RUN (
+	getSettingsC, setSettingsC, finishedHash )
+import Network.PeyoTLS.Run (
 	TlsM, run, TlsHandle_(..), names,
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
 		adGet, adGetLine, adGetContent,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, randomByteString, flushAppData,
-		SettingsS, getSettingsC, setSettingsC, getSettingsS, setSettingsS,
+		SettingsS, -- getSettingsC, setSettingsC,
+		getSettingsS, setSettingsS,
 		getCipherSuite, setCipherSuite,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		RW(..), flushCipherSuite, generateKeys,
-		Side(..), handshakeHash, finishedHash,
+		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throwError )
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs, makeEcdsaPubKey)
 
-type PeyotlsM = HM.TlsM Handle SystemRNG
+type PeyotlsM = TlsM Handle SystemRNG
 
-debug :: (HandleLike h, Show a) => DebugLevel h -> a -> HM.HandshakeM h g ()
+debug :: (HandleLike h, Show a) => DebugLevel h -> a -> HandshakeM h g ()
 debug p x = do
-	h <- gets $ HM.tlsHandle . fst
+	h <- gets $ tlsHandle . fst
 	lift . lift . lift . hlDebug h p . BSC.pack . (++ "\n") $ show x
 
-readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
+readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HandshakeM h g hi
 readHandshake = do
-	bs <- HM.hsGet
+	bs <- hsGet
 	case B.decode bs of
 		Right HHelloReq -> readHandshake
 		Right hs -> case fromHandshake hs of
 			Just i -> do
-				HM.updateHash bs
+				updateHash bs
 				return i
-			_ -> HM.throwError
-				HM.ALFatal HM.ADUnexpectedMessage $ moduleName ++
+			_ -> throwError
+				ALFatal ADUnexpectedMessage $ moduleName ++
 				".readHandshake: type mismatch " ++ show hs
-		_ -> HM.throwError HM.ALFatal HM.ADInternalError "bad"
+		_ -> throwError ALFatal ADInternalError "bad"
 
 writeHandshake::
-	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
+	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
 writeHandshake hi = do
 	let	hs = toHandshake hi
 		bs = snd . encodeContent $ CHandshake hs
-	HM.hsPut bs
+	hsPut bs
 	case hs of
 		HHelloReq -> return ()
-		_ -> HM.updateHash bs
+		_ -> updateHash bs
 
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
@@ -129,18 +133,18 @@ instance B.Bytable ChangeCipherSpec where
 	encode ChangeCipherSpec = BS.pack [1]
 	encode (ChangeCipherSpecRaw w) = BS.pack [w]
 
-getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
+getChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 getChangeCipherSpec = do
-	w <- HM.ccsGet
+	w <- ccsGet
 	case B.decode $ BS.pack [w] of
 		Right ChangeCipherSpec -> return ()
-		_ -> HM.throwError HM.ALFatal HM.ADUnexpectedMessage $
+		_ -> throwError ALFatal ADUnexpectedMessage $
 			"HandshakeBase.getChangeCipherSpec: " ++
 			"not change cipher spec"
 
-putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
+putChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 putChangeCipherSpec =
-	HM.ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
+	ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
 
 data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
 	deriving Show
@@ -203,12 +207,12 @@ getRangedInteger b mn mx g = let
 secp256r1 :: ECC.Curve
 secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
 
-finishedHash :: (HandleLike h, CPRG g) => HM.Side -> HM.HandshakeM h g Finished
+finishedHash :: (HandleLike h, CPRG g) => Side -> HandshakeM h g Finished
 finishedHash s = (Finished `liftM`) $ do
-	fh <- HM.finishedHash s
+	fh <- RUN.finishedHash s
 	case s of
-		HM.Client -> HM.setClFinished fh
-		HM.Server -> HM.setSvFinished fh
+		Client -> setClFinished fh
+		Server -> setSvFinished fh
 	return fh
 
 isRenegoInfo :: Extension -> Bool
@@ -218,46 +222,46 @@ isRenegoInfo _ = False
 emptyRenegoInfo :: Extension
 emptyRenegoInfo = ERenegoInfo ""
 
-checkClRenego, checkSvRenego :: HandleLike h => Extension -> HM.HandshakeM h g ()
-checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` HM.getClFinished >>= \ok ->
-	unless ok . HM.throwError HM.ALFatal HM.ADHsFailure $
+checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
+checkClRenego (ERenegoInfo cf) = (cf ==) `liftM` getClFinished >>= \ok ->
+	unless ok . throwError ALFatal ADHsFailure $
 		"Network.PeyoTLS.Base.checkClientRenego: bad renegotiation"
-checkClRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
+checkClRenego _ = throwError ALFatal ADInternalError "bad"
 checkSvRenego (ERenegoInfo ri) = do
-	cf <- HM.getClFinished
-	sf <- HM.getSvFinished
-	unless (ri == cf `BS.append` sf) $ HM.throwError
-		HM.ALFatal HM.ADHsFailure
+	cf <- getClFinished
+	sf <- getSvFinished
+	unless (ri == cf `BS.append` sf) $ throwError
+		ALFatal ADHsFailure
 		"Network.PeyoTLS.Base.checkServerRenego: bad renegotiation"
-checkSvRenego _ = HM.throwError HM.ALFatal HM.ADInternalError "bad"
+checkSvRenego _ = throwError ALFatal ADInternalError "bad"
 
-makeClRenego, makeSvRenego :: HandleLike h => HM.HandshakeM h g Extension
-makeClRenego = ERenegoInfo `liftM` HM.getClFinished
+makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
+makeClRenego = ERenegoInfo `liftM` getClFinished
 makeSvRenego = ERenegoInfo `liftM`
-	(BS.append `liftM` HM.getClFinished `ap` HM.getSvFinished)
+	(BS.append `liftM` getClFinished `ap` getSvFinished)
 
-validateAlert :: [X509.FailedReason] -> HM.AlertDesc
+validateAlert :: [X509.FailedReason] -> AlertDesc
 validateAlert vr
-	| X509.UnknownCA `elem` vr = HM.ADUnknownCa
-	| X509.Expired `elem` vr = HM.ADCertificateExpired
-	| X509.InFuture `elem` vr = HM.ADCertificateExpired
-	| otherwise = HM.ADCertificateUnknown
+	| X509.UnknownCA `elem` vr = ADUnknownCa
+	| X509.Expired `elem` vr = ADCertificateExpired
+	| X509.InFuture `elem` vr = ADCertificateExpired
+	| otherwise = ADCertificateUnknown
 
 type SettingsC = (
 	[CipherSuite],
-	[(HM.CertSecretKey, X509.CertificateChain)],
+	[(CertSecretKey, X509.CertificateChain)],
 	X509.CertificateStore )
 
-getSettingsC :: HandleLike h => HM.HandshakeM h g SettingsC
+getSettingsC :: HandleLike h => HandshakeM h g SettingsC
 getSettingsC = do
-	(css, crts, mcs) <- HM.getSettingsC
+	(css, crts, mcs) <- RUN.getSettingsC
 	case mcs of
 		Just cs -> return (css, crts, cs)
-		_ -> HM.throwError HM.ALFatal HM.ADInternalError
+		_ -> throwError ALFatal ADInternalError
 			"Network.PeyoTLS.Base.getSettingsC"
 
-setSettingsC :: HandleLike h => SettingsC -> HM.HandshakeM h g ()
-setSettingsC (css, crts, cs) = HM.setSettingsC (css, crts, Just cs)
+setSettingsC :: HandleLike h => SettingsC -> HandshakeM h g ()
+setSettingsC (css, crts, cs) = RUN.setSettingsC (css, crts, Just cs)
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Base"
