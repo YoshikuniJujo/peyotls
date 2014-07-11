@@ -50,8 +50,7 @@ import Network.PeyoTLS.Base ( debug,
 		AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..),
-		readHandshake, writeHandshake,
-		getChangeCipherSpec, putChangeCipherSpec,
+		readHandshake, writeHandshake, ChangeCipherSpec(..),
 	ClientHello(..), ServerHello(..), SessionId(..), isRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
@@ -60,7 +59,7 @@ import Network.PeyoTLS.Base ( debug,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
 	CertReq(..), ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), generateKeys, -- encryptRsa,
+	ClientKeyEx(..), Epms(..), generateKeys,
 	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
 	DhParam(..), ecdsaPubKey )
@@ -269,9 +268,11 @@ finishHandshake crt = do
 		Just (EcdsaKey sk) -> writeHandshake $
 			DigitallySigned (cssAlgorithm sk) $ csSign sk hs
 		_ -> return ()
-	putChangeCipherSpec >> flushCipherSuite Write
+	writeHandshake ChangeCipherSpec
+	flushCipherSuite Write
 	writeHandshake =<< finishedHash Client
-	getChangeCipherSpec >> flushCipherSuite Read
+	ChangeCipherSpec <- readHandshake
+	flushCipherSuite Read
 	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
 		(throw ALFatal ADDecryptError $
 			moduleName ++ ".finishHandshake: finished hash failure")

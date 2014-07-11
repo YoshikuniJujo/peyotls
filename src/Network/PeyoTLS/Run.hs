@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Run (
 	TH.TlsM, TH.run, TH.TlsHandleBase(..),
-		hsGet, hsPut, updateHash, ccsGet, ccsPut,
+		chGet, ccsGet, ccsPut, hsGet, hsPut, updateHash,
 		adGet, adGetLine, adGetContent, TH.adPut, TH.adDebug, TH.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, flushAppData,
@@ -55,6 +55,44 @@ import qualified Network.PeyoTLS.Handle as TH (
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
+
+ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
+ccsGet = do
+	ch <- chGet_ 1
+	case ch of
+		Left w -> return w
+		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
+			"HandshakeBase.getChangeCipherSpec: " ++
+			"not change cipher spec: " ++ show ch
+
+hsGet :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
+hsGet = do
+	t <- hsGet__ 1
+	len <- hsGet__ 3
+	body <- hsGet__ . either error id $ B.decode len
+	return $ BS.concat [t, len, body]
+
+chGet :: (HandleLike h, CPRG g) => HandshakeM h g (Either Word8 BS.ByteString)
+chGet = do
+	ch <- chGet_ 1
+	case ch of
+		Left w -> return $ Left w
+		Right t -> Right `liftM` do
+			len <- hsGet__ 3
+			body <- hsGet__ . either error id $ B.decode len
+			return $ BS.concat [t, len, body]
+
+hsGet__ :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+hsGet__ n = do
+	ch <- chGet_ n
+	case ch of
+		Right bs -> return bs
+		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
+			moduleName ++ ".hsGet__: not handshake"
+
+chGet_ :: (HandleLike h, CPRG g) =>
+	Int -> HandshakeM h g (Either Word8 BS.ByteString)
+chGet_ n = do lift . flip TH.chGet n . fst =<< get
 
 type HandshakeM h g = StateT (TH.TlsHandleBase h g, SHA256.Ctx) (TH.TlsM h g)
 
@@ -128,10 +166,6 @@ flushCipherSuite p = gets fst >>= lift . TH.flushCipherSuite p
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 
-hsGet_ :: (HandleLike h, CPRG g) =>
-	Int -> HandshakeM h g (Either Word8 BS.ByteString)
-hsGet_ n = do bs <- lift . flip TH.chGet n . fst =<< get; return bs
-
 hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
 hsPut bs = gets fst >>= lift . flip TH.hsPut bs
 
@@ -176,30 +210,6 @@ pushAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 pushAdBuf bs = do
 	bf <- gets fst >>= lift . TH.getAdBuf
 	gets fst >>= lift . flip TH.setAdBuf (bf `BS.append` bs)
-
-hsGet__ :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-hsGet__ n = do
-	ch <- hsGet_ n
-	case ch of
-		Right bs -> return bs
-		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
-			moduleName ++ ".hsGet__: not handshake"
-
-hsGet :: (HandleLike h, CPRG g) => HandshakeM h g BS.ByteString
-hsGet = do
-	t <- hsGet__ 1
-	len <- hsGet__ 3
-	body <- hsGet__ . either error id $ B.decode len
-	return $ BS.concat [t, len, body]
-
-ccsGet :: (HandleLike h, CPRG g) => HandshakeM h g Word8
-ccsGet = do
-	ch <- hsGet_ 1
-	case ch of
-		Left w -> return w
-		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
-			"HandshakeBase.getChangeCipherSpec: " ++
-			"not change cipher spec: " ++ show ch
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 updateHash = modify . second . flip SHA256.update

@@ -36,9 +36,10 @@ data Handshake
 	= HHelloReq
 	| HClientHello ClientHello           | HServerHello ServerHello
 	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
-	| HCertificateReq CertReq | HServerHelloDone
+	| HCertificateReq CertReq            | HServerHelloDone
 	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyEx
 	| HFinished BS.ByteString            | HRaw Type BS.ByteString
+	| HCCSpec
 	deriving Show
 
 instance B.Bytable Handshake where
@@ -75,12 +76,19 @@ encodeH (HCertVerify ds) = encodeH . HRaw TCertVerify $ B.encode ds
 encodeH (HClientKeyEx epms) = encodeH . HRaw TClientKeyEx $ B.encode epms
 encodeH (HFinished bs) = encodeH $ HRaw TFinished bs
 encodeH (HRaw t bs) = B.encode t `BS.append` B.addLen (undefined :: Word24) bs
+encodeH HCCSpec = B.encode ChangeCipherSpec
 
 class HandshakeItem hi where
 	fromHandshake :: Handshake -> Maybe hi; toHandshake :: hi -> Handshake
 
 instance HandshakeItem Handshake where
 	fromHandshake = Just; toHandshake = id
+
+instance HandshakeItem ChangeCipherSpec where
+	fromHandshake HCCSpec = Just ChangeCipherSpec
+	fromHandshake _ = Nothing
+	toHandshake ChangeCipherSpec = HCCSpec
+	toHandshake (ChangeCipherSpecRaw _) = error "bad"
 
 instance (HandshakeItem l, HandshakeItem r) => HandshakeItem (Either l r) where
 	fromHandshake hs = let

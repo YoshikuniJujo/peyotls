@@ -12,7 +12,7 @@ module Network.PeyoTLS.Base (
 	TlsHandleBase, names,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, writeHandshake,
-		getChangeCipherSpec, putChangeCipherSpec,
+		ChangeCipherSpec(..),
 	Handshake(HHelloReq),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		isRenegoInfo, emptyRenegoInfo,
@@ -71,7 +71,7 @@ import Network.PeyoTLS.Types (
 import qualified Network.PeyoTLS.Run as RUN (finishedHash)
 import Network.PeyoTLS.Run (
 	TlsM, run, TlsHandleBase(..),
-		hsGet, hsPut, updateHash, ccsGet, ccsPut,
+		chGet, hsPut, updateHash, ccsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, flushAppData,
@@ -98,31 +98,32 @@ debug p x = do
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HandshakeM h g hi
 readHandshake = do
-	bs <- hsGet
-	case B.decode bs of
-		Right HHelloReq -> readHandshake
-		Right hs -> case fromHandshake hs of
-			Just i -> updateHash bs >> return i
+	ch <- chGet
+	case ch of
+		Left 1 -> case fromHandshake HCCSpec of
+			Just i -> return i
 			_ -> throw ALFatal ADUnexpectedMessage $
-				moduleName ++ ".readHandshake: " ++ show hs
-		Left em -> throw ALFatal ADInternalError $
-			moduleName ++ ".readHandshake: " ++ em
+				moduleName ++ ".readHandshake: " ++ show HCCSpec
+		Right bs -> case B.decode bs of
+			Right HHelloReq -> readHandshake
+			Right hs -> case fromHandshake hs of
+				Just i -> updateHash bs >> return i
+				_ -> throw ALFatal ADUnexpectedMessage $
+					moduleName ++ ".readHandshake: " ++ show hs
+			Left em -> throw ALFatal ADInternalError $
+				moduleName ++ ".readHandshake: " ++ em
+		_ -> throw ALFatal ADUnexpectedMessage $
+			moduleName ++ ".readHandshake: bad change cipher spec"
 
 writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
-writeHandshake hi =
-	hsPut bs >> case hs of HHelloReq -> return (); _ -> updateHash bs
-	where hs = toHandshake hi; bs = B.encode hs
-
-getChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
-getChangeCipherSpec = do
-	w <- ccsGet
-	case B.decode $ BS.pack [w] of
-		Right ChangeCipherSpec -> return ()
-		_ -> throw ALFatal ADUnexpectedMessage $
-			moduleName ++ ".getChangeCipherSpec: not change cipher spec"
-
-putChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
-putChangeCipherSpec = ccsPut . (\[w] -> w) . BS.unpack $ B.encode ChangeCipherSpec
+writeHandshake hi = do
+	case hs of
+		HHelloReq -> hsPut bs
+		HCCSpec -> ccsPut . (\[w] -> w) $ BS.unpack bs
+		_ -> hsPut bs >> updateHash bs
+	where
+	hs = toHandshake hi
+	bs = B.encode hs
 
 finishedHash :: (HandleLike h, CPRG g) => Side -> HandshakeM h g Finished
 finishedHash s = Finished `liftM` do

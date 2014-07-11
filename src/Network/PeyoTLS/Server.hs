@@ -52,8 +52,7 @@ import Network.PeyoTLS.Base ( debug,
 		AlertLevel(..), AlertDesc(..), throw, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..), isRsaKey, isEcdsaKey,
-		readHandshake, writeHandshake,
-		getChangeCipherSpec, putChangeCipherSpec,
+		readHandshake, writeHandshake, ChangeCipherSpec(..),
 	Handshake(HHelloReq),
 	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
 		isRenegoInfo, emptyRenegoInfo,
@@ -165,10 +164,12 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 		X509.PubKeyECDSA c xy -> certVerify $ ecdsaPubKey c xy
 		_ -> throw ALFatal ADUnsupportedCertificate $
 			pre ++ "not implement: " ++ show pk
-	getChangeCipherSpec >> flushCipherSuite Read
+	ChangeCipherSpec <- readHandshake
+	flushCipherSuite Read
 	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok -> unless ok .
 		throw ALFatal ADDecryptError $ pre ++ "wrong finished hash"
-	putChangeCipherSpec >> flushCipherSuite Write
+	writeHandshake ChangeCipherSpec
+	flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
 	where pre = moduleName ++ ".handshake: "
 
