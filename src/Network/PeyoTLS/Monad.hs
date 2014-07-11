@@ -19,7 +19,7 @@ module Network.PeyoTLS.Monad (
 
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
-	S.CertSecretKey(..),
+	S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
 	) where
 
 import Control.Monad (liftM)
@@ -48,7 +48,7 @@ import qualified Network.PeyoTLS.State as S (
 	getServerFinished, setServerFinished,
 
 	SettingsS, Settings,
-	CertSecretKey(..),
+	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
 
 type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))

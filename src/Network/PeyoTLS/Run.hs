@@ -5,7 +5,7 @@ module Network.PeyoTLS.Run (
 	hsGet, hsPut,
 	ccsGet, ccsPut,
 	adGet, adGetLine, adGetContent,
-	isRsaKey, isEcdsaKey,
+	TH.isRsaKey, TH.isEcdsaKey,
 	checkAppData,
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, rerunHandshakeM,
 	withRandom, randomByteString,
@@ -78,21 +78,13 @@ import qualified Network.PeyoTLS.Handle as TH (
 	getAdBufT,
 	setAdBufT,
 
-	CertSecretKey(..),
+	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
 
 import qualified Codec.Bytable.BigEndian as B
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
-
-isEcdsaKey :: TH.CertSecretKey -> Bool
-isEcdsaKey (TH.EcdsaKey _) = True
-isEcdsaKey _ = False
-
-isRsaKey :: TH.CertSecretKey -> Bool
-isRsaKey (TH.RsaKey _) = True
-isRsaKey _ = False
 
 instance (HandleLike h, CPRG g) => HandleLike (TH.TlsHandle_ h g) where
 	type HandleMonad (TH.TlsHandle_ h g) = TH.TlsM h g

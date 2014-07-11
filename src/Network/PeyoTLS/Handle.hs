@@ -23,7 +23,7 @@ module Network.PeyoTLS.Handle (
 	flushAppData,
 
 	getAdBufT, setAdBufT,
-	CertSecretKey(..),
+	CertSecretKey(..), isRsaKey, isEcdsaKey,
 
 	updateHash,
 	) where
@@ -61,7 +61,7 @@ import Network.PeyoTLS.Monad (
 	Settings, getSettings, setSettings,
 	SettingsS,
 	getInitSet, setInitSet,
-	CertSecretKey(..),
+	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
 import qualified Network.PeyoTLS.Crypto as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )

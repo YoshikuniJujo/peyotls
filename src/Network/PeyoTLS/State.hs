@@ -16,7 +16,7 @@ module Network.PeyoTLS.State (
 	getServerFinished, setServerFinished,
 
 	SettingsS, Settings,
-	CertSecretKey(..),
+	CertSecretKey(..), isRsaKey, isEcdsaKey,
 ) where
 
 import Control.Applicative ((<$>))
@@ -30,7 +30,7 @@ import Data.String (IsString(..))
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-import Network.PeyoTLS.CertSecretKey (CertSecretKey(..))
+import Network.PeyoTLS.CertSecretKey (CertSecretKey(..), isRsaKey, isEcdsaKey)
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
@@ -85,14 +85,6 @@ revertSettings :: SettingsS -> Settings
 revertSettings (cs, rcrt, ecrt, mcs) = (cs,
 	maybeToList (first RsaKey <$> rcrt) ++
 	maybeToList (first EcdsaKey <$> ecrt), mcs)
-
-isEcdsaKey :: CertSecretKey -> Bool
-isEcdsaKey (EcdsaKey _) = True
-isEcdsaKey _ = False
-
-isRsaKey :: CertSecretKey -> Bool
-isRsaKey (RsaKey _) = True
-isRsaKey _ = False
 
 data StateOne g = StateOne {
 	sKeys :: Keys,
