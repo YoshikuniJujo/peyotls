@@ -5,12 +5,11 @@ module Network.PeyoTLS.Handle (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandleBase(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
-		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
+		newHandle, getContentType, tlsPut, generateKeys,
 		chGet, hsPut, ccsPut,
 		debugCipherSuite,
 		getCipherSuite, setCipherSuite, flushCipherSuite,
-		setKeys,
-		handshakeHash, finishedHash,
+		setKeys, finishedHash,
 	adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	hlPut_, hlDebug_, hlClose_, tGetLine, tGetLine_, tGetContent,
 	getClFinished, setClFinished,
@@ -22,7 +21,6 @@ module Network.PeyoTLS.Handle (
 	SettingsS,
 
 	resetSequenceNumber,
-	tlsGet_,
 	flushAppData,
 
 	getAdBuf, setAdBuf,
@@ -75,8 +73,6 @@ data TlsHandleBase h g = TlsHandleBase {
 	names :: [String] }
 	deriving Show
 
-type HandleHash h g = (TlsHandleBase h g, SHA256.Ctx)
-
 data Side = Server | Client deriving (Show, Eq)
 
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
@@ -120,7 +116,7 @@ flushAppData t = do
 			return (ad `BS.append` bs, b)
 --			liftM (BS.append . snd) (tGetContent t) `ap` flushAppData t
 		CTAlert -> do
-			((_, a), _) <- tlsGet (t, undefined) 2
+			(_, a) <- buffered t 2
 			lift . lift $ hlDebug (tlsHandle t) "low" .
 				BSC.pack $ show a
 			case a of
@@ -130,10 +126,10 @@ flushAppData t = do
 				BSC.pack $ show ct
 			return ("", True)
 
-chGet :: (HandleLike h, CPRG g) => HandleHash h g -> Int ->
-	TlsM h g (Either Word8 BS.ByteString, HandleHash h g)
-chGet hh 0 = return (Right "", hh)
-chGet hh@(t, _) n = do
+chGet :: (HandleLike h, CPRG g) =>
+	TlsHandleBase h g -> Int -> TlsM h g (Either Word8 BS.ByteString)
+chGet _ 0 = return $ Right ""
+chGet t n = do
 	lift . lift . hlDebug (tlsHandle t) "critical" .
 		BSC.pack . (++ "\n") $ show n
 	ct <- getContentType t
@@ -141,23 +137,16 @@ chGet hh@(t, _) n = do
 		BSC.pack . (++ "\n") $ show ct
 	case ct of
 		CTCCSpec -> do
-			((CTCCSpec, bs), hh') <- tlsGet hh 1
+			(CTCCSpec, bs) <- buffered t 1
 			resetSequenceNumber t Read
-			return (Left . (\[w] -> w) $ BS.unpack bs, hh')
+			return . Left . (\[w] -> w) $ BS.unpack bs
 		CTHandshake -> do
-			((CTHandshake, bs), hh') <- tlsGet hh n
-			return (Right bs, hh')
+			(CTHandshake, bs) <- buffered t n
+			return $ Right bs
 		CTAlert -> do
-			((CTAlert, al), _) <- tlsGet hh 2
+			(CTAlert, al) <- buffered t 2
 			throwError . strMsg $ show al
 		_ -> throwError "not handshake"
-
-tlsGet :: (HandleLike h, CPRG g) => HandleHash h g ->
-	Int -> TlsM h g ((ContentType, BS.ByteString), HandleHash h g)
-tlsGet hh@(t, _) n = do
-	r@(ct, bs) <- buffered t n
-	(r ,) `liftM` case (ct, bs) of
-		_ -> return hh
 
 buffered :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> Int -> TlsM h g (ContentType, BS.ByteString)
@@ -175,10 +164,9 @@ buffered t n = do
 		setBuf (clientId t) (ct', b')
 		second (b `BS.append`) `liftM` buffered t rl
 
-adGet, tlsGet_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
-	HandleHash h g -> Int -> TlsM h g (BS.ByteString, HandleHash h g)
-adGet = tlsGet_
-tlsGet_ rn hh@(t, _) n = (, hh) `liftM` buffered_ rn t n
+adGet :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
+	TlsHandleBase h g -> Int -> TlsM h g BS.ByteString
+adGet rn t n = buffered_ rn t n
 
 buffered_ :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> TlsM h g ()) ->
 	TlsHandleBase h g -> Int -> TlsM h g BS.ByteString
@@ -199,7 +187,7 @@ buffered_ rn t n = do
 					(b `BS.append`) `liftM` buffered_ rn t rl
 			case al of
 				"\SOH\NULL" -> do
-					_ <- tlsPut (t, undefined) CTAlert "\SOH\NULL"
+					tlsPut t CTAlert "\SOH\NULL"
 					throwError . strMsg $ "EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> do	(ct, b) <- getBuf $ clientId t; let rl = n - BS.length b
@@ -264,15 +252,14 @@ decrypt_ t ks ct e = do
 		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
 tlsPut :: (HandleLike h, CPRG g) =>
-	HandleHash h g -> ContentType -> BS.ByteString -> TlsM h g (HandleHash h g)
-tlsPut hh@(t, _) ct p = do
+	TlsHandleBase h g -> ContentType -> BS.ByteString -> TlsM h g ()
+tlsPut t ct p = do
 	(bct, bp) <- getWBuf $ clientId t
 	case ct of
 		CTCCSpec -> flush t >> setWBuf (clientId t) (ct, p) >> flush t
 		_	| bct /= CTNull && ct /= bct ->
 				flush t >> setWBuf (clientId t) (ct, p)
 			| otherwise -> setWBuf (clientId t) (ct, bp `BS.append` p)
-	return hh
 
 flush :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
 flush t = do
@@ -359,18 +346,15 @@ debugCipherSuite t a = do
 		. show $ kCachedCS k
 	where lenSpace n str = str ++ replicate (n - length str) ' '
 
-handshakeHash :: HandleLike h => HandleHash h g -> TlsM h g BS.ByteString
-handshakeHash = return . SHA256.finalize . snd
-
-finishedHash :: HandleLike h => HandleHash h g -> Side -> TlsM h g BS.ByteString
-finishedHash (t, ctx) partner = do
+finishedHash :: HandleLike h =>
+	TlsHandleBase h g -> SHA256.Ctx -> Side -> TlsM h g BS.ByteString
+finishedHash t ctx partner = do
 	ms <- kMasterSecret `liftM` getKeys (clientId t)
-	sha256 <- handshakeHash (t, ctx)
-	return $ CT.finishedHash (partner == Client) ms sha256
+	return . CT.finishedHash (partner == Client) ms $ SHA256.finalize ctx
 
 adPut, hlPut_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
 adPut = hlPut_
-hlPut_ = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
+hlPut_ = ((>> return ()) .) . flip tlsPut CTAppData
 
 adDebug, hlDebug_ :: HandleLike h =>
 	TlsHandleBase h g -> DebugLevel h -> BS.ByteString -> TlsM h g ()
@@ -379,8 +363,7 @@ hlDebug_ = thlDebug . tlsHandle
 
 adClose, hlClose_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
 adClose = hlClose_
-hlClose_ t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
-	flush t >> thlClose (tlsHandle t)
+hlClose_ t = tlsPut t CTAlert "\SOH\NUL" >> flush t >> thlClose (tlsHandle t)
 
 tGetLine :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> TlsM h g (ContentType, BS.ByteString)
@@ -412,7 +395,7 @@ tGetLine_ rn t = do
 					(b `BS.append`) `liftM` buffered_ rn t rl
 			case al of
 				"\SOH\NULL" -> do
-					_ <- tlsPut (t, undefined) CTAlert "\SOH\NULL"
+					tlsPut t CTAlert "\SOH\NULL"
 					throwError . strMsg $ "EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> do	(bct, bp) <- getBuf $ clientId t
@@ -481,23 +464,21 @@ tGetContent_ rn t = do
 	case ct of
 		CTHandshake -> rn t >> tGetContent_ rn t
 		CTAlert -> do
-			((CTAlert, al), _) <- tlsGet (t, undefined) 2
+			(CTAlert, al) <- buffered t 2
 			case al of
 				"\SOH\NULL" -> do
-					_ <- tlsPut (t, undefined) CTAlert "\SOH\NUL"
+					tlsPut t CTAlert "\SOH\NUL"
 					throwError . strMsg $ ".checkAppData: EOF"
 				_ -> throwError . strMsg $ "Alert: " ++ show al
 		_ -> snd `liftM` tGetContent t
 
-hsPut :: (HandleLike h, CPRG g) => (TlsHandleBase h g, SHA256.Ctx) ->
-	BS.ByteString -> TlsM h g (TlsHandleBase h g, SHA256.Ctx)
+hsPut :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> TlsM h g ()
 hsPut = flip tlsPut CTHandshake
 
-ccsPut :: (HandleLike h, CPRG g) => (TlsHandleBase h g, SHA256.Ctx) ->
-	Word8 -> TlsM h g (TlsHandleBase h g, SHA256.Ctx)
+ccsPut :: (HandleLike h, CPRG g) => TlsHandleBase h g -> Word8 -> TlsM h g ()
 ccsPut t w = do
 	ret <- tlsPut t CTCCSpec $ BS.pack [w]
-	resetSequenceNumber (fst t) Write
+	resetSequenceNumber t Write
 	return ret
 
 type SettingsC = (

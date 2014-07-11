@@ -21,7 +21,7 @@ import Control.Arrow (first, second, (***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (
-	StateT, evalStateT, execStateT, get, gets, put, modify )
+	StateT, evalStateT, execStateT, get, gets, modify )
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
@@ -48,7 +48,7 @@ import qualified Network.PeyoTLS.Handle as TH (
 		SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		generateKeys, setKeys,
-		Side(..), handshakeHash, finishedHash,
+		Side(..), finishedHash,
 		RW(..), flushCipherSuite,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite )
@@ -134,13 +134,13 @@ debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 
 hsGet_ :: (HandleLike h, CPRG g) =>
 	Int -> HandshakeM h g (Either Word8 BS.ByteString)
-hsGet_ n = do (bs, t') <- lift . flip TH.chGet n =<< get; put t'; return bs
+hsGet_ n = do bs <- lift . flip TH.chGet n . fst =<< get; return bs
 
 hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
-hsPut bs = get >>= lift . (\t -> TH.hsPut t bs) >>= put
+hsPut bs = gets fst >>= lift . flip TH.hsPut bs
 
 ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
-ccsPut w = get >>= lift . (\t -> TH.ccsPut t w) >>= put
+ccsPut w = gets fst >>= lift . flip TH.ccsPut w
 
 generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
@@ -151,10 +151,10 @@ generateKeys p (cr, sr) pms = do
 	lift $ TH.setKeys t k
 
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
-handshakeHash = get >>= lift . TH.handshakeHash
+handshakeHash = SHA256.finalize `liftM` gets snd
 
 finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteString
-finishedHash p = get >>= lift . flip TH.finishedHash p
+finishedHash p = get >>= lift . flip (uncurry TH.finishedHash) p
 
 getClFinished, getSvFinished :: HandleLike h => HandshakeM h g BS.ByteString
 getClFinished = gets fst >>= lift . TH.getClFinished
@@ -180,11 +180,6 @@ pushAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 pushAdBuf bs = do
 	bf <- gets fst >>= lift . TH.getAdBuf
 	gets fst >>= lift . flip TH.setAdBuf (bf `BS.append` bs)
-
-hlGetRn_ :: (ValidateHandle h, CPRG g) =>
-	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g -> Int ->
-	TH.TlsM h g BS.ByteString
-hlGetRn_ rh = ((fst `liftM`) .) . TH.adGet rh . (, undefined)
 
 hsGet__ :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 hsGet__ n = do
@@ -221,7 +216,7 @@ adGet rn t n = do
 	then do	let (ret, rest) = BS.splitAt n bf
 		TH.setAdBuf t rest
 		return ret
-	else (bf `BS.append`) `liftM` hlGetRn_ rn t (n - BS.length bf)
+	else (bf `BS.append`) `liftM` TH.adGet rn t (n - BS.length bf)
 
 adGetLine :: (ValidateHandle h, CPRG g) =>
 	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g ->
