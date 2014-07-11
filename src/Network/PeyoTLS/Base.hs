@@ -5,7 +5,7 @@ module Network.PeyoTLS.Base (
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		getSettingsC, setSettingsC, getSettingsS, setSettingsS,
-		withRandom, flushAppData,
+		withRandom, flushAd,
 		AlertLevel(..), AlertDesc(..), throw,
 		debugCipherSuite, debug,
 	ValidateHandle(..), handshakeValidate, validateAlert,
@@ -24,7 +24,7 @@ module Network.PeyoTLS.Base (
 		SvSignSecretKey(..), SvSignPublicKey(..),
 	CertReq(..), certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), generateKeys,
+	ClientKeyEx(..), Epms(..), makeKeys,
 	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
 		handshakeHash,
 	RW(..), flushCipherSuite,
@@ -74,20 +74,20 @@ import Network.PeyoTLS.Run (
 		chGet, hsPut, updateHash, ccsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, flushAppData,
+		withRandom, flushAd,
 		SettingsS, getSettingsS, setSettingsS,
 		getSettingsC, setSettingsC,
 		getCipherSuite, setCipherSuite,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		RW(..), flushCipherSuite, generateKeys,
+		RW(..), flushCipherSuite, makeKeys,
 		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	AlertLevel(..), AlertDesc(..), debugCipherSuite, throw )
 import Network.PeyoTLS.Ecdsa (blSign, makeKs, ecdsaPubKey)
 
-moduleName :: String
-moduleName = "Network.PeyoTLS.Base"
+modNm :: String
+modNm = "Network.PeyoTLS.Base"
 
 type PeyotlsM = TlsM Handle SystemRNG
 
@@ -102,18 +102,17 @@ readHandshake = do
 	case ch of
 		Left 1 -> case fromHandshake HCCSpec of
 			Just i -> return i
-			_ -> throw ALFatal ADUnexpectedMessage $
-				moduleName ++ ".readHandshake: " ++ show HCCSpec
+			_ -> throw ALFatal ADUnexMsg $
+				modNm ++ ".readHandshake: " ++ show HCCSpec
 		Right bs -> case B.decode bs of
 			Right HHelloReq -> readHandshake
 			Right hs -> case fromHandshake hs of
 				Just i -> updateHash bs >> return i
-				_ -> throw ALFatal ADUnexpectedMessage $
-					moduleName ++ ".readHandshake: " ++ show hs
+				_ -> throw ALFatal ADUnexMsg $
+					modNm ++ ".readHandshake: " ++ show hs
 			Left em -> throw ALFatal ADInternalError $
-				moduleName ++ ".readHandshake: " ++ em
-		_ -> throw ALFatal ADUnexpectedMessage $
-			moduleName ++ ".readHandshake: bad change cipher spec"
+				modNm ++ ".readHandshake: " ++ em
+		_ -> throw ALFatal ADUnexMsg $ modNm ++ ".readHandshake: uk ccs"
 
 writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
 writeHandshake hi = do
@@ -135,15 +134,15 @@ checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
 checkClRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` getClFinished
 	unless ok . throw ALFatal ADHsFailure $
-		moduleName ++ ".checkClRenego: renego info is not match"
+		modNm ++ ".checkClRenego: renego info is not match"
 checkClRenego _ = throw ALFatal ADInternalError $
-	moduleName ++ ".checkClRenego: not renego info"
+	modNm ++ ".checkClRenego: not renego info"
 checkSvRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
 	unless ok . throw ALFatal ADHsFailure $
-		moduleName ++ ".checkSvRenego: renego info is not match"
+		modNm ++ ".checkSvRenego: renego info is not match"
 checkSvRenego _ = throw ALFatal ADInternalError $
-	moduleName ++ ".checkSvRenego: not renego info"
+	modNm ++ ".checkSvRenego: not renego info"
 
 makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
 makeClRenego = ERenegoInfo `liftM` getClFinished
@@ -201,7 +200,7 @@ instance SvSignPublicKey RSA.PublicKey where
 		where
 		(hs, oid0) = case ha of
 			Sha1 -> (SHA1.hash, sha1); Sha256 -> (SHA256.hash, sha256)
-			_ -> error $ moduleName ++ ": RSA.PublicKey.ssVerify"
+			_ -> error $ modNm ++ ": RSA.PublicKey.ssVerify"
 		(e, oid) = case ASN1.decodeASN1' ASN1.DER . BS.tail
 			. BS.dropWhile (== 255) . BS.drop 2 $ RSA.ep pk sn of
 			Right [ASN1.Start ASN1.Sequence,
@@ -210,14 +209,14 @@ instance SvSignPublicKey RSA.PublicKey where
 				ASN1.OctetString o,
 				ASN1.End ASN1.Sequence ] -> (o, i)
 			em -> error $
-				moduleName ++ ": RSA.PublicKey.ssVerify" ++ show em
+				modNm ++ ": RSA.PublicKey.ssVerify" ++ show em
 
 instance SvSignPublicKey ECDSA.PublicKey where
 	sspAlgorithm _ = Ecdsa
 	ssVerify Sha1 pk = ECDSA.verify SHA1.hash pk . either error id . B.decode
 	ssVerify Sha256 pk =
 		ECDSA.verify SHA256.hash pk . either error id . B.decode
-	ssVerify _ _ = error $ moduleName ++ ": ECDSA.PublicKey.verify"
+	ssVerify _ _ = error $ modNm ++ ": ECDSA.PublicKey.verify"
 
 class SvSignSecretKey sk where
 	type Blinder sk
@@ -234,7 +233,7 @@ instance SvSignSecretKey RSA.PrivateKey where
 		where
 		(hs, oid) = first ($ m) $ case ha of
 			Sha1 -> (SHA1.hash, sha1); Sha256 -> (SHA256.hash, sha256)
-			_ -> error $ moduleName ++ ": RSA.PrivateKey.ssSign"
+			_ -> error $ modNm ++ ": RSA.PrivateKey.ssSign"
 		b = ASN1.encodeASN1' ASN1.DER [ASN1.Start ASN1.Sequence,
 			ASN1.Start ASN1.Sequence,
 				oid, ASN1.Null, ASN1.End ASN1.Sequence,
@@ -252,7 +251,7 @@ instance SvSignSecretKey ECDSA.PrivateKey where
 		where
 		(hs, bls) = case ha of
 			Sha1 -> (SHA1.hash, 64); Sha256 -> (SHA256.hash, 64)
-			_ -> error $ moduleName ++ ": ECDSA.PrivateKey.ssSign"
+			_ -> error $ modNm ++ ": ECDSA.PrivateKey.ssSign"
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
 

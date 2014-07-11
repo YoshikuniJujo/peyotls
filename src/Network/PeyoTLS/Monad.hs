@@ -4,7 +4,7 @@ module Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom,
-		getBuf, setBuf, getWBuf, setWBuf,
+		getRBuf, setRBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
 		resetReadSn, resetWriteSn,
@@ -56,9 +56,9 @@ evalTlsM :: HandleLike h =>
 	TlsM h g a -> S.HandshakeState h g -> HandleMonad h (Either S.Alert a)
 evalTlsM = evalStateT . runErrorT
 
-getBuf, getWBuf ::  HandleLike h =>
+getRBuf, getWBuf ::  HandleLike h =>
 	S.PartnerId -> TlsM h g (S.ContentType, BS.ByteString)
-getBuf = gets . S.getBuf; getWBuf = gets . S.getWBuf
+getRBuf = gets . S.getBuf; getWBuf = gets . S.getWBuf
 
 getAdBuf :: HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
 getAdBuf = gets . S.getAdBuf
@@ -66,9 +66,9 @@ getAdBuf = gets . S.getAdBuf
 setAdBuf :: HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
 setAdBuf = (modify .) . S.setAdBuf
 
-setBuf, setWBuf :: HandleLike h =>
+setRBuf, setWBuf :: HandleLike h =>
 	S.PartnerId -> (S.ContentType, BS.ByteString) -> TlsM h g ()
-setBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
+setRBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
 
 getWriteSn, getReadSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
 getWriteSn = gets . S.getWriteSN; getReadSn = gets . S.getReadSN

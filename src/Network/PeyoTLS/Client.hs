@@ -46,7 +46,7 @@ import Network.PeyoTLS.Base ( debug,
 		getSettingsC, setSettingsC,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, flushAppData,
+		withRandom, flushAd,
 		AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..),
@@ -59,7 +59,7 @@ import Network.PeyoTLS.Base ( debug,
 	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
 	CertReq(..), ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), generateKeys,
+	ClientKeyEx(..), Epms(..), makeKeys,
 	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
 	DhParam(..), ecdsaPubKey )
@@ -94,8 +94,7 @@ open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
 	(cscl, crts, ca) <- getSettingsC
-	clientHello cscl >>= \cr ->
-		flushAppData >>= flip when (handshake crts ca cr)
+	clientHello cscl >>= \cr -> flushAd >>= flip when (handshake crts ca cr)
 
 setCipherSuites :: (ValidateHandle h, CPRG g) => TlsHandle h g ->
 	[CipherSuite] -> TlsM h g ()
@@ -174,7 +173,7 @@ rsaHandshake rs crts ca = do
 			moduleName ++ ".rsaHandshake: require RSA public key"
 	crt <- clientCertificate crts
 	pms <- ("\x03\x03" `BS.append`) `liftM` withRandom (cprgGenerate 46)
-	generateKeys Client rs pms
+	makeKeys Client rs pms
 	writeHandshake . Epms =<< encryptRsa pk pms
 	finishHandshake crt
 
@@ -212,7 +211,7 @@ succeed t pk rs@(cr, sr) crts = do
 		throw ALFatal ADDecryptError $ pre ++ "verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
-	generateKeys Client rs $ calculateShared ps sv pv
+	makeKeys Client rs $ calculateShared ps sv pv
 	writeHandshake . ClientKeyEx . B.encode $ calculatePublic ps sv
 	finishHandshake crt
 	where pre = moduleName ++ ".succeed: "

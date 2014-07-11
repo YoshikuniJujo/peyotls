@@ -154,7 +154,7 @@ data Alert = Alert AlertLevel AlertDesc String | NotDetected String
 data AlertLevel = ALWarning | ALFatal | ALRaw Word8 deriving Show
 
 data AlertDesc
-	= ADCloseNotify            | ADUnexpectedMessage    | ADBadRecordMac
+	= ADCloseNotify            | ADUnexMsg              | ADBadRecordMac
 	| ADRecordOverflow         | ADDecompressionFailure | ADHsFailure
 	| ADUnsupportedCertificate | ADCertificateExpired   | ADCertificateUnknown
 	| ADIllegalParameter       | ADUnknownCa            | ADDecodeError

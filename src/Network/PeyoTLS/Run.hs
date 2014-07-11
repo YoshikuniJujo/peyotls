@@ -2,16 +2,15 @@
 
 module Network.PeyoTLS.Run (
 	TH.TlsM, TH.run, TH.TlsHandleBase(..),
-		chGet, ccsPut, hsPut, updateHash,
 		adGet, adGetLine, adGetContent, TH.adPut, TH.adDebug, TH.adClose,
-	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, flushAppData,
-		TH.SettingsS, getSettingsS, setSettingsS,
-		getSettingsC, setSettingsC,
-		getCipherSuite, setCipherSuite,
+	HandshakeM, execHandshakeM, rerunHandshakeM, withRandom,
+		chGet, ccsPut, hsPut, updateHash, flushAd,
 		TH.CertSecretKey(..), TH.isRsaKey, TH.isEcdsaKey,
+		TH.SettingsC, getSettingsC, setSettingsC,
+		TH.SettingsS, getSettingsS, setSettingsS,
+		getCipherSuite, setCipherSuite,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		TH.RW(..), flushCipherSuite, generateKeys,
+		TH.RW(..), flushCipherSuite, makeKeys,
 		TH.Side(..), handshakeHash, finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TH.AlertLevel(..), TH.AlertDesc(..), debugCipherSuite, throw ) where
@@ -42,53 +41,44 @@ import qualified Network.PeyoTLS.Handle as TH (
 	TlsHandleBase(..), CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
-		flushAppData, getAdBuf, setAdBuf,
+		flushAd, getBuf, setBuf,
 		getCipherSuite, setCipherSuite,
 		SettingsC, getSettingsC, setSettingsC,
 		SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		generateKeys, setKeys,
+		makeKeys, setKeys,
 		Side(..), finishedHash,
 		RW(..), flushCipherSuite,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite )
 
-moduleName :: String
-moduleName = "Network.PeyoTLS.Run"
+modNm :: String
+modNm = "Network.PeyoTLS.Run"
 
-chGet :: (HandleLike h, CPRG g) => HandshakeM h g (Either Word8 BS.ByteString)
-chGet = do
-	ch <- lift . flip TH.chGet 1 =<< gets fst
-	case ch of
-		Left w -> return $ Left w
-		Right t -> Right `liftM` do
-			len <- hsGet 3
-			body <- hsGet . either error id $ B.decode len
-			return $ BS.concat [t, len, body]
+type RenegoProc h g = TH.TlsHandleBase h g -> TH.TlsM h g ()
 
-hsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-hsGet n = do
-	ch <- lift . flip TH.chGet n =<< gets fst
-	case ch of
-		Right bs -> return bs
-		_ -> throw TH.ALFatal TH.ADUnexpectedMessage $
-			moduleName ++ ".hsGet: not handshake"
+adGet :: (HandleLike h, CPRG g) =>
+	RenegoProc h g -> TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
+adGet rp t n = TH.getBuf t >>= \b -> if BS.length b >= n
+	then uncurry (>>) . (TH.setBuf t *** return) $ BS.splitAt n b
+	else BS.append b `liftM` TH.adGet rp t (n - BS.length b)
 
-ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
-ccsPut w = lift . flip TH.ccsPut w =<< gets fst
+adGetLine :: (HandleLike h, CPRG g) =>
+	RenegoProc h g -> TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
+adGetLine rp t = TH.getBuf t >>= \b -> if '\n' `BSC.elem` b || '\r' `BSC.elem` b
+	then uncurry (>>) . (TH.setBuf t *** return) $ case BSC.span (/= '\r') b of
+		(_, "") -> second BS.tail $ BSC.span (/= '\n') b
+		(l, ls) -> case BSC.uncons ls of
+			Just ('\r', ls') -> case BSC.uncons ls' of
+				Just ('\n', ls'') -> (l, ls'')
+				_ -> (l, ls')
+			_ -> (l, ls)
+	else (b `BS.append`) `liftM` TH.adGetLine rp t
 
-hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
-hsPut bs = lift . flip TH.hsPut bs =<< gets fst
-
-adGet :: (ValidateHandle h, CPRG g) => (TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
-	TH.TlsHandleBase h g -> Int -> TH.TlsM h g BS.ByteString
-adGet rn t n = do
-	bf <- TH.getAdBuf t
-	if BS.length bf >= n
-	then do	let (ret, rest) = BS.splitAt n bf
-		TH.setAdBuf t rest
-		return ret
-	else (bf `BS.append`) `liftM` TH.adGet rn t (n - BS.length bf)
+adGetContent :: (HandleLike h, CPRG g) =>
+	RenegoProc h g -> TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
+adGetContent rp t = TH.getBuf t >>= \b ->
+	if BS.null b then TH.adGetContent rp t else TH.setBuf t "" >> return b
 
 type HandshakeM h g = StateT (TH.TlsHandleBase h g, SHA256.Ctx) (TH.TlsM h g)
 
@@ -101,15 +91,75 @@ rerunHandshakeM ::
 	HandleLike h => TH.TlsHandleBase h g -> HandshakeM h g a -> TH.TlsM h g a
 rerunHandshakeM = flip evalStateT . (, SHA256.init)
 
-flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
-flushAppData = gets fst >>=
-	lift . TH.flushAppData >>= uncurry (>>) . (pushAdBuf *** return)
-
-throw :: HandleLike h => TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
-throw al ad m = throwError $ TH.Alert al ad m
-
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
 withRandom = lift . TH.withRandom
+
+chGet :: (HandleLike h, CPRG g) => HandshakeM h g (Either Word8 BS.ByteString)
+chGet = gets fst >>= lift . flip TH.chGet 1 >>= \ch -> case ch of
+	Left w -> return $ Left w
+	Right t -> Right `liftM` do
+		len <- hsGet 3
+		body <- hsGet . either error id $ B.decode len
+		return $ BS.concat [t, len, body]
+
+hsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+hsGet n = gets fst >>= lift . flip TH.chGet n >>= \ch -> case ch of
+	Right bs -> return bs
+	_ -> throw TH.ALFatal TH.ADUnexMsg $ modNm ++ ".hsGet: not handshake"
+
+ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
+ccsPut = (gets fst >>=) . (lift .) . flip TH.ccsPut
+
+hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
+hsPut = (gets fst >>=) . (lift .) . flip TH.hsPut
+
+updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+updateHash = modify . second . flip SHA256.update
+
+flushAd :: (HandleLike h, CPRG g) => HandshakeM h g Bool
+flushAd = gets fst >>= lift . TH.flushAd >>= uncurry (>>) . (push *** return)
+	where push bs = gets fst >>= lift . TH.getBuf >>=
+		(gets fst >>=) . (lift .) . flip TH.setBuf . (`BS.append` bs)
+
+getSettingsC :: HandleLike h => HandshakeM h g TH.SettingsC
+getSettingsC = gets fst >>= lift . TH.getSettingsC
+
+setSettingsC :: HandleLike h => TH.SettingsC -> HandshakeM h g ()
+setSettingsC = (gets fst >>=) . (lift .) . flip TH.setSettingsC
+
+getSettingsS :: HandleLike h => HandshakeM h g TH.SettingsS
+getSettingsS = gets fst >>= lift . TH.getSettingsS
+
+setSettingsS :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
+setSettingsS = (gets fst >>=) . (lift .) . flip TH.setSettingsS
+
+getCipherSuite :: HandleLike h => HandshakeM h g TH.CipherSuite
+getCipherSuite = gets fst >>= lift . TH.getCipherSuite
+
+setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
+setCipherSuite = (gets fst >>=) . (lift .) . flip TH.setCipherSuite
+
+getClFinished, getSvFinished :: HandleLike h => HandshakeM h g BS.ByteString
+getClFinished = gets fst >>= lift . TH.getClFinished
+getSvFinished = gets fst >>= lift . TH.getSvFinished
+
+setClFinished, setSvFinished :: HandleLike h => BS.ByteString -> HandshakeM h g ()
+setClFinished = (gets fst >>=) . (lift .) . flip TH.setClFinished
+setSvFinished = (gets fst >>=) . (lift .) . flip TH.setSvFinished
+
+flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
+flushCipherSuite = (gets fst >>=) . (lift .) . TH.flushCipherSuite
+
+makeKeys :: HandleLike h => TH.Side ->
+	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
+makeKeys s (cr, sr) pms = gets fst >>= \t -> lift $
+	TH.getCipherSuite t >>= TH.makeKeys t s cr sr pms >>= TH.setKeys t
+
+handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
+handshakeHash = SHA256.finalize `liftM` gets snd
+
+finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteString
+finishedHash s = get >>= lift . uncurry (TH.finishedHash s) . second SHA256.finalize
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -123,116 +173,32 @@ validateAlert vr
 	| otherwise = TH.ADCertificateUnknown
 
 instance ValidateHandle Handle where
-	validate _ cs (X509.CertificateChain cc) =
-		X509.validate X509.HashSHA256 X509.defaultHooks
-			validationChecks cs validationCache ("", "") $
-				X509.CertificateChain cc
+	validate _ cs cc =
+		X509.validate X509.HashSHA256 X509.defaultHooks ch cs ca ("", "") cc
 		where
-		validationCache = X509.ValidationCache
+		ch = X509.defaultChecks { X509.checkFQHN = False }
+		ca = X509.ValidationCache
 			(\_ _ _ -> return X509.ValidationCacheUnknown)
 			(\_ _ _ -> return ())
-		validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
-handshakeValidate :: ValidateHandle h =>
-	X509.CertificateStore -> X509.CertificateChain ->
-	HandshakeM h g [X509.FailedReason]
-handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
-	modify . first $ const t { TH.names = certNames . X509.getCertificate $ head c }
+handshakeValidate :: ValidateHandle h => X509.CertificateStore ->
+	X509.CertificateChain -> HandshakeM h g [X509.FailedReason]
+handshakeValidate cs cc@(X509.CertificateChain (c : _)) = gets fst >>= \t -> do
+	modify . first $ const t { TH.names = certNames $ X509.getCertificate c }
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
+handshakeValidate _ _ = error $ modNm ++ ".handshakeValidate: empty cert chain"
 
 certNames :: X509.Certificate -> [String]
-certNames = nms
+certNames = maybe id (:) <$> nm <*> nms
 	where
-	nms c = maybe id (:) <$> nms_ <*> ans $ c
-	nms_ = (ASN1.asn1CharacterToString =<<) .
+	nm = (ASN1.asn1CharacterToString =<<) .
 		X509.getDnElement X509.DnCommonName . X509.certSubjectDN
-	ans = maybe [] ((\ns -> [s | X509.AltNameDNS s <- ns])
+	nms = maybe [] ((\ns -> [s | X509.AltNameDNS s <- ns])
 				. \(X509.ExtSubjectAltName ns) -> ns)
 			. X509.extensionGet . X509.certExtensions
 
-setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
-setCipherSuite cs = gets fst >>= lift . flip TH.setCipherSuite cs
-
-getCipherSuite :: HandleLike h => HandshakeM h g TH.CipherSuite
-getCipherSuite = gets fst >>= lift . TH.getCipherSuite
-
-flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
-flushCipherSuite p = gets fst >>= lift . TH.flushCipherSuite p
-
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
-debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
+debugCipherSuite = (gets fst >>=) . (lift .) . flip TH.debugCipherSuite
 
-generateKeys :: HandleLike h => TH.Side ->
-	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
-generateKeys p (cr, sr) pms = do
-	t <- gets fst
-	cs <- lift $ TH.getCipherSuite t
-	k <- lift $ TH.generateKeys t p cs cr sr pms
-	lift $ TH.setKeys t k
-
-handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
-handshakeHash = SHA256.finalize `liftM` gets snd
-
-finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteString
-finishedHash p = get >>= lift . flip (uncurry TH.finishedHash) p
-
-getClFinished, getSvFinished :: HandleLike h => HandshakeM h g BS.ByteString
-getClFinished = gets fst >>= lift . TH.getClFinished
-getSvFinished = gets fst >>= lift . TH.getSvFinished
-
-setClFinished, setSvFinished :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-setClFinished cf = gets fst >>= lift . flip TH.setClFinished cf
-setSvFinished cf = gets fst >>= lift . flip TH.setSvFinished cf
-
-getSettingsS :: HandleLike h => HandshakeM h g TH.SettingsS
-getSettingsS = gets fst >>= lift . TH.getSettingsS
-
-setSettingsS :: HandleLike h => TH.SettingsS -> HandshakeM h g ()
-setSettingsS is = gets fst >>= lift . flip TH.setSettingsS is
-
-getSettingsC :: HandleLike h => HandshakeM h g TH.SettingsC
-getSettingsC = gets fst >>= lift . TH.getSettingsC
-
-setSettingsC :: HandleLike h => TH.SettingsC -> HandshakeM h g ()
-setSettingsC s = gets fst >>= lift . flip TH.setSettingsC s
-
-pushAdBuf :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-pushAdBuf bs = do
-	bf <- gets fst >>= lift . TH.getAdBuf
-	gets fst >>= lift . flip TH.setAdBuf (bf `BS.append` bs)
-
-updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-updateHash = modify . second . flip SHA256.update
-
-adGetLine :: (ValidateHandle h, CPRG g) =>
-	(TH.TlsHandleBase h g -> TH.TlsM h g ()) -> TH.TlsHandleBase h g ->
-	TH.TlsM h g BS.ByteString
-adGetLine rn t = do
-	bf <- TH.getAdBuf t
-	if '\n' `BSC.elem` bf || '\r' `BSC.elem` bf
-	then do	let (ret, rest) = splitOneLine bf
-		TH.setAdBuf t $ BS.tail rest
-		return ret
-	else (bf `BS.append`) `liftM` TH.adGetLine rn t
-
-splitOneLine :: BS.ByteString -> (BS.ByteString, BS.ByteString)
-splitOneLine bs = case BSC.span (/= '\r') bs of
-	(_, "") -> second BS.tail $ BSC.span (/= '\n') bs
-	(l, ls) -> (l, dropRet ls)
-
-dropRet :: BS.ByteString -> BS.ByteString
-dropRet bs = case BSC.uncons bs of
-	Just ('\r', bs') -> case BSC.uncons bs' of
-		Just ('\n', bs'') -> bs''
-		_ -> bs'
-	_ -> bs
-
-adGetContent :: (ValidateHandle h, CPRG g) =>
-	(TH.TlsHandleBase h g -> TH.TlsM h g ()) ->
-	TH.TlsHandleBase h g -> TH.TlsM h g BS.ByteString
-adGetContent rn t = do
-	bf <- TH.getAdBuf t
-	if BS.null bf
-	then TH.adGetContent rn t
-	else do	TH.setAdBuf t ""
-		return bf
+throw :: HandleLike h => TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
+throw = ((throwError .) .) . TH.Alert

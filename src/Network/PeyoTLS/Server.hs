@@ -48,7 +48,7 @@ import Network.PeyoTLS.Base ( debug,
 		SettingsS, getSettingsS, setSettingsS,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, flushAppData,
+		withRandom, flushAd,
 		AlertLevel(..), AlertDesc(..), throw, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..), isRsaKey, isEcdsaKey,
@@ -63,7 +63,7 @@ import Network.PeyoTLS.Base ( debug,
 	ServerKeyEx(..), SvSignSecretKey(..),
 	certReq, ClCertType(..),
 	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), generateKeys,
+	ClientKeyEx(..), Epms(..), makeKeys,
 	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
@@ -134,9 +134,9 @@ setCertificateStore (TlsHandleS t) mcs = rerunHandshakeM t $ do
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleS t) = rerunHandshakeM t $ do
 	writeHandshake HHelloReq
-	debug "low" ("before flushAppData" :: String)
-	ne <- flushAppData
-	debug "low" ("after flushAppData" :: String)
+	debug "low" ("before flushAd" :: String)
+	ne <- flushAd
+	debug "low" ("after flushAd" :: String)
 	when ne (handshake =<< getSettingsS)
 
 rehandshake :: (ValidateHandle h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
@@ -249,7 +249,7 @@ rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	HandshakeM h g (Maybe X509.PubKey)
 rsaKeyExchange sk (vj, vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
 	Epms epms <- readHandshake
-	generateKeys Server rs =<< mkpms epms `catchError` const
+	makeKeys Server rs =<< mkpms epms `catchError` const
 		((BS.cons vj . BS.cons vn) `liftM` withRandom (cprgGenerate 46))
 	where mkpms epms = do
 		pms <- either (E.throwError . strMsg . show) return =<<
@@ -272,7 +272,7 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 		. ssSign sk ha bl $ BS.concat [cr, sr, B.encode dp, pv]
 	const `liftM` reqAndCert mcs `ap` do
 		ClientKeyEx cke <- readHandshake
-		generateKeys Server rs . calculateShared dp sv =<<
+		makeKeys Server rs . calculateShared dp sv =<<
 			either (throw ALFatal ADInternalError .
 					(moduleName ++) . (".dhKeyExchange: " ++))
 				return (B.decode cke)
