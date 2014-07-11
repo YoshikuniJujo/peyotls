@@ -1,13 +1,13 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, S.initState,
-		thlGet, thlPut, thlClose, thlDebug, thlError,
+		tGet, tPut, tClose, tDebug, thlError,
 		withRandom,
 		getRBuf, setRBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
-		getCipherSuiteSt, setCipherSuiteSt,
+		getCipherSuite, setCipherSuite,
 		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
 		getSettings, setSettings,
 		getInitSet, setInitSet, S.SettingsS, S.Settings,
@@ -16,15 +16,18 @@ module Network.PeyoTLS.Monad (
 	S.CipherSuite(..), S.KeyEx(..), S.BulkEnc(..),
 	S.PartnerId, S.newPartnerId, S.Keys(..), S.nullKeys,
 
-	getClientFinished, setClientFinished,
-	getServerFinished, setServerFinished,
+	getClFinished, setClFinished,
+	getSvFinished, setSvFinished,
 	S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
+
+	getSettingsC_, setSettingsC_,
 	) where
 
+import Control.Arrow ((***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
-import "monads-tf" Control.Monad.Error (ErrorT, runErrorT)
+import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError)
 import Data.Word (Word64)
 import Data.HandleLike (HandleLike(..))
 
@@ -78,11 +81,11 @@ sccWSn = modify . S.succWriteSN; sccRSn = modify . S.succReadSN
 rstWSn, rstRSn :: HandleLike h => S.PartnerId -> TlsM h g ()
 rstWSn = modify . S.resetWriteSN; rstRSn = modify . S.resetReadSN
 
-getCipherSuiteSt :: HandleLike h => S.PartnerId -> TlsM h g S.CipherSuite
-getCipherSuiteSt = gets . S.getCipherSuite
+getCipherSuite :: HandleLike h => S.PartnerId -> TlsM h g S.CipherSuite
+getCipherSuite = gets . S.getCipherSuite
 
-setCipherSuiteSt :: HandleLike h => S.PartnerId -> S.CipherSuite -> TlsM h g ()
-setCipherSuiteSt = (modify .) . S.setCipherSuite
+setCipherSuite :: HandleLike h => S.PartnerId -> S.CipherSuite -> TlsM h g ()
+setCipherSuite = (modify .) . S.setCipherSuite
 
 setKeys :: HandleLike h => S.PartnerId -> S.Keys -> TlsM h g ()
 setKeys = (modify .) . S.setKeys
@@ -102,15 +105,15 @@ setInitSet = (modify .) . S.setInitSet
 setSettings :: HandleLike h => S.PartnerId -> S.Settings -> TlsM h g ()
 setSettings = (modify .) . S.setSettings
 
-getClientFinished, getServerFinished ::
+getClFinished, getSvFinished ::
 	HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
-getClientFinished = gets . S.getClientFinished
-getServerFinished = gets . S.getServerFinished
+getClFinished = gets . S.getClientFinished
+getSvFinished = gets . S.getServerFinished
 
-setClientFinished, setServerFinished ::
+setClFinished, setSvFinished ::
 	HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
-setClientFinished = (modify .) . S.setClientFinished
-setServerFinished = (modify .) . S.setServerFinished
+setClFinished = (modify .) . S.setClientFinished
+setSvFinished = (modify .) . S.setServerFinished
 
 flushCipherSuiteRead, flushCipherSuiteWrite ::
 	HandleLike h => S.PartnerId -> TlsM h g ()
@@ -118,23 +121,29 @@ flushCipherSuiteRead = modify . S.flushCipherSuiteRead
 flushCipherSuiteWrite = modify . S.flushCipherSuiteWrite
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> TlsM h gen a
-withRandom p = do
-	(x, g') <- p `liftM` gets S.randomGen
-	modify $ S.setRandomGen g'
-	return x
+withRandom p = p `liftM` gets S.randomGen >>=
+	uncurry (flip (>>)) . (return *** modify . S.setRandomGen)
 
-thlGet :: HandleLike h => h -> Int -> TlsM h g BS.ByteString
-thlGet = ((lift . lift) .) . hlGet
+tGet :: HandleLike h => h -> Int -> TlsM h g BS.ByteString
+tGet = ((lift . lift) .) . hlGet
 
-thlPut :: HandleLike h => h -> BS.ByteString -> TlsM h g ()
-thlPut = ((lift . lift) .) . hlPut
+tPut :: HandleLike h => h -> BS.ByteString -> TlsM h g ()
+tPut = ((lift . lift) .) . hlPut
 
-thlClose :: HandleLike h => h -> TlsM h g ()
-thlClose = lift . lift . hlClose
+tClose :: HandleLike h => h -> TlsM h g ()
+tClose = lift . lift . hlClose
 
-thlDebug :: HandleLike h =>
+tDebug :: HandleLike h =>
 	h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
-thlDebug = (((lift . lift) .) .) . hlDebug
+tDebug = (((lift . lift) .) .) . hlDebug
 
 thlError :: HandleLike h => h -> BS.ByteString -> TlsM h g a
 thlError = ((lift . lift) .) . hlError
+
+getSettingsC_ i = do
+	(css, crts, mcs) <- getSettings i
+	case mcs of
+		Just cs -> return (css, crts, cs)
+		_ -> throwError "Network.PeyoTLS.Base.getSettingsC"
+
+setSettingsC_ i (css, crts, cs) = setSettings i (css, crts, Just cs)
