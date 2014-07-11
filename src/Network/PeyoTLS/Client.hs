@@ -27,7 +27,7 @@ import Data.Maybe (fromMaybe)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
-import "crypto-random" Crypto.Random (CPRG, SystemRNG)
+import "crypto-random" Crypto.Random (CPRG, SystemRNG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
@@ -46,7 +46,7 @@ import Network.PeyoTLS.Base ( debug,
 		getSettingsC, setSettingsC,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, randomByteString, flushAppData,
+		withRandom, flushAppData,
 		AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..),
@@ -124,7 +124,7 @@ rehandshake t = rerunHandshakeM t $ do
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g BS.ByteString
 clientHello cscl = do
-	cr <- randomByteString 32
+	cr <- withRandom $ cprgGenerate 32
 	((>>) <$> writeHandshake <*> debug "low")
 		. ClientHello (3, 3) cr (SessionId "") cscl [CompMethodNull]
 		. Just . (: []) =<< makeClRenego
@@ -174,7 +174,7 @@ rsaHandshake rs crts ca = do
 		_ -> throw ALFatal ADIllegalParameter $
 			moduleName ++ ".rsaHandshake: require RSA public key"
 	crt <- clientCertificate crts
-	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
+	pms <- ("\x03\x03" `BS.append`) `liftM` withRandom (cprgGenerate 46)
 	generateKeys Client rs pms
 	writeHandshake . Epms =<< encryptRsa pk pms
 	finishHandshake crt

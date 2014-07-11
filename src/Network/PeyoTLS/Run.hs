@@ -5,7 +5,7 @@ module Network.PeyoTLS.Run (
 		hsGet, hsPut, updateHash, ccsGet, ccsPut,
 		adGet, adGetLine, adGetContent, TH.adPut, TH.adDebug, TH.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, randomByteString, flushAppData,
+		withRandom, flushAppData,
 		TH.SettingsS, getSettingsS, setSettingsS,
 		getSettingsC, setSettingsC,
 		getCipherSuite, setCipherSuite,
@@ -38,7 +38,7 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Handle as TH (
-	TlsM, run, withRandom, randomByteString,
+	TlsM, run, withRandom,
 	TlsHandleBase(..), CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
@@ -56,30 +56,26 @@ import qualified Network.PeyoTLS.Handle as TH (
 moduleName :: String
 moduleName = "Network.PeyoTLS.Run"
 
-flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
-flushAppData = uncurry (>>) . (pushAdBuf *** return) =<<
-	lift . TH.flushAppData =<< gets fst
-
-throw :: HandleLike h =>
-	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
-throw al ad m = throwError $ TH.Alert al ad m
-
 type HandshakeM h g = StateT (TH.TlsHandleBase h g, SHA256.Ctx) (TH.TlsM h g)
 
-execHandshakeM :: HandleLike h =>
-	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandleBase h g)
+execHandshakeM ::
+	HandleLike h => h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandleBase h g)
 execHandshakeM h =
 	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
 rerunHandshakeM ::
 	HandleLike h => TH.TlsHandleBase h g -> HandshakeM h g a -> TH.TlsM h g a
-rerunHandshakeM t hm = evalStateT hm (t, SHA256.init)
+rerunHandshakeM = flip evalStateT . (, SHA256.init)
+
+flushAppData :: (HandleLike h, CPRG g) => HandshakeM h g Bool
+flushAppData = gets fst >>=
+	lift . TH.flushAppData >>= uncurry (>>) . (pushAdBuf *** return)
+
+throw :: HandleLike h => TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
+throw al ad m = throwError $ TH.Alert al ad m
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
 withRandom = lift . TH.withRandom
-
-randomByteString :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-randomByteString = lift . TH.randomByteString
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -103,6 +99,13 @@ instance ValidateHandle Handle where
 			(\_ _ _ -> return ())
 		validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
+handshakeValidate :: ValidateHandle h =>
+	X509.CertificateStore -> X509.CertificateChain ->
+	HandshakeM h g [X509.FailedReason]
+handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
+	modify . first $ const t { TH.names = certNames . X509.getCertificate $ head c }
+	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
+
 certNames :: X509.Certificate -> [String]
 certNames = nms
 	where
@@ -112,13 +115,6 @@ certNames = nms
 	ans = maybe [] ((\ns -> [s | X509.AltNameDNS s <- ns])
 				. \(X509.ExtSubjectAltName ns) -> ns)
 			. X509.extensionGet . X509.certExtensions
-
-handshakeValidate :: ValidateHandle h =>
-	X509.CertificateStore -> X509.CertificateChain ->
-	HandshakeM h g [X509.FailedReason]
-handshakeValidate cs cc@(X509.CertificateChain c) = gets fst >>= \t -> do
-	modify . first $ const t { TH.names = certNames . X509.getCertificate $ head c }
-	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite cs = gets fst >>= lift . flip TH.setCipherSuite cs

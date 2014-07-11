@@ -3,7 +3,7 @@
 module Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
-		withRandom, randomByteString,
+		withRandom,
 		getBuf, setBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
@@ -28,7 +28,6 @@ import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (ErrorT, runErrorT)
 import Data.Word (Word64)
 import Data.HandleLike (HandleLike(..))
-import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 
@@ -124,9 +123,6 @@ withRandom p = do
 	(x, g') <- p `liftM` gets S.randomGen
 	modify $ S.setRandomGen g'
 	return x
-
-randomByteString :: (HandleLike h, CPRG g) => Int -> TlsM h g BS.ByteString
-randomByteString = withRandom . cprgGenerate
 
 thlGet :: HandleLike h => h -> Int -> TlsM h g BS.ByteString
 thlGet = ((lift . lift) .) . hlGet

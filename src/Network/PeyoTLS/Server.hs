@@ -30,7 +30,7 @@ import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import Numeric (readHex)
-import "crypto-random" Crypto.Random (CPRG, SystemRNG)
+import "crypto-random" Crypto.Random (CPRG, SystemRNG, cprgGenerate)
 
 import qualified "monads-tf" Control.Monad.Error as E
 import qualified Data.ByteString as BS
@@ -48,7 +48,7 @@ import Network.PeyoTLS.Base ( debug,
 		SettingsS, getSettingsS, setSettingsS,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
-		withRandom, randomByteString, flushAppData,
+		withRandom, flushAppData,
 		AlertLevel(..), AlertDesc(..), throw, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	TlsHandleBase, CertSecretKey(..), isRsaKey, isEcdsaKey,
@@ -232,7 +232,7 @@ serverHello rcc ecc = do
 		CipherSuite k _ -> return k
 		_ -> throw ALFatal ADInternalError $
 			moduleName ++ ".serverHello: never occur"
-	sr <- randomByteString 32
+	sr <- withRandom $ cprgGenerate 32
 	writeHandshake
 		. ServerHello version sr (SessionId "") cs CompMethodNull
 		. Just . (: []) =<< makeSvRenego
@@ -249,7 +249,7 @@ rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 rsaKeyExchange sk (vj, vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
 	Epms epms <- readHandshake
 	generateKeys Server rs =<< mkpms epms `catchError` const
-		((BS.cons vj . BS.cons vn) `liftM` randomByteString 46)
+		((BS.cons vj . BS.cons vn) `liftM` withRandom (cprgGenerate 46))
 	where mkpms epms = do
 		pms <- either (E.throwError . strMsg . show) return =<<
 			withRandom (\g -> RSA.decryptSafer g sk epms)

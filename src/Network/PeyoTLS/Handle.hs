@@ -3,7 +3,7 @@
 module Network.PeyoTLS.Handle (
 	tGetContent_,
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
-		run, withRandom, randomByteString,
+		run, withRandom,
 	TlsHandleBase(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsPut, generateKeys,
 		chGet, hsPut, ccsPut,
@@ -48,7 +48,7 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Network.PeyoTLS.Monad as M
 import Network.PeyoTLS.Monad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
-		withRandom, randomByteString,
+		withRandom,
 		getBuf, setBuf, getWBuf, setWBuf,
 		getReadSn, getWriteSn, succReadSn, succWriteSn,
 		resetReadSn, resetWriteSn,
