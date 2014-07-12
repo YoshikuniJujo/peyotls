@@ -19,9 +19,8 @@ module Network.PeyoTLS.Run ( H.debug,
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (second, (***))
 import Control.Monad (liftM)
-import "monads-tf" Control.Monad.Trans (lift)
-import "monads-tf" Control.Monad.State (
-	StateT, evalStateT, execStateT, get, gets, modify )
+import "monads-tf" Control.Monad.Reader (ReaderT, runReaderT, lift, ask)
+import "monads-tf" Control.Monad.State (StateT, evalStateT, get, modify )
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
@@ -82,22 +81,26 @@ adGetContent :: (HandleLike h, CPRG g) =>
 adGetContent rp t = H.getBuf t >>= \b ->
 	if BS.null b then H.adGetContent rp t else H.setBuf t "" >> return b
 
-type HandshakeM h g = StateT (H.TlsHandleBase h g, SHA256.Ctx) (H.TlsM h g)
+type HandshakeM h g =
+	ReaderT (H.TlsHandleBase h g) (StateT SHA256.Ctx (H.TlsM h g))
 
 execHandshakeM ::
 	HandleLike h => h -> HandshakeM h g () -> H.TlsM h g (H.TlsHandleBase h g)
-execHandshakeM h =
-	liftM fst . ((, SHA256.init) `liftM` H.newHandle h >>=) . execStateT
+execHandshakeM h m = do
+	t <- H.newHandle h
+	m `runReaderT` t `evalStateT` SHA256.init
+	return t
+--	liftM fst . ((, SHA256.init) `liftM` H.newHandle h >>=) . execStateT
 
 rerunHandshakeM ::
 	HandleLike h => H.TlsHandleBase h g -> HandshakeM h g a -> H.TlsM h g a
-rerunHandshakeM = flip evalStateT . (, SHA256.init)
+rerunHandshakeM t m = m `runReaderT` t `evalStateT` SHA256.init
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
-withRandom = lift . H.withRandom
+withRandom = lift . lift . H.withRandom
 
 chGet :: (HandleLike h, CPRG g) => HandshakeM h g (Either Word8 BS.ByteString)
-chGet = gets fst >>= lift . flip H.chGet 1 >>= \ch -> case ch of
+chGet = ask >>= lift . lift . flip H.chGet 1 >>= \ch -> case ch of
 	Left w -> return $ Left w
 	Right t -> Right `liftM` do
 		len <- hsGet 3
@@ -105,63 +108,66 @@ chGet = gets fst >>= lift . flip H.chGet 1 >>= \ch -> case ch of
 		return $ BS.concat [t, len, body]
 
 hsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-hsGet n = gets fst >>= lift . flip H.chGet n >>= \ch -> case ch of
+hsGet n = ask >>= lift . lift . flip H.chGet n >>= \ch -> case ch of
 	Right bs -> return bs
 	_ -> throw H.ALFatal H.ADUnexMsg $ modNm ++ ".hsGet: not handshake"
 
 ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
-ccsPut = (gets fst >>=) . (lift .) . flip H.ccsPut
+ccsPut = (ask >>=) . ((lift . lift) .) . flip H.ccsPut
 
 hsPut :: (HandleLike h, CPRG g) => BS.ByteString -> HandshakeM h g ()
-hsPut = (gets fst >>=) . (lift .) . flip H.hsPut
+hsPut = (ask >>=) . ((lift . lift) .) . flip H.hsPut
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-updateHash = modify . second . flip SHA256.update
+updateHash = modify . flip SHA256.update
 
 flushAd :: (HandleLike h, CPRG g) => HandshakeM h g Bool
-flushAd = gets fst >>= lift . H.flushAd >>= uncurry (>>) . (push *** return)
-	where push bs = gets fst >>= lift . H.getBuf >>=
-		(gets fst >>=) . (lift .) . flip H.setBuf . (`BS.append` bs)
+flushAd = ask >>= lift . lift . H.flushAd >>= uncurry (>>) . (push *** return)
+	where push bs = ask >>= lift . lift . H.getBuf >>=
+		(ask >>=) . ((lift . lift) .) . flip H.setBuf . (`BS.append` bs)
 
 getSettingsC :: HandleLike h => HandshakeM h g H.SettingsC
-getSettingsC = gets fst >>= lift . H.getSettingsC
+getSettingsC = ask >>= lift . lift . H.getSettingsC
 
 setSettingsC :: HandleLike h => H.SettingsC -> HandshakeM h g ()
-setSettingsC = (gets fst >>=) . (lift .) . flip H.setSettingsC
+setSettingsC = (ask >>=) . ((lift . lift) .) . flip H.setSettingsC
 
 getSettingsS :: HandleLike h => HandshakeM h g H.SettingsS
-getSettingsS = gets fst >>= lift . H.getSettingsS
+getSettingsS = ask >>= lift . lift . H.getSettingsS
 
 setSettingsS :: HandleLike h => H.SettingsS -> HandshakeM h g ()
-setSettingsS = (gets fst >>=) . (lift .) . flip H.setSettingsS
+setSettingsS = (ask >>=) . ((lift . lift) .) . flip H.setSettingsS
 
 getCipherSuite :: HandleLike h => HandshakeM h g H.CipherSuite
-getCipherSuite = gets fst >>= lift . H.getCipherSuite
+getCipherSuite = ask >>= lift . lift . H.getCipherSuite
 
 setCipherSuite :: HandleLike h => H.CipherSuite -> HandshakeM h g ()
-setCipherSuite = (gets fst >>=) . (lift .) . flip H.setCipherSuite
+setCipherSuite = (ask >>=) . ((lift . lift) .) . flip H.setCipherSuite
 
 getClFinished, getSvFinished :: HandleLike h => HandshakeM h g BS.ByteString
-getClFinished = gets fst >>= lift . H.getClFinished
-getSvFinished = gets fst >>= lift . H.getSvFinished
+getClFinished = ask >>= lift . lift . H.getClFinished
+getSvFinished = ask >>= lift . lift . H.getSvFinished
 
 setClFinished, setSvFinished :: HandleLike h => BS.ByteString -> HandshakeM h g ()
-setClFinished = (gets fst >>=) . (lift .) . flip H.setClFinished
-setSvFinished = (gets fst >>=) . (lift .) . flip H.setSvFinished
+setClFinished = (ask >>=) . ((lift . lift) .) . flip H.setClFinished
+setSvFinished = (ask >>=) . ((lift . lift) .) . flip H.setSvFinished
 
 flushCipherSuite :: (HandleLike h, CPRG g) => H.RW -> HandshakeM h g ()
-flushCipherSuite = (gets fst >>=) . (lift .) . H.flushCipherSuite
+flushCipherSuite = (ask >>=) . ((lift . lift) .) . H.flushCipherSuite
 
 makeKeys :: HandleLike h => H.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
-makeKeys s (cr, sr) pms = gets fst >>= \t -> lift $
+makeKeys s (cr, sr) pms = ask >>= \t -> lift . lift $
 	H.getCipherSuite t >>= H.makeKeys t s cr sr pms >>= H.setKeys t
 
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
-handshakeHash = SHA256.finalize `liftM` gets snd
+handshakeHash = SHA256.finalize `liftM` get
 
 finishedHash :: (HandleLike h, CPRG g) => H.Side -> HandshakeM h g BS.ByteString
-finishedHash s = get >>= lift . uncurry (H.finishedHash s) . second SHA256.finalize
+finishedHash s = do
+	t <- ask
+	h <- get
+	lift . lift $ H.finishedHash s t (SHA256.finalize h)
 
 validateAlert :: [X509.FailedReason] -> H.AlertDesc
 validateAlert vr
@@ -172,9 +178,9 @@ validateAlert vr
 
 handshakeValidate :: H.ValidateHandle h => X509.CertificateStore ->
 	X509.CertificateChain -> HandshakeM h g [X509.FailedReason]
-handshakeValidate cs cc@(X509.CertificateChain (c : _)) = gets fst >>= \t -> do
-	lift . H.setNames t . certNames $ X509.getCertificate c
-	lift $ H.tValidate t cs cc
+handshakeValidate cs cc@(X509.CertificateChain (c : _)) =  ask >>= \t -> do
+	lift . lift . H.setNames t . certNames $ X509.getCertificate c
+	lift . lift $ H.tValidate t cs cc
 handshakeValidate _ _ = error $ modNm ++ ".handshakeValidate: empty cert chain"
 
 certNames :: X509.Certificate -> [String]
@@ -187,7 +193,7 @@ certNames = maybe id (:) <$> nm <*> nms
 			. X509.extensionGet . X509.certExtensions
 
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
-debugCipherSuite = (gets fst >>=) . (lift .) . flip H.debugCipherSuite
+debugCipherSuite = (ask >>=) . ((lift . lift) .) . flip H.debugCipherSuite
 
 throw :: HandleLike h => H.AlertLevel -> H.AlertDesc -> String -> HandshakeM h g a
 throw = ((throwError .) .) . H.Alert

@@ -33,7 +33,7 @@ module Network.PeyoTLS.Base (
 
 import Control.Arrow (first)
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.State (gets, lift)
+import "monads-tf" Control.Monad.Reader (lift, ask)
 import Data.Bits (shiftR)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -93,8 +93,8 @@ type PeyotlsM = TlsM Handle SystemRNG
 
 debug :: (HandleLike h, Show a) => DebugLevel h -> a -> HandshakeM h g ()
 debug p x = do
-	t <- gets fst
-	lift . RUN.debug t p . BSC.pack . (++ "\n") $ show x
+	t <- ask
+	lift . lift . RUN.debug t p . BSC.pack . (++ "\n") $ show x
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HandshakeM h g hi
 readHandshake = do
