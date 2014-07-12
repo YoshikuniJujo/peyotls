@@ -2,7 +2,7 @@ build-type:	Simple
 cabal-version:	>= 1.8
 
 name:		peyotls
-version:	0.0.0.23
+version:	0.0.0.24
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -148,7 +148,8 @@ description:
     > 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
     > 	(`run` g) $ do
     > 		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
-    > 		unless ("localhost" `elem` names p) $
+    >		nms <- getNames p
+    > 		unless ("localhost" `elem` nms) $
     > 			error "certificate name mismatch"
     > 		hlPut p "GET / HTTP/1.1 \r\n"
     > 		hlPut p "Host: localhost\r\n\r\n"
@@ -282,7 +283,7 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/peyotls.git
-    tag:	peyotls-0.0.0.23
+    tag:	peyotls-0.0.0.24
 
 library
     hs-source-dirs:	src

@@ -23,8 +23,9 @@ main = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
 		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
-		unless ("skami3.iocikun.jp" `elem` names p) . error $
-			"certificate name mismatch: " ++ show (names p)
+		nms <- getNames p
+		unless ("skami3.iocikun.jp" `elem` nms) . error $
+			"certificate name mismatch: " ++ show nms
 		hlPut p "GET / HTTP/1.1 \r\n"
 		hlPut p "Host: localhost\r\n\r\n"
 		doUntil BSC.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn

@@ -11,6 +11,7 @@ module Network.PeyoTLS.Handle ( debug,
 		M.SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		makeKeys, setKeys,
+		getNames, setNames,
 		C.Side(..), finishedHash,
 		M.RW(..), flushCipherSuite,
 	ValidateHandle(..), tValidate,
@@ -19,7 +20,7 @@ module Network.PeyoTLS.Handle ( debug,
 
 import Control.Arrow (second)
 import Control.Monad (when, unless, liftM)
-import "monads-tf" Control.Monad.State (lift, get, gets, put)
+import "monads-tf" Control.Monad.State (lift, get, put)
 import "monads-tf" Control.Monad.Error (catchError, throwError)
 import Data.Word (Word8, Word16, Word64)
 import Data.HandleLike (HandleLike(..))
@@ -41,6 +42,7 @@ import qualified Network.PeyoTLS.Monad as M (
 		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
+		getNames, setNames,
 	CipherSuite(..), BulkEnc(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
 		SettingsC, getSettingsC, setSettingsC,
 		SettingsS, getSettingsS, setSettingsS,
@@ -475,6 +477,12 @@ getCipherSuite = M.getCipherSuite . partnerId
 
 setCipherSuite :: HandleLike h => TlsHandleBase h g -> M.CipherSuite -> M.TlsM h g ()
 setCipherSuite = M.setCipherSuite . partnerId
+
+getNames :: HandleLike h => TlsHandleBase h g -> M.TlsM h g [String]
+getNames = M.getNames . partnerId
+
+setNames :: HandleLike h => TlsHandleBase h g -> [String] -> M.TlsM h g ()
+setNames = M.setNames . partnerId
 
 setKeys :: HandleLike h => TlsHandleBase h g -> M.Keys -> M.TlsM h g ()
 setKeys = M.setKeys . partnerId

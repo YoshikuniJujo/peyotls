@@ -13,7 +13,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
 import Network.PeyoTLS.Server ( CertSecretKey,
-	run, open, names,
+	run, open, getNames,
 	ValidateHandle(..), CipherSuite(..) )
 
 server :: (ValidateHandle h, CPRG g)  => g -> h ->
@@ -24,7 +24,7 @@ server :: (ValidateHandle h, CPRG g)  => g -> h ->
 server g h css rsa ec mcs = (`run` g) $ do
 	cl <- open h css [rsa, ec] mcs
 	const () `liftM` doUntil BS.null (hlGetLine cl)
-	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe $ names cl
+	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe =<< getNames cl
 	hlClose cl
 
 answer :: String -> BS.ByteString

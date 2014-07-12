@@ -13,7 +13,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
 import Network.PeyoTLS.Server ( CertSecretKey,
-	run, open, renegotiate, names,
+	run, open, renegotiate, getNames,
 	ValidateHandle(..), CipherSuite(..) )
 
 server :: (ValidateHandle h, CPRG g)  => g -> h ->
@@ -27,7 +27,7 @@ server g h css rsa ec _mcs = (`run` g) $ do
 	renegotiate cl
 	doUntil BS.null (hlGetLine cl) >>= mapM_ (hlDebug cl "critical")
 	renegotiate cl
-	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe $ names cl
+	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe =<< getNames cl
 	hlGet cl 2 >>= hlDebug cl "critical"
 	hlClose cl
 

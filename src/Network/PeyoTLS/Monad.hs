@@ -8,8 +8,8 @@ module Network.PeyoTLS.Monad (
 		getAdBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
 		getCipherSuite, setCipherSuite,
+		getNames, setNames,
 		setKeys, getKeys,
---		getSettings, setSettings,
 		S.SettingsS, getSettingsS, setSettingsS,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
@@ -46,6 +46,7 @@ import qualified Network.PeyoTLS.State as S (
 	setAdBuf, getAdBuf,
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite,
+	setNames, getNames,
 	setKeys, getKeys,
 	getSettings, setSettings,
 	getInitSet, setInitSet,
@@ -92,6 +93,12 @@ getCipherSuite = gets . S.getCipherSuite
 
 setCipherSuite :: HandleLike h => S.PartnerId -> S.CipherSuite -> TlsM h g ()
 setCipherSuite = (modify .) . S.setCipherSuite
+
+getNames :: HandleLike h => S.PartnerId -> TlsM h g [String]
+getNames = gets . S.getNames
+
+setNames :: HandleLike h => S.PartnerId -> [String] -> TlsM h g ()
+setNames = (modify .) . S.setNames
 
 setKeys :: HandleLike h => S.PartnerId -> S.Keys -> TlsM h g ()
 setKeys = (modify .) . S.setKeys

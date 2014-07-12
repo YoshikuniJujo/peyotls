@@ -22,7 +22,8 @@ main = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
 		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(rk, rc)] ca
-		unless ("localhost" `elem` names p) $
+		nms <- getNames p
+		unless ("localhost" `elem` nms) $
 			error "certificate name mismatch"
 		hlPut p "GET / HTTP/1.1 \r\n"
 		hlPut p "Host: localhost\r\n\r\n"

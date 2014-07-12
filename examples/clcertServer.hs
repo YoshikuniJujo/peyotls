@@ -28,6 +28,7 @@ main = do
 		liftIO . forkIO . (`run` g) $ do
 			p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
 				$ Just ca
+			getNames p >>= liftIO . print
 			doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
 			hlPut p $ BS.concat [
 				"HTTP/1.1 200 OK\r\n",

@@ -32,8 +32,9 @@ client :: (ValidateHandle h, CPRG g) => g -> h ->
 	HandleMonad h ()
 client g h crt crtS = (`run` g) $ do
 	t <- open h cipherSuites crt crtS
---	hlDebug t "medium" . BSC.pack . (++ "\n") . show $ names t
-	unless ("localhost" `elem` names t) $
+--	hlDebug t "medium" . BSC.pack . (++ "\n") . show =<< getNames t
+	nms <- getNames t
+	unless ("localhost" `elem` nms) $
 		error "certificate name mismatch"
 	hlPut t "G"
 	renegotiate t

@@ -31,7 +31,8 @@ main = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
 		p <- open h cipherSuites [] ca
-		unless ("localhost" `elem` names p) $
+		nms <- getNames p
+		unless ("localhost" `elem` nms p) $
 			error "certificate name mismatch"
 		hlPut p "GET / HTTP/1.1 \r\n"
 		hlPut p "Host: localhost\r\n\r\n"

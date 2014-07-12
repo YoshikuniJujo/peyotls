@@ -17,6 +17,8 @@ module Network.PeyoTLS.State (
 
 	SettingsS, Settings,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
+
+	getNames, setNames,
 ) where
 
 import Control.Applicative ((<$>))
@@ -61,7 +63,8 @@ newPartnerId s = (PartnerId i ,) s{
 		radBuffer = "",
 		readSN = 0, writeSN = 0,
 		rnClientFinished = "", rnServerFinished = "",
-		initialSettings = ([], [], Nothing)
+		initialSettings = ([], [], Nothing),
+		sNames = []
 		}
 	sos = states s
 
@@ -95,7 +98,8 @@ data StateOne g = StateOne {
 	writeSN :: Word64,
 	rnClientFinished :: BS.ByteString,
 	rnServerFinished :: BS.ByteString,
-	initialSettings :: Settings
+	initialSettings :: Settings,
+	sNames :: [String]
 	}
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g
@@ -191,6 +195,12 @@ getCipherSuite i =
 setCipherSuite :: PartnerId -> CipherSuite -> Modify (HandshakeState h g)
 setCipherSuite i = modifyState i . \cs st ->
 	st { sKeys = (sKeys st) { kCachedCS = cs } }
+
+getNames :: PartnerId -> HandshakeState h g -> [String]
+getNames i = sNames . fromJust' "getNames" . lookup i . states
+
+setNames :: PartnerId -> [String] -> Modify (HandshakeState h g)
+setNames i = modifyState i . \n st -> st { sNames = n }
 
 getKeys :: PartnerId -> HandshakeState h g -> Keys
 getKeys i = sKeys . fromJust' "getKeys" . lookup i . states
