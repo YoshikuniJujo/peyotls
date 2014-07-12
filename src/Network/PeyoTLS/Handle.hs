@@ -7,7 +7,7 @@ module Network.PeyoTLS.Handle (
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 		flushAd, getBuf, setBuf,
 		getCipherSuite, setCipherSuite,
-		SettingsC, getSettingsC, setSettingsC,
+		M.SettingsC, getSettingsC, setSettingsC,
 		M.SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		makeKeys, setKeys,
@@ -27,8 +27,6 @@ import "crypto-random" Crypto.Random (CPRG)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Codec.Bytable.BigEndian as B
-import qualified Data.X509 as X509
-import qualified Data.X509.CertificateStore as X509
 
 import qualified Network.PeyoTLS.Monad as M (
 	TlsM, evalTlsM, initState, tGet, tPut, tClose, tDebug,
@@ -42,7 +40,7 @@ import qualified Network.PeyoTLS.Monad as M (
 
 		flushCipherSuiteRead, flushCipherSuiteWrite,
 
-	getSettingsC_, setSettingsC_,
+	SettingsC, getSettingsC, setSettingsC,
 	SettingsS, getInitSet, setInitSet,
 
 	Alert(..), AlertLevel(..), AlertDesc(..),
@@ -454,17 +452,12 @@ ccsPut t w = do
 	resetSequenceNumber t Write
 	return ret
 
-type SettingsC = (
-	[M.CipherSuite],
-	[(M.CertSecretKey, X509.CertificateChain)],
-	X509.CertificateStore )
-
-getSettingsC :: HandleLike h => TlsHandleBase h g -> M.TlsM h g SettingsC
-getSettingsC = M.getSettingsC_ . clientId
+getSettingsC :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.SettingsC
+getSettingsC = M.getSettingsC . clientId
 
 setSettingsC :: HandleLike h => TlsHandleBase h g ->
-	SettingsC -> M.TlsM h g ()
-setSettingsC = M.setSettingsC_ . clientId
+	M.SettingsC -> M.TlsM h g ()
+setSettingsC = M.setSettingsC . clientId
 
 getCipherSuite :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.CipherSuite
 getCipherSuite = M.getCipherSuite . clientId

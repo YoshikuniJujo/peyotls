@@ -9,7 +9,7 @@ module Network.PeyoTLS.Monad (
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
 		getCipherSuite, setCipherSuite,
 		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
-		getSettings, setSettings,
+		getSettings, setSettings, SettingsC,
 		getInitSet, setInitSet, S.SettingsS, S.Settings,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
@@ -20,7 +20,7 @@ module Network.PeyoTLS.Monad (
 	getSvFinished, setSvFinished,
 	S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
 
-	getSettingsC_, setSettingsC_,
+	getSettingsC, setSettingsC,
 	) where
 
 import Control.Arrow ((***))
@@ -32,6 +32,8 @@ import Data.Word (Word64)
 import Data.HandleLike (HandleLike(..))
 
 import qualified Data.ByteString as BS
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 
 import qualified Network.PeyoTLS.State as S (
 	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
@@ -140,10 +142,17 @@ tDebug = (((lift . lift) .) .) . hlDebug
 thlError :: HandleLike h => h -> BS.ByteString -> TlsM h g a
 thlError = ((lift . lift) .) . hlError
 
-getSettingsC_ i = do
+getSettingsC :: HandleLike h => S.PartnerId -> TlsM h g SettingsC
+getSettingsC i = do
 	(css, crts, mcs) <- getSettings i
 	case mcs of
 		Just cs -> return (css, crts, cs)
 		_ -> throwError "Network.PeyoTLS.Base.getSettingsC"
 
-setSettingsC_ i (css, crts, cs) = setSettings i (css, crts, Just cs)
+setSettingsC :: HandleLike h => S.PartnerId -> SettingsC -> TlsM h g ()
+setSettingsC i (css, crts, cs) = setSettings i (css, crts, Just cs)
+
+type SettingsC = (
+	[S.CipherSuite],
+	[(S.CertSecretKey, X509.CertificateChain)],
+	X509.CertificateStore )
