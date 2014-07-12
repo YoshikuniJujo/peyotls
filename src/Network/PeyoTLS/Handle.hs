@@ -29,25 +29,18 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.Monad as M (
-	TlsM, evalTlsM, initState, tGet, tPut, tClose, tDebug,
-		withRandom,
-
-		getRBuf, setRBuf, getWBuf, setWBuf, getAdBuf, setAdBuf,
+	TlsM, evalTlsM, initState, withRandom,
+		Alert(..), AlertLevel(..), AlertDesc(..),
+		tGet, tPut, tClose, tDebug,
+	PartnerId, newPartnerId, ContentType(..),
+		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
-		getKeys, setKeys,
-		getCipherSuite, setCipherSuite,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
+	CipherSuite(..), BulkEnc(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
 		SettingsC, getSettingsC, setSettingsC,
 		SettingsS, getSettingsS, setSettingsS,
-
-		flushCipherSuite,
-
-	Alert(..), AlertLevel(..), AlertDesc(..),
-	ContentType(..), CipherSuite(..), BulkEnc(..),
-	PartnerId, newPartnerId, Keys(..),
-	CertSecretKey(..), isRsaKey, isEcdsaKey,
-	RW(..),
-	)
+		RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
+	Keys(..), getKeys, setKeys )
 import qualified Network.PeyoTLS.Crypto as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
