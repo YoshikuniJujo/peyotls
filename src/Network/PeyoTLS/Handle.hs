@@ -12,7 +12,7 @@ module Network.PeyoTLS.Handle (
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		makeKeys, setKeys,
 		Side(..), finishedHash,
-		RW(..), flushCipherSuite,
+		M.RW(..), flushCipherSuite,
 	M.CertSecretKey(..), M.isRsaKey, M.isEcdsaKey,
 	M.Alert(..), M.AlertLevel(..), M.AlertDesc(..), debugCipherSuite ) where
 
@@ -37,24 +37,22 @@ import qualified Network.PeyoTLS.Monad as M (
 		getKeys, setKeys,
 		getCipherSuite, setCipherSuite,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
+		SettingsC, getSettingsC, setSettingsC,
+		SettingsS, getSettingsS, setSettingsS,
 
-		flushCipherSuiteRead, flushCipherSuiteWrite,
-
-	SettingsC, getSettingsC, setSettingsC,
-	SettingsS, getInitSet, setInitSet,
+		flushCipherSuite,
 
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), BulkEnc(..),
 	PartnerId, newPartnerId, Keys(..),
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
+	RW(..),
 	)
 import qualified Network.PeyoTLS.Crypto as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
-data TlsHandleBase h g = TlsHandleBase {
-	clientId :: M.PartnerId,
-	tlsHandle :: h,
-	names :: [String] }
+data TlsHandleBase h g =
+	TlsHandleBase { clientId :: M.PartnerId, tlsHandle :: h, names :: [String] }
 	deriving Show
 
 data Side = Server | Client deriving (Show, Eq)
@@ -121,7 +119,7 @@ chGet t n = do
 	case ct of
 		M.CTCCSpec -> do
 			(M.CTCCSpec, bs) <- buffered t 1
-			resetSequenceNumber t Read
+			resetSequenceNumber t M.Read
 			return . Left . (\[w] -> w) $ BS.unpack bs
 		M.CTHandshake -> do
 			(M.CTHandshake, bs) <- buffered t n
@@ -226,7 +224,7 @@ decrypt_ t ks ct e = do
 	let	M.CipherSuite _ be = M.kReadCS ks
 		wk = M.kReadKey ks
 		mk = M.kReadMacKey ks
-	sn <- updateSequenceNumber t Read
+	sn <- updateSequenceNumber t M.Read
 	hs <- case be of
 		M.AES_128_CBC_SHA -> return CT.hashSha1
 		M.AES_128_CBC_SHA256 -> return CT.hashSha256
@@ -266,30 +264,30 @@ encrypt_ t ks ct p = do
 	let	M.CipherSuite _ be = M.kWriteCS ks
 		wk = M.kWriteKey ks
 		mk = M.kWriteMacKey ks
-	sn <- updateSequenceNumber t Write
+	sn <- updateSequenceNumber t M.Write
 	hs <- case be of
 		M.AES_128_CBC_SHA -> return CT.hashSha1
 		M.AES_128_CBC_SHA256 -> return CT.hashSha256
 		_ -> throwError "TlsHandleBase.encrypt: not implemented bulk encryption"
 	M.withRandom $ CT.encrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") p
 
-updateSequenceNumber :: HandleLike h => TlsHandleBase h g -> RW -> M.TlsM h g Word64
+updateSequenceNumber :: HandleLike h => TlsHandleBase h g -> M.RW -> M.TlsM h g Word64
 updateSequenceNumber t rw = do
 	ks <- M.getKeys $ clientId t
 	(sn, cs) <- case rw of
-		Read -> (, M.kReadCS ks) `liftM` M.getRSn (clientId t)
-		Write -> (, M.kWriteCS ks) `liftM` M.getWSn (clientId t)
+		M.Read -> (, M.kReadCS ks) `liftM` M.getRSn (clientId t)
+		M.Write -> (, M.kWriteCS ks) `liftM` M.getWSn (clientId t)
 	case cs of
 		M.CipherSuite _ M.BE_NULL -> return ()
 		_ -> case rw of
-			Read -> M.sccRSn $ clientId t
-			Write -> M.sccWSn $ clientId t
+			M.Read -> M.sccRSn $ clientId t
+			M.Write -> M.sccWSn $ clientId t
 	return sn
 
-resetSequenceNumber :: HandleLike h => TlsHandleBase h g -> RW -> M.TlsM h g ()
+resetSequenceNumber :: HandleLike h => TlsHandleBase h g -> M.RW -> M.TlsM h g ()
 resetSequenceNumber t rw = case rw of
-	Read -> M.rstRSn $ clientId t
-	Write -> M.rstWSn $ clientId t
+	M.Read -> M.rstRSn $ clientId t
+	M.Write -> M.rstWSn $ clientId t
 
 makeKeys :: HandleLike h =>
 	TlsHandleBase h g -> Side -> BS.ByteString -> BS.ByteString ->
@@ -315,12 +313,8 @@ makeKeys t p cr sr pms cs = do
 			M.kCachedReadMacKey = cwmk, M.kCachedWriteMacKey = swmk,
 			M.kCachedReadKey = cwk, M.kCachedWriteKey = swk }
 
-data RW = Read | Write deriving Show
-
-flushCipherSuite :: HandleLike h => RW -> TlsHandleBase h g -> M.TlsM h g ()
-flushCipherSuite rw = (. clientId) $ case rw of
-	Read -> M.flushCipherSuiteRead
-	Write -> M.flushCipherSuiteWrite
+flushCipherSuite :: HandleLike h => M.RW -> TlsHandleBase h g -> M.TlsM h g ()
+flushCipherSuite rw = M.flushCipherSuite rw . clientId
 
 debugCipherSuite :: HandleLike h => TlsHandleBase h g -> String -> M.TlsM h g ()
 debugCipherSuite t a = do
@@ -413,10 +407,10 @@ setClFinished = M.setClFinished . clientId
 setSvFinished = M.setSvFinished . clientId
 
 getSettingsS :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.SettingsS
-getSettingsS = M.getInitSet . clientId
+getSettingsS = M.getSettingsS . clientId
 
 setSettingsS :: HandleLike h => TlsHandleBase h g -> M.SettingsS -> M.TlsM h g ()
-setSettingsS = M.setInitSet . clientId
+setSettingsS = M.setSettingsS . clientId
 
 getBuf :: HandleLike h => TlsHandleBase h g -> M.TlsM h g BS.ByteString
 getBuf = M.getAdBuf . clientId
@@ -449,7 +443,7 @@ hsPut = flip tlsPut M.CTHandshake
 ccsPut :: (HandleLike h, CPRG g) => TlsHandleBase h g -> Word8 -> M.TlsM h g ()
 ccsPut t w = do
 	ret <- tlsPut t M.CTCCSpec $ BS.pack [w]
-	resetSequenceNumber t Write
+	resetSequenceNumber t M.Write
 	return ret
 
 getSettingsC :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.SettingsC

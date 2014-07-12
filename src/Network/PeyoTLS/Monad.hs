@@ -8,9 +8,9 @@ module Network.PeyoTLS.Monad (
 		getAdBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
 		getCipherSuite, setCipherSuite,
-		flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
-		getSettings, setSettings, SettingsC,
-		getInitSet, setInitSet, S.SettingsS, S.Settings,
+		setKeys, getKeys,
+--		getSettings, setSettings,
+		S.SettingsS, getSettingsS, setSettingsS,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
 	S.CipherSuite(..), S.KeyEx(..), S.BulkEnc(..),
@@ -20,7 +20,9 @@ module Network.PeyoTLS.Monad (
 	getSvFinished, setSvFinished,
 	S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
 
-	getSettingsC, setSettingsC,
+	SettingsC, getSettingsC, setSettingsC,
+	RW(..),
+	flushCipherSuite,
 	) where
 
 import Control.Arrow ((***))
@@ -44,11 +46,13 @@ import qualified Network.PeyoTLS.State as S (
 	setAdBuf, getAdBuf,
 	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
 	getCipherSuite, setCipherSuite,
-	flushCipherSuiteRead, flushCipherSuiteWrite, setKeys, getKeys,
+	setKeys, getKeys,
 	getSettings, setSettings,
 	getInitSet, setInitSet,
 	getClientFinished, setClientFinished,
 	getServerFinished, setServerFinished,
+
+	flushCipherSuiteRead, flushCipherSuiteWrite,
 
 	SettingsS, Settings,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
@@ -95,14 +99,14 @@ setKeys = (modify .) . S.setKeys
 getKeys :: HandleLike h => S.PartnerId -> TlsM h g S.Keys
 getKeys = gets . S.getKeys
 
-getInitSet :: HandleLike h => S.PartnerId -> TlsM h g S.SettingsS
-getInitSet = gets . S.getInitSet
+getSettingsS :: HandleLike h => S.PartnerId -> TlsM h g S.SettingsS
+getSettingsS = gets . S.getInitSet
 
 getSettings :: HandleLike h => S.PartnerId -> TlsM h g S.Settings
 getSettings = gets . S.getSettings
 
-setInitSet :: HandleLike h => S.PartnerId -> S.SettingsS -> TlsM h g ()
-setInitSet = (modify .) . S.setInitSet
+setSettingsS :: HandleLike h => S.PartnerId -> S.SettingsS -> TlsM h g ()
+setSettingsS = (modify .) . S.setInitSet
 
 setSettings :: HandleLike h => S.PartnerId -> S.Settings -> TlsM h g ()
 setSettings = (modify .) . S.setSettings
@@ -116,6 +120,11 @@ setClFinished, setSvFinished ::
 	HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
 setClFinished = (modify .) . S.setClientFinished
 setSvFinished = (modify .) . S.setServerFinished
+
+flushCipherSuite :: HandleLike h => RW -> S.PartnerId -> TlsM h g ()
+flushCipherSuite rw = case rw of
+	Read -> flushCipherSuiteRead
+	Write -> flushCipherSuiteWrite
 
 flushCipherSuiteRead, flushCipherSuiteWrite ::
 	HandleLike h => S.PartnerId -> TlsM h g ()
@@ -156,3 +165,5 @@ type SettingsC = (
 	[S.CipherSuite],
 	[(S.CertSecretKey, X509.CertificateChain)],
 	X509.CertificateStore )
+
+data RW = Read | Write deriving Show
