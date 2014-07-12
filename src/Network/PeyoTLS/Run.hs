@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
-module Network.PeyoTLS.Run (
+module Network.PeyoTLS.Run ( H.debug,
 	H.TlsM, H.run, H.TlsHandleBase(..),
 		adGet, adGetLine, adGetContent, H.adPut, H.adDebug, H.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM, withRandom,
@@ -12,7 +12,7 @@ module Network.PeyoTLS.Run (
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		H.RW(..), flushCipherSuite, makeKeys,
 		H.Side(..), handshakeHash, finishedHash,
-	ValidateHandle(..), handshakeValidate, validateAlert,
+	H.ValidateHandle(..), handshakeValidate, validateAlert,
 	H.AlertLevel(..), H.AlertDesc(..), debugCipherSuite, throw ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -24,7 +24,6 @@ import "monads-tf" Control.Monad.State (
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
-import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
@@ -36,7 +35,7 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import qualified Network.PeyoTLS.Handle as H (
+import qualified Network.PeyoTLS.Handle as H ( debug,
 	TlsM, run, withRandom,
 	TlsHandleBase(..), CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
@@ -49,6 +48,7 @@ import qualified Network.PeyoTLS.Handle as H (
 		makeKeys, setKeys,
 		Side(..), finishedHash,
 		RW(..), flushCipherSuite,
+	ValidateHandle(..), tValidate,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite )
 
@@ -161,10 +161,6 @@ handshakeHash = SHA256.finalize `liftM` gets snd
 finishedHash :: (HandleLike h, CPRG g) => H.Side -> HandshakeM h g BS.ByteString
 finishedHash s = get >>= lift . uncurry (H.finishedHash s) . second SHA256.finalize
 
-class HandleLike h => ValidateHandle h where
-	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
-		HandleMonad h [X509.FailedReason]
-
 validateAlert :: [X509.FailedReason] -> H.AlertDesc
 validateAlert vr
 	| X509.UnknownCA `elem` vr = H.ADUnknownCa
@@ -172,20 +168,11 @@ validateAlert vr
 	| X509.InFuture `elem` vr = H.ADCertificateExpired
 	| otherwise = H.ADCertificateUnknown
 
-instance ValidateHandle Handle where
-	validate _ cs cc =
-		X509.validate X509.HashSHA256 X509.defaultHooks ch cs ca ("", "") cc
-		where
-		ch = X509.defaultChecks { X509.checkFQHN = False }
-		ca = X509.ValidationCache
-			(\_ _ _ -> return X509.ValidationCacheUnknown)
-			(\_ _ _ -> return ())
-
-handshakeValidate :: ValidateHandle h => X509.CertificateStore ->
+handshakeValidate :: H.ValidateHandle h => X509.CertificateStore ->
 	X509.CertificateChain -> HandshakeM h g [X509.FailedReason]
 handshakeValidate cs cc@(X509.CertificateChain (c : _)) = gets fst >>= \t -> do
 	modify . first $ const t { H.names = certNames $ X509.getCertificate c }
-	lift . lift . lift $ validate (H.tlsHandle t) cs cc
+	lift $ H.tValidate t cs cc
 handshakeValidate _ _ = error $ modNm ++ ".handshakeValidate: empty cert chain"
 
 certNames :: X509.Certificate -> [String]

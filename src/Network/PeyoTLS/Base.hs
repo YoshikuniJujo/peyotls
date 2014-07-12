@@ -68,7 +68,7 @@ import Network.PeyoTLS.Types (
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), ChangeCipherSpec(..), Finished(..) )
-import qualified Network.PeyoTLS.Run as RUN (finishedHash)
+import qualified Network.PeyoTLS.Run as RUN (finishedHash, debug)
 import Network.PeyoTLS.Run (
 	TlsM, run, TlsHandleBase(..),
 		chGet, hsPut, updateHash, ccsPut,
@@ -93,8 +93,8 @@ type PeyotlsM = TlsM Handle SystemRNG
 
 debug :: (HandleLike h, Show a) => DebugLevel h -> a -> HandshakeM h g ()
 debug p x = do
-	h <- gets $ tlsHandle . fst
-	lift . lift . lift . hlDebug h p . BSC.pack . (++ "\n") $ show x
+	t <- gets fst
+	lift . RUN.debug t p . BSC.pack . (++ "\n") $ show x
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HandshakeM h g hi
 readHandshake = do

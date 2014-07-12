@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
-module Network.PeyoTLS.Handle (
+module Network.PeyoTLS.Handle ( debug,
 	M.TlsM, run, M.withRandom,
-	TlsHandleBase(..), M.CipherSuite,
+	TlsHandleBase(names), M.CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 		flushAd, getBuf, setBuf,
@@ -13,19 +13,24 @@ module Network.PeyoTLS.Handle (
 		makeKeys, setKeys,
 		C.Side(..), finishedHash,
 		M.RW(..), flushCipherSuite,
+	ValidateHandle(..), tValidate,
 	M.CertSecretKey(..), M.isRsaKey, M.isEcdsaKey,
 	M.Alert(..), M.AlertLevel(..), M.AlertDesc(..), debugCipherSuite ) where
 
 import Control.Arrow (second)
 import Control.Monad (when, unless, liftM)
-import "monads-tf" Control.Monad.State (lift, get, put)
+import "monads-tf" Control.Monad.State (lift, get, gets, put)
 import "monads-tf" Control.Monad.Error (catchError, throwError)
 import Data.Word (Word8, Word16, Word64)
 import Data.HandleLike (HandleLike(..))
+import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.X509 as X509
+import qualified Data.X509.Validation as X509
+import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.Monad as M (
@@ -45,8 +50,28 @@ import qualified Network.PeyoTLS.Crypto as C (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256,
 	Side(..), finishedHash )
 
-data TlsHandleBase h g =
-	TlsHandleBase { partnerId :: M.PartnerId, tlsHandle :: h, names :: [String] }
+class HandleLike h => ValidateHandle h where
+	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
+		HandleMonad h [X509.FailedReason]
+
+tValidate :: ValidateHandle h =>
+	TlsHandleBase h g -> X509.CertificateStore -> X509.CertificateChain ->
+	M.TlsM h g [X509.FailedReason]
+tValidate t cs cc = lift . lift $ validate (tlsHandle t) cs cc
+
+instance ValidateHandle Handle where
+	validate _ cs cc =
+		X509.validate X509.HashSHA256 X509.defaultHooks ch cs ca ("", "") cc
+		where
+		ch = X509.defaultChecks { X509.checkFQHN = False }
+		ca = X509.ValidationCache
+			(\_ _ _ -> return X509.ValidationCacheUnknown)
+			(\_ _ _ -> return ())
+
+data TlsHandleBase h g = TlsHandleBase {
+	partnerId :: M.PartnerId,
+	tlsHandle :: h,
+	names :: [String] }
 	deriving Show
 
 run :: HandleLike h => M.TlsM h g a -> g -> HandleMonad h a
@@ -456,3 +481,8 @@ setKeys = M.setKeys . partnerId
 
 throw :: HandleLike h => M.AlertLevel -> M.AlertDesc -> String -> M.TlsM h g a
 throw = ((throwError .) .) . M.Alert
+
+debug :: (HandleLike h, Show a) =>
+	TlsHandleBase h g -> DebugLevel h -> a -> M.TlsM h g ()
+debug t l x = lift . lift . hlDebug (tlsHandle t) l .
+	BSC.pack . (++ "\n") $ show x
