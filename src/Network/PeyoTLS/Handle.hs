@@ -11,7 +11,7 @@ module Network.PeyoTLS.Handle (
 		M.SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		makeKeys, setKeys,
-		Side(..), finishedHash,
+		C.Side(..), finishedHash,
 		M.RW(..), flushCipherSuite,
 	M.CertSecretKey(..), M.isRsaKey, M.isEcdsaKey,
 	M.Alert(..), M.AlertLevel(..), M.AlertDesc(..), debugCipherSuite ) where
@@ -41,14 +41,13 @@ import qualified Network.PeyoTLS.Monad as M (
 		SettingsS, getSettingsS, setSettingsS,
 		RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
 	Keys(..), getKeys, setKeys )
-import qualified Network.PeyoTLS.Crypto as CT (
-	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
+import qualified Network.PeyoTLS.Crypto as C (
+	makeKeys, encrypt, decrypt, hashSha1, hashSha256,
+	Side(..), finishedHash )
 
 data TlsHandleBase h g =
 	TlsHandleBase { clientId :: M.PartnerId, tlsHandle :: h, names :: [String] }
 	deriving Show
-
-data Side = Server | Client deriving (Show, Eq)
 
 run :: HandleLike h => M.TlsM h g a -> g -> HandleMonad h a
 run m g = do
@@ -219,11 +218,11 @@ decrypt_ t ks ct e = do
 		mk = M.kReadMacKey ks
 	sn <- updateSequenceNumber t M.Read
 	hs <- case be of
-		M.AES_128_CBC_SHA -> return CT.hashSha1
-		M.AES_128_CBC_SHA256 -> return CT.hashSha256
+		M.AES_128_CBC_SHA -> return C.hashSha1
+		M.AES_128_CBC_SHA256 -> return C.hashSha256
 		_ -> throwError "TlsHandleBase.decrypt: not implement bulk encryption"
 	either (throw M.ALFatal M.ADUnclasified) return $
-		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
+		C.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
 tlsPut :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> M.ContentType -> BS.ByteString -> M.TlsM h g ()
@@ -259,10 +258,10 @@ encrypt_ t ks ct p = do
 		mk = M.kWriteMacKey ks
 	sn <- updateSequenceNumber t M.Write
 	hs <- case be of
-		M.AES_128_CBC_SHA -> return CT.hashSha1
-		M.AES_128_CBC_SHA256 -> return CT.hashSha256
+		M.AES_128_CBC_SHA -> return C.hashSha1
+		M.AES_128_CBC_SHA256 -> return C.hashSha256
 		_ -> throwError "TlsHandleBase.encrypt: not implemented bulk encryption"
-	M.withRandom $ CT.encrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") p
+	M.withRandom $ C.encrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") p
 
 updateSequenceNumber :: HandleLike h => TlsHandleBase h g -> M.RW -> M.TlsM h g Word64
 updateSequenceNumber t rw = do
@@ -283,7 +282,7 @@ resetSequenceNumber t rw = case rw of
 	M.Write -> M.rstWSn $ clientId t
 
 makeKeys :: HandleLike h =>
-	TlsHandleBase h g -> Side -> BS.ByteString -> BS.ByteString ->
+	TlsHandleBase h g -> C.Side -> BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> M.CipherSuite -> M.TlsM h g M.Keys
 makeKeys t p cr sr pms cs = do
 	let M.CipherSuite _ be = cs
@@ -292,15 +291,15 @@ makeKeys t p cr sr pms cs = do
 		M.AES_128_CBC_SHA256 -> return 32
 		_ -> throwError
 			"TlsServer.makeKeys: not implemented bulk encryption"
-	let	(ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
+	let	(ms, cwmk, swmk, cwk, swk) = C.makeKeys kl cr sr pms
 	k <- M.getKeys $ clientId t
 	return $ case p of
-		Client -> k {
+		C.Client -> k {
 			M.kCachedCS = cs,
 			M.kMasterSecret = ms,
 			M.kCachedReadMacKey = swmk, M.kCachedWriteMacKey = cwmk,
 			M.kCachedReadKey = swk, M.kCachedWriteKey = cwk }
-		Server -> k {
+		C.Server -> k {
 			M.kCachedCS = cs,
 			M.kMasterSecret = ms,
 			M.kCachedReadMacKey = cwmk, M.kCachedWriteMacKey = swmk,
@@ -318,10 +317,10 @@ debugCipherSuite t a = do
 	where lenSpace n str = str ++ replicate (n - length str) ' '
 
 finishedHash :: HandleLike h =>
-	Side -> TlsHandleBase h g -> BS.ByteString -> M.TlsM h g BS.ByteString
+	C.Side -> TlsHandleBase h g -> BS.ByteString -> M.TlsM h g BS.ByteString
 finishedHash s t hs = do
 	ms <- M.kMasterSecret `liftM` M.getKeys (clientId t)
-	return $ CT.finishedHash (s == Client) ms hs
+	return $ C.finishedHash s ms hs
 
 adPut, hlPut_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> M.TlsM h g ()
 adPut = hlPut_

@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, TupleSections #-}
 
 module Network.PeyoTLS.Crypto (
-	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash) where
+	makeKeys, encrypt, decrypt, hashSha1, hashSha256,
+	Side(..), finishedHash) where
 
 import Prelude hiding (splitAt, take)
 
@@ -84,10 +85,12 @@ decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else Left $ if BS.null
 calcMac :: Hash -> BS.ByteString -> Word64 -> BS.ByteString -> BS.ByteString
 calcMac hs mk sn m = hmac hs 64 mk $ B.encode sn `BS.append` m
 
-finishedHash :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString
-finishedHash c ms hash = take 12 . prf ms . (`BS.append` hash) $ if c
-	then "client finished"
-	else "server finished"
+data Side = Server | Client deriving (Show, Eq)
+
+finishedHash :: Side -> BS.ByteString -> BS.ByteString -> BS.ByteString
+finishedHash s ms hash = take 12 . prf ms . (`BS.append` hash) $ case s of
+	Client -> "client finished"
+	Server -> "server finished"
 
 myLast :: String -> BS.ByteString -> Word8
 myLast msg "" = error msg
