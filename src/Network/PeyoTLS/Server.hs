@@ -12,7 +12,7 @@ Stability	: Experimental
 
 module Network.PeyoTLS.Server (
 	-- * Basic
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, names, getNames,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, getNames,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -42,7 +42,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import qualified Network.PeyoTLS.Base as BASE (names, getNames)
+import qualified Network.PeyoTLS.Base as BASE (getNames)
 import Network.PeyoTLS.Base ( debug,
 	PeyotlsM, TlsM, run,
 		SettingsS, getSettingsS, setSettingsS,
@@ -90,11 +90,6 @@ version = (3, 3)
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Server"
-
-{-# DEPRECATED names "Use getNames instead" #-}
-
-names :: TlsHandle h g -> [String]
-names = BASE.names . tlsHandleS
 
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleS

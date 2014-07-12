@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Handle ( debug,
 	M.TlsM, run, M.withRandom,
-	TlsHandleBase(names), M.CipherSuite,
+	TlsHandleBase, M.CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 		flushAd, getBuf, setBuf,
@@ -70,11 +70,8 @@ instance ValidateHandle Handle where
 			(\_ _ _ -> return X509.ValidationCacheUnknown)
 			(\_ _ _ -> return ())
 
-data TlsHandleBase h g = TlsHandleBase {
-	partnerId :: M.PartnerId,
-	tlsHandle :: h,
-	names :: [String] }
-	deriving Show
+data TlsHandleBase h g =
+	TlsHandleBase { partnerId :: M.PartnerId, tlsHandle :: h } deriving Show
 
 run :: HandleLike h => M.TlsM h g a -> g -> HandleMonad h a
 run m g = do
@@ -88,8 +85,7 @@ newHandle h = do
 	s <- get
 	let (i, s') = M.newPartnerId s
 	put s'
-	return TlsHandleBase {
-		partnerId = i, tlsHandle = h, names = [] }
+	return TlsHandleBase { partnerId = i, tlsHandle = h }
 
 getContentType :: (HandleLike h, CPRG g) => TlsHandleBase h g -> M.TlsM h g M.ContentType
 getContentType t = do

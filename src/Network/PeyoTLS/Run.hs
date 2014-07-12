@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Run ( H.debug,
-	H.TlsM, H.run, H.TlsHandleBase(..),
+	H.TlsM, H.run, H.TlsHandleBase,
 		adGet, adGetLine, adGetContent, H.adPut, H.adDebug, H.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM, withRandom,
 		chGet, ccsPut, hsPut, updateHash, flushAd,
@@ -17,7 +17,7 @@ module Network.PeyoTLS.Run ( H.debug,
 	H.AlertLevel(..), H.AlertDesc(..), debugCipherSuite, throw ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Arrow (first, second, (***))
+import Control.Arrow (second, (***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (
@@ -38,7 +38,7 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Handle as H ( debug,
 	TlsM, run, withRandom,
-	TlsHandleBase(..), CipherSuite,
+	TlsHandleBase, CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 		flushAd, getBuf, setBuf,
@@ -174,7 +174,6 @@ handshakeValidate :: H.ValidateHandle h => X509.CertificateStore ->
 	X509.CertificateChain -> HandshakeM h g [X509.FailedReason]
 handshakeValidate cs cc@(X509.CertificateChain (c : _)) = gets fst >>= \t -> do
 	lift . H.setNames t . certNames $ X509.getCertificate c
-	modify . first $ const t { H.names = certNames $ X509.getCertificate c }
 	lift $ H.tValidate t cs cc
 handshakeValidate _ _ = error $ modNm ++ ".handshakeValidate: empty cert chain"
 
