@@ -46,7 +46,7 @@ import qualified Network.PeyoTLS.Crypto as C (
 	Side(..), finishedHash )
 
 data TlsHandleBase h g =
-	TlsHandleBase { clientId :: M.PartnerId, tlsHandle :: h, names :: [String] }
+	TlsHandleBase { partnerId :: M.PartnerId, tlsHandle :: h, names :: [String] }
 	deriving Show
 
 run :: HandleLike h => M.TlsM h g a -> g -> HandleMonad h a
@@ -62,14 +62,14 @@ newHandle h = do
 	let (i, s') = M.newPartnerId s
 	put s'
 	return TlsHandleBase {
-		clientId = i, tlsHandle = h, names = [] }
+		partnerId = i, tlsHandle = h, names = [] }
 
 getContentType :: (HandleLike h, CPRG g) => TlsHandleBase h g -> M.TlsM h g M.ContentType
 getContentType t = do
-	(ct, bs) <- M.getRBuf (clientId t)
+	(ct, bs) <- M.getRBuf (partnerId t)
 	(\gt -> case (ct, bs) of (M.CTNull, _) -> gt; (_, "") -> gt; _ -> return ct) $
 		do	(ct', bf) <- getWholeWithCt t
-			M.setRBuf (clientId t) (ct', bf)
+			M.setRBuf (partnerId t) (ct', bf)
 			return ct'
 
 flushAd :: (HandleLike h, CPRG g) =>
@@ -124,7 +124,7 @@ chGet t n = do
 buffered :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> Int -> M.TlsM h g (M.ContentType, BS.ByteString)
 buffered t n = do
-	(ct, b) <- M.getRBuf $ clientId t; let rl = n - BS.length b
+	(ct, b) <- M.getRBuf $ partnerId t; let rl = n - BS.length b
 	if rl <= 0
 	then splitRetBuf t n ct b
 	else do	(ct', b') <- getWholeWithCt t
@@ -134,7 +134,7 @@ buffered t n = do
 				"\tActual  : " ++ show ct' ++ "\n" ++
 				"\tData    : " ++ show b'
 		when (BS.null b') $ throwError "buffered: No data available"
-		M.setRBuf (clientId t) (ct', b')
+		M.setRBuf (partnerId t) (ct', b')
 		second (b `BS.append`) `liftM` buffered t rl
 
 adGet :: (HandleLike h, CPRG g) => (TlsHandleBase h g -> M.TlsM h g ()) ->
@@ -148,7 +148,7 @@ buffered_ rn t n = do
 	case ct0 of
 		M.CTHandshake -> rn t >> buffered_ rn t n
 		M.CTAlert -> do
-			(M.CTAlert, b) <- M.getRBuf $ clientId t
+			(M.CTAlert, b) <- M.getRBuf $ partnerId t
 			let rl = 2 - BS.length b
 			al <- if rl <= 0
 				then snd `liftM` splitRetBuf t 2 M.CTAlert b
@@ -157,7 +157,7 @@ buffered_ rn t n = do
 						M.ALFatal M.ADUnclasified
 						"Content Type confliction\n"
 					when (BS.null b') $ throwError "buffered: No data"
-					M.setRBuf (clientId t) (ct', b')
+					M.setRBuf (partnerId t) (ct', b')
 					(b `BS.append`) `liftM` buffered_ rn t rl
 			case al of
 				"\SOH\NULL" -> do
@@ -165,7 +165,7 @@ buffered_ rn t n = do
 					throw M.ALFatal M.ADUnclasified "EOF"
 				_ -> throw M.ALFatal M.ADUnclasified $
 					"Alert: " ++ show al
-		_ -> do	(ct, b) <- M.getRBuf $ clientId t; let rl = n - BS.length b
+		_ -> do	(ct, b) <- M.getRBuf $ partnerId t; let rl = n - BS.length b
 			if rl <= 0
 			then snd `liftM` splitRetBuf t n ct b
 			else do
@@ -173,7 +173,7 @@ buffered_ rn t n = do
 				unless (ct' == ct) $ throw M.ALFatal M.ADUnclasified
 					"Content Type confliction\n"
 				when (BS.null b') $ throwError "buffered: No data"
-				M.setRBuf (clientId t) (ct', b')
+				M.setRBuf (partnerId t) (ct', b')
 				(b `BS.append`) `liftM` buffered_ rn t rl
 
 splitRetBuf :: HandleLike h =>
@@ -181,7 +181,7 @@ splitRetBuf :: HandleLike h =>
 	M.TlsM h g (M.ContentType, BS.ByteString)
 splitRetBuf t n ct b = do
 	let (ret, b') = BS.splitAt n b
-	M.setRBuf (clientId t) $ if BS.null b' then (M.CTNull, "") else (ct, b')
+	M.setRBuf (partnerId t) $ if BS.null b' then (M.CTNull, "") else (ct, b')
 	return (ct, ret)
 
 getWholeWithCt :: (HandleLike h, CPRG g) =>
@@ -206,7 +206,7 @@ getWholeWithCt t = do
 decrypt :: HandleLike h =>
 	TlsHandleBase h g -> M.ContentType -> BS.ByteString -> M.TlsM h g BS.ByteString
 decrypt t ct e = do
-	ks <- M.getKeys $ clientId t
+	ks <- M.getKeys $ partnerId t
 	decrypt_ t ks ct e
 
 decrypt_ :: HandleLike h => TlsHandleBase h g ->
@@ -227,17 +227,17 @@ decrypt_ t ks ct e = do
 tlsPut :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> M.ContentType -> BS.ByteString -> M.TlsM h g ()
 tlsPut t ct p = do
-	(bct, bp) <- M.getWBuf $ clientId t
+	(bct, bp) <- M.getWBuf $ partnerId t
 	case ct of
-		M.CTCCSpec -> flush t >> M.setWBuf (clientId t) (ct, p) >> flush t
+		M.CTCCSpec -> flush t >> M.setWBuf (partnerId t) (ct, p) >> flush t
 		_	| bct /= M.CTNull && ct /= bct ->
-				flush t >> M.setWBuf (clientId t) (ct, p)
-			| otherwise -> M.setWBuf (clientId t) (ct, bp `BS.append` p)
+				flush t >> M.setWBuf (partnerId t) (ct, p)
+			| otherwise -> M.setWBuf (partnerId t) (ct, bp `BS.append` p)
 
 flush :: (HandleLike h, CPRG g) => TlsHandleBase h g -> M.TlsM h g ()
 flush t = do
-	(bct, bp) <- M.getWBuf $ clientId t
-	M.setWBuf (clientId t) (M.CTNull, "")
+	(bct, bp) <- M.getWBuf $ partnerId t
+	M.setWBuf (partnerId t) (M.CTNull, "")
 	unless (bct == M.CTNull) $ do
 		e <- encrypt t bct bp
 		M.tPut (tlsHandle t) $ BS.concat [
@@ -246,7 +246,7 @@ flush t = do
 encrypt :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> M.ContentType -> BS.ByteString -> M.TlsM h g BS.ByteString
 encrypt t ct p = do
-	ks <- M.getKeys $ clientId t
+	ks <- M.getKeys $ partnerId t
 	encrypt_ t ks ct p
 
 encrypt_ :: (HandleLike h, CPRG g) => TlsHandleBase h g ->
@@ -265,21 +265,21 @@ encrypt_ t ks ct p = do
 
 updateSequenceNumber :: HandleLike h => TlsHandleBase h g -> M.RW -> M.TlsM h g Word64
 updateSequenceNumber t rw = do
-	ks <- M.getKeys $ clientId t
+	ks <- M.getKeys $ partnerId t
 	(sn, cs) <- case rw of
-		M.Read -> (, M.kReadCS ks) `liftM` M.getRSn (clientId t)
-		M.Write -> (, M.kWriteCS ks) `liftM` M.getWSn (clientId t)
+		M.Read -> (, M.kReadCS ks) `liftM` M.getRSn (partnerId t)
+		M.Write -> (, M.kWriteCS ks) `liftM` M.getWSn (partnerId t)
 	case cs of
 		M.CipherSuite _ M.BE_NULL -> return ()
 		_ -> case rw of
-			M.Read -> M.sccRSn $ clientId t
-			M.Write -> M.sccWSn $ clientId t
+			M.Read -> M.sccRSn $ partnerId t
+			M.Write -> M.sccWSn $ partnerId t
 	return sn
 
 resetSequenceNumber :: HandleLike h => TlsHandleBase h g -> M.RW -> M.TlsM h g ()
 resetSequenceNumber t rw = case rw of
-	M.Read -> M.rstRSn $ clientId t
-	M.Write -> M.rstWSn $ clientId t
+	M.Read -> M.rstRSn $ partnerId t
+	M.Write -> M.rstWSn $ partnerId t
 
 makeKeys :: HandleLike h =>
 	TlsHandleBase h g -> C.Side -> BS.ByteString -> BS.ByteString ->
@@ -292,7 +292,7 @@ makeKeys t p cr sr pms cs = do
 		_ -> throwError
 			"TlsServer.makeKeys: not implemented bulk encryption"
 	let	(ms, cwmk, swmk, cwk, swk) = C.makeKeys kl cr sr pms
-	k <- M.getKeys $ clientId t
+	k <- M.getKeys $ partnerId t
 	return $ case p of
 		C.Client -> k {
 			M.kCachedCS = cs,
@@ -306,11 +306,11 @@ makeKeys t p cr sr pms cs = do
 			M.kCachedReadKey = cwk, M.kCachedWriteKey = swk }
 
 flushCipherSuite :: HandleLike h => M.RW -> TlsHandleBase h g -> M.TlsM h g ()
-flushCipherSuite rw = M.flushCipherSuite rw . clientId
+flushCipherSuite rw = M.flushCipherSuite rw . partnerId
 
 debugCipherSuite :: HandleLike h => TlsHandleBase h g -> String -> M.TlsM h g ()
 debugCipherSuite t a = do
-	k <- M.getKeys $ clientId t
+	k <- M.getKeys $ partnerId t
 	M.tDebug (tlsHandle t) "high" . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
 		. show $ M.kCachedCS k
@@ -319,7 +319,7 @@ debugCipherSuite t a = do
 finishedHash :: HandleLike h =>
 	C.Side -> TlsHandleBase h g -> BS.ByteString -> M.TlsM h g BS.ByteString
 finishedHash s t hs = do
-	ms <- M.kMasterSecret `liftM` M.getKeys (clientId t)
+	ms <- M.kMasterSecret `liftM` M.getKeys (partnerId t)
 	return $ C.finishedHash s ms hs
 
 adPut, hlPut_ :: (HandleLike h, CPRG g) => TlsHandleBase h g -> BS.ByteString -> M.TlsM h g ()
@@ -343,7 +343,7 @@ tGetLine_ rn t = do
 	case ct of
 		M.CTHandshake -> rn t >> tGetLine_ rn t
 		M.CTAlert -> do
-			(M.CTAlert, b) <- M.getRBuf $ clientId t
+			(M.CTAlert, b) <- M.getRBuf $ partnerId t
 			let rl = 2 - BS.length b
 			al <- if rl <= 0
 				then snd `liftM` splitRetBuf t 2 M.CTAlert b
@@ -351,7 +351,7 @@ tGetLine_ rn t = do
 					unless (ct' == M.CTAlert) . throw M.ALFatal M.ADUnclasified $
 						"Content Type confliction\n"
 					when (BS.null b') $ throwError "buffered: No data"
-					M.setRBuf (clientId t) (ct', b')
+					M.setRBuf (partnerId t) (ct', b')
 					(b `BS.append`) `liftM` buffered_ rn t rl
 			case al of
 				"\SOH\NULL" -> do
@@ -359,13 +359,13 @@ tGetLine_ rn t = do
 					throw M.ALFatal M.ADUnclasified "EOF"
 				_ -> throw M.ALFatal M.ADUnclasified $
 					"Alert: " ++ show al
-		_ -> do	(bct, bp) <- M.getRBuf $ clientId t
+		_ -> do	(bct, bp) <- M.getRBuf $ partnerId t
 			case splitLine bp of
 				Just (l, ls) -> do
-					M.setRBuf (clientId t) (if BS.null ls then M.CTNull else bct, ls)
+					M.setRBuf (partnerId t) (if BS.null ls then M.CTNull else bct, ls)
 					return l
 				_ -> do	cp <- getWholeWithCt t
-					M.setRBuf (clientId t) cp
+					M.setRBuf (partnerId t) cp
 					(bp `BS.append`) `liftM` tGetLine_ rn t
 
 splitLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
@@ -384,31 +384,31 @@ splitLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 tGetContent :: (HandleLike h, CPRG g) =>
 	TlsHandleBase h g -> M.TlsM h g (M.ContentType, BS.ByteString)
 tGetContent t = do
-	bcp@(_, bp) <- M.getRBuf $ clientId t
+	bcp@(_, bp) <- M.getRBuf $ partnerId t
 	if BS.null bp then getWholeWithCt t else
-		M.setRBuf (clientId t) (M.CTNull, BS.empty) >> return bcp
+		M.setRBuf (partnerId t) (M.CTNull, BS.empty) >> return bcp
 
 getClFinished, getSvFinished ::
 	HandleLike h => TlsHandleBase h g -> M.TlsM h g BS.ByteString
-getClFinished = M.getClFinished . clientId
-getSvFinished = M.getSvFinished . clientId
+getClFinished = M.getClFinished . partnerId
+getSvFinished = M.getSvFinished . partnerId
 
 setClFinished, setSvFinished ::
 	HandleLike h => TlsHandleBase h g -> BS.ByteString -> M.TlsM h g ()
-setClFinished = M.setClFinished . clientId
-setSvFinished = M.setSvFinished . clientId
+setClFinished = M.setClFinished . partnerId
+setSvFinished = M.setSvFinished . partnerId
 
 getSettingsS :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.SettingsS
-getSettingsS = M.getSettingsS . clientId
+getSettingsS = M.getSettingsS . partnerId
 
 setSettingsS :: HandleLike h => TlsHandleBase h g -> M.SettingsS -> M.TlsM h g ()
-setSettingsS = M.setSettingsS . clientId
+setSettingsS = M.setSettingsS . partnerId
 
 getBuf :: HandleLike h => TlsHandleBase h g -> M.TlsM h g BS.ByteString
-getBuf = M.getAdBuf . clientId
+getBuf = M.getAdBuf . partnerId
 
 setBuf :: HandleLike h => TlsHandleBase h g -> BS.ByteString -> M.TlsM h g ()
-setBuf = M.setAdBuf . clientId
+setBuf = M.setAdBuf . partnerId
 
 adGetContent, tGetContent_ :: (HandleLike h, CPRG g) =>
 	(TlsHandleBase h g -> M.TlsM h g ()) ->
@@ -439,20 +439,20 @@ ccsPut t w = do
 	return ret
 
 getSettingsC :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.SettingsC
-getSettingsC = M.getSettingsC . clientId
+getSettingsC = M.getSettingsC . partnerId
 
 setSettingsC :: HandleLike h => TlsHandleBase h g ->
 	M.SettingsC -> M.TlsM h g ()
-setSettingsC = M.setSettingsC . clientId
+setSettingsC = M.setSettingsC . partnerId
 
 getCipherSuite :: HandleLike h => TlsHandleBase h g -> M.TlsM h g M.CipherSuite
-getCipherSuite = M.getCipherSuite . clientId
+getCipherSuite = M.getCipherSuite . partnerId
 
 setCipherSuite :: HandleLike h => TlsHandleBase h g -> M.CipherSuite -> M.TlsM h g ()
-setCipherSuite = M.setCipherSuite . clientId
+setCipherSuite = M.setCipherSuite . partnerId
 
 setKeys :: HandleLike h => TlsHandleBase h g -> M.Keys -> M.TlsM h g ()
-setKeys = M.setKeys . clientId
+setKeys = M.setKeys . partnerId
 
 throw :: HandleLike h => M.AlertLevel -> M.AlertDesc -> String -> M.TlsM h g a
 throw = ((throwError .) .) . M.Alert
