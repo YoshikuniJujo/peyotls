@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.State (
-	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
-	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
+	HandshakeState, initState, PartnerId, newPartner, Keys(..), nullKeys,
+	ContType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	randomGen, setRandomGen,
 	getBuf, setBuf, getWBuf, setWBuf,
@@ -51,8 +51,8 @@ initState g = HandshakeState{ randomGen = g, nextPartnerId = 0, states = [] }
 
 data PartnerId = PartnerId Int deriving (Show, Eq)
 
-newPartnerId :: HandshakeState h g -> (PartnerId, HandshakeState h g)
-newPartnerId s = (PartnerId i ,) s{
+newPartner :: HandshakeState h g -> (PartnerId, HandshakeState h g)
+newPartner s = (PartnerId i ,) s{
 	nextPartnerId = succ i,
 	states = (PartnerId i, so) : sos }
 	where
@@ -91,8 +91,8 @@ revertSettings (cs, rcrt, ecrt, mcs) = (cs,
 
 data StateOne g = StateOne {
 	sKeys :: Keys,
-	rBuffer :: (ContentType, BS.ByteString),
-	wBuffer :: (ContentType, BS.ByteString),
+	rBuffer :: (ContType, BS.ByteString),
+	wBuffer :: (ContType, BS.ByteString),
 	radBuffer :: BS.ByteString,
 	readSN :: Word64,
 	writeSN :: Word64,
@@ -133,11 +133,11 @@ nullKeys = Keys {
 	kCachedReadKey = "", kCachedWriteKey = "",
 	kReadMacKey = "", kWriteMacKey = "", kReadKey = "", kWriteKey = "" }
 
-data ContentType
+data ContType
 	= CTCCSpec | CTAlert | CTHandshake | CTAppData | CTNull | CTRaw Word8
 	deriving (Show, Eq)
 
-instance B.Bytable ContentType where
+instance B.Bytable ContType where
 	encode CTNull = BS.pack [0]
 	encode CTCCSpec = BS.pack [20]
 	encode CTAlert = BS.pack [21]
@@ -176,10 +176,10 @@ instance IsString Alert where
 setRandomGen :: g -> HandshakeState h g -> HandshakeState h g
 setRandomGen rg st = st { randomGen = rg }
 
-getBuf :: PartnerId -> HandshakeState h g -> (ContentType, BS.ByteString)
+getBuf :: PartnerId -> HandshakeState h g -> (ContType, BS.ByteString)
 getBuf i = rBuffer . fromJust' "getBuf" . lookup i . states
 
-setBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
+setBuf :: PartnerId -> (ContType, BS.ByteString) -> Modify (HandshakeState h g)
 setBuf i = modifyState i . \bs st -> st { rBuffer = bs }
 
 getAdBuf :: PartnerId -> HandshakeState h g -> BS.ByteString
@@ -250,10 +250,10 @@ flushCipherSuiteWrite i = modifyState i $ \st ->
 		kWriteKey = kCachedWriteKey (sKeys st)
 		} }
 
-getWBuf :: PartnerId -> HandshakeState h g -> (ContentType, BS.ByteString)
+getWBuf :: PartnerId -> HandshakeState h g -> (ContType, BS.ByteString)
 getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . states
 
-setWBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
+setWBuf :: PartnerId -> (ContType, BS.ByteString) -> Modify (HandshakeState h g)
 setWBuf i = modifyState i . \bs st -> st{ wBuffer = bs }
 
 getReadSN, getWriteSN :: PartnerId -> HandshakeState h g -> Word64

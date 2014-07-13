@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Network.PeyoTLS.Monad (
-	TlsM, evalTlsM, S.initState,
+	TlsM, run, evalTlsM, S.initState,
 		tGet, tPut, tClose, tDebug, thlError,
 		withRandom,
 		getRBuf, setRBuf, getWBuf, setWBuf,
@@ -12,9 +12,9 @@ module Network.PeyoTLS.Monad (
 		setKeys, getKeys,
 		S.SettingsS, getSettingsS, setSettingsS,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
-	S.ContentType(..),
+	S.ContType(..),
 	S.CipherSuite(..), S.KeyEx(..), S.BulkEnc(..),
-	S.PartnerId, S.newPartnerId, S.Keys(..), S.nullKeys,
+	S.PartnerId, S.newPartner, S.Keys(..), S.nullKeys,
 
 	getClFinished, setClFinished,
 	getSvFinished, setSvFinished,
@@ -29,7 +29,7 @@ import Control.Arrow ((***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
-import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError)
+import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError, catchError)
 import Data.Word (Word64)
 import Data.HandleLike (HandleLike(..))
 
@@ -38,8 +38,8 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
 import qualified Network.PeyoTLS.State as S (
-	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
-	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
+	HandshakeState, initState, PartnerId, newPartner, Keys(..), nullKeys,
+	ContType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
@@ -59,6 +59,13 @@ import qualified Network.PeyoTLS.State as S (
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
 
+run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
+run m g = do
+	ret <- (`evalTlsM` S.initState g) $ m `catchError` \a -> throwError a
+	case ret of
+		Right r -> return r
+		Left a -> error $ show a
+
 type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))
 
 evalTlsM :: HandleLike h => 
@@ -66,7 +73,7 @@ evalTlsM :: HandleLike h =>
 evalTlsM = evalStateT . runErrorT
 
 getRBuf, getWBuf ::  HandleLike h =>
-	S.PartnerId -> TlsM h g (S.ContentType, BS.ByteString)
+	S.PartnerId -> TlsM h g (S.ContType, BS.ByteString)
 getRBuf = gets . S.getBuf; getWBuf = gets . S.getWBuf
 
 getAdBuf :: HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
@@ -76,7 +83,7 @@ setAdBuf :: HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
 setAdBuf = (modify .) . S.setAdBuf
 
 setRBuf, setWBuf :: HandleLike h =>
-	S.PartnerId -> (S.ContentType, BS.ByteString) -> TlsM h g ()
+	S.PartnerId -> (S.ContType, BS.ByteString) -> TlsM h g ()
 setRBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
 
 getWSn, getRSn :: HandleLike h => S.PartnerId -> TlsM h g Word64

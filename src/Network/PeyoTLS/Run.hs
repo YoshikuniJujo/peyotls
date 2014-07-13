@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Run ( H.debug,
-	H.TlsM, H.run, H.TlsHandleBase,
+	H.TlsM, H.run, H.HandleBase,
 		adGet, adGetLine, adGetContent, H.adPut, H.adDebug, H.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM, withRandom,
 		chGet, ccsPut, hsPut, updateHash, flushAd,
@@ -37,7 +37,7 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Handle as H ( debug,
 	TlsM, run, withRandom,
-	TlsHandleBase, CipherSuite,
+	HandleBase, CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 		flushAd, getBuf, setBuf,
@@ -56,16 +56,16 @@ import qualified Network.PeyoTLS.Handle as H ( debug,
 modNm :: String
 modNm = "Network.PeyoTLS.Run"
 
-type RenegoProc h g = H.TlsHandleBase h g -> H.TlsM h g ()
+type RenegoProc h g = H.HandleBase h g -> H.TlsM h g ()
 
 adGet :: (HandleLike h, CPRG g) =>
-	RenegoProc h g -> H.TlsHandleBase h g -> Int -> H.TlsM h g BS.ByteString
+	RenegoProc h g -> H.HandleBase h g -> Int -> H.TlsM h g BS.ByteString
 adGet rp t n = H.getBuf t >>= \b -> if BS.length b >= n
 	then uncurry (>>) . (H.setBuf t *** return) $ BS.splitAt n b
 	else BS.append b `liftM` H.adGet rp t (n - BS.length b)
 
 adGetLine :: (HandleLike h, CPRG g) =>
-	RenegoProc h g -> H.TlsHandleBase h g -> H.TlsM h g BS.ByteString
+	RenegoProc h g -> H.HandleBase h g -> H.TlsM h g BS.ByteString
 adGetLine rp t = H.getBuf t >>= \b -> if '\n' `BSC.elem` b || '\r' `BSC.elem` b
 	then uncurry (>>) . (H.setBuf t *** return) $ case BSC.span (/= '\r') b of
 		(_, "") -> second BS.tail $ BSC.span (/= '\n') b
@@ -77,15 +77,15 @@ adGetLine rp t = H.getBuf t >>= \b -> if '\n' `BSC.elem` b || '\r' `BSC.elem` b
 	else (b `BS.append`) `liftM` H.adGetLine rp t
 
 adGetContent :: (HandleLike h, CPRG g) =>
-	RenegoProc h g -> H.TlsHandleBase h g -> H.TlsM h g BS.ByteString
+	RenegoProc h g -> H.HandleBase h g -> H.TlsM h g BS.ByteString
 adGetContent rp t = H.getBuf t >>= \b ->
 	if BS.null b then H.adGetContent rp t else H.setBuf t "" >> return b
 
 type HandshakeM h g =
-	ReaderT (H.TlsHandleBase h g) (StateT SHA256.Ctx (H.TlsM h g))
+	ReaderT (H.HandleBase h g) (StateT SHA256.Ctx (H.TlsM h g))
 
 execHandshakeM ::
-	HandleLike h => h -> HandshakeM h g () -> H.TlsM h g (H.TlsHandleBase h g)
+	HandleLike h => h -> HandshakeM h g () -> H.TlsM h g (H.HandleBase h g)
 execHandshakeM h m = do
 	t <- H.newHandle h
 	m `runReaderT` t `evalStateT` SHA256.init
@@ -93,7 +93,7 @@ execHandshakeM h m = do
 --	liftM fst . ((, SHA256.init) `liftM` H.newHandle h >>=) . execStateT
 
 rerunHandshakeM ::
-	HandleLike h => H.TlsHandleBase h g -> HandshakeM h g a -> H.TlsM h g a
+	HandleLike h => H.HandleBase h g -> HandshakeM h g a -> H.TlsM h g a
 rerunHandshakeM t m = m `runReaderT` t `evalStateT` SHA256.init
 
 withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a

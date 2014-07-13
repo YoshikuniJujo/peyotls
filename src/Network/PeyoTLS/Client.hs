@@ -49,7 +49,7 @@ import Network.PeyoTLS.Base ( debug,
 		withRandom, flushAd,
 		AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	TlsHandleBase, CertSecretKey(..),
+	HandleBase, CertSecretKey(..),
 		readHandshake, writeHandshake, ChangeCipherSpec(..),
 	ClientHello(..), ServerHello(..), SessionId(..), isRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
@@ -66,7 +66,7 @@ import Network.PeyoTLS.Base ( debug,
 
 type PeyotlsHandle = TlsHandle Handle SystemRNG
 
-newtype TlsHandle h g = TlsHandleC { tlsHandleC :: TlsHandleBase h g } deriving Show
+newtype TlsHandle h g = TlsHandleC { tlsHandleC :: HandleBase h g } deriving Show
 
 instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
@@ -114,7 +114,7 @@ setCertificateStore (TlsHandleC t) cs = rerunHandshakeM t $ do
 	(cscl, crts, _) <- getSettingsC
 	setSettingsC (cscl, crts, cs)
 
-rehandshake :: (ValidateHandle h, CPRG g) => TlsHandleBase h g -> TlsM h g ()
+rehandshake :: (ValidateHandle h, CPRG g) => HandleBase h g -> TlsM h g ()
 rehandshake t = rerunHandshakeM t $ do
 	(cscl, crts, ca) <- getSettingsC
 	handshake crts ca =<< clientHello cscl
