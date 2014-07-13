@@ -7,6 +7,7 @@ module Network.PeyoTLS.Monad (
 		getRBuf, setRBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
+		rstSn,
 		getCipherSuite, setCipherSuite,
 		getNames, setNames,
 		setKeys, getKeys,
@@ -180,3 +181,6 @@ type SettingsC = (
 	X509.CertificateStore )
 
 data RW = Read | Write deriving Show
+
+rstSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g ()
+rstSn i rw = case rw of Read -> rstRSn i; Write -> rstWSn i

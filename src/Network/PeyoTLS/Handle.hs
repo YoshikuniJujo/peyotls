@@ -18,7 +18,7 @@ module Network.PeyoTLS.Handle ( debug,
 	M.CertSecretKey(..), M.isRsaKey, M.isEcdsaKey,
 	M.Alert(..), M.AlertLevel(..), M.AlertDesc(..), debugCipherSuite ) where
 
-import Control.Monad (when, unless, liftM)
+import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.State (lift, get, put)
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.Word (Word8, Word16, Word64)
@@ -39,7 +39,8 @@ import qualified Network.PeyoTLS.Monad as M (
 		tGet, tPut, tClose, tDebug,
 	PartnerId, newPartner, ContType(..),
 		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
-		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
+		getRSn, getWSn, sccRSn, sccWSn,
+		rstSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getNames, setNames,
 	CipherSuite(..), BulkEnc(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
@@ -63,40 +64,18 @@ chGet :: (HandleLike h, CPRG g) =>
 	HandleBase h g -> Int -> M.TlsM h g (Either Word8 BS.ByteString)
 chGet _ 0 = return $ Right ""
 chGet h n = getContType h >>= \ct -> case ct of
-	M.CTCCSpec -> (Left `liftM`) $
-		rstSN h M.Read >> (head . BS.unpack) `liftM` buffered h 1
+	M.CTCCSpec -> (Left . head . BS.unpack) `liftM`
+		(const `liftM` buffered h 1 `ap` M.rstSn (pid h) M.Read)
 	M.CTHandshake -> Right `liftM` buffered h n
 	M.CTAlert -> throw M.ALFatal M.ADUnclasified
 		. ((modNm ++ ".chGet: ") ++) . show =<< buffered h 2
 	_ -> throw M.ALFatal M.ADUnclasified $ modNm ++ ".chGet: not handshake"
 
-buffered :: (HandleLike h, CPRG g) =>
-	HandleBase h g -> Int -> M.TlsM h g BS.ByteString
-buffered h n = do
-	(ct, b) <- M.getRBuf $ pid h; let rl = n - BS.length b
-	if rl <= 0
-	then cut h n ct b
-	else do	(ct', b') <- getWholeWithCt h
-		unless (ct' == ct) . throw M.ALFatal M.ADUnclasified $
-			modNm ++ ".buffered: content type confliction\n"
-		when (BS.null b') $ throwError "buffered: No data available"
-		M.setRBuf (pid h) (ct', b')
-		(b `BS.append`) `liftM` buffered h rl
-
-cut :: HandleLike h => HandleBase h g ->
-	Int -> M.ContType -> BS.ByteString -> M.TlsM h g BS.ByteString
-cut h n ct b = (const r `liftM`) . M.setRBuf (pid h) $
-	(if BS.null b' then M.CTNull else ct, b')
-	where (r, b') = BS.splitAt n b
-
 ccsPut :: (HandleLike h, CPRG g) => HandleBase h g -> Word8 -> M.TlsM h g ()
 ccsPut t w = do
 	ret <- tlsPut t M.CTCCSpec $ BS.pack [w]
-	rstSN t M.Write
+	M.rstSn (pid t) M.Write
 	return ret
-
-rstSN :: HandleLike h => HandleBase h g -> M.RW -> M.TlsM h g ()
-rstSN t rw = case rw of M.Read -> M.rstRSn $ pid t; M.Write -> M.rstWSn $ pid t
 
 hsPut :: (HandleLike h, CPRG g) => HandleBase h g -> BS.ByteString -> M.TlsM h g ()
 hsPut = flip tlsPut M.CTHandshake
@@ -105,6 +84,7 @@ getContType :: (HandleLike h, CPRG g) => HandleBase h g -> M.TlsM h g M.ContType
 getContType t = do
 	(ct, bs) <- M.getRBuf (pid t)
 	(\gt -> case (ct, bs) of (M.CTNull, _) -> gt; (_, "") -> gt; _ -> return ct) $
+--	(\gt -> case (ct, bs) of (M.CTNull, "") -> gt; _ -> return ct) $ do
 		do	(ct', bf) <- getWholeWithCt t
 			M.setRBuf (pid t) (ct', bf)
 			return ct'
@@ -414,6 +394,25 @@ tGetContent_ rn t = do
 				_ -> throw M.ALFatal M.ADUnclasified $
 					"Alert: " ++ show al
 		_ -> snd `liftM` tGetContent t
+
+buffered :: (HandleLike h, CPRG g) =>
+	HandleBase h g -> Int -> M.TlsM h g BS.ByteString
+buffered h n = do
+	(ct, b) <- M.getRBuf $ pid h; let rl = n - BS.length b
+	if rl <= 0
+	then cut h n ct b
+	else do	(ct', b') <- getWholeWithCt h
+		unless (ct' == ct) . throw M.ALFatal M.ADUnclasified $
+			modNm ++ ".buffered: content type confliction\n"
+		when (BS.null b') $ throwError "buffered: No data available"
+		M.setRBuf (pid h) (ct', b')
+		(b `BS.append`) `liftM` buffered h rl
+
+cut :: HandleLike h => HandleBase h g ->
+	Int -> M.ContType -> BS.ByteString -> M.TlsM h g BS.ByteString
+cut h n ct b = (const r `liftM`) . M.setRBuf (pid h) $
+	(if BS.null b' then M.CTNull else ct, b')
+	where (r, b') = BS.splitAt n b
 
 getSettingsC :: HandleLike h => HandleBase h g -> M.TlsM h g M.SettingsC
 getSettingsC = M.getSettingsC . pid
