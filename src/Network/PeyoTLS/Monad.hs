@@ -7,7 +7,7 @@ module Network.PeyoTLS.Monad (
 		getRBuf, setRBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
-		rstSn,
+		getSn, sccSn, rstSn,
 		getCipherSuite, setCipherSuite,
 		getNames, setNames,
 		setKeys, getKeys,
@@ -184,3 +184,9 @@ data RW = Read | Write deriving Show
 
 rstSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g ()
 rstSn i rw = case rw of Read -> rstRSn i; Write -> rstWSn i
+
+getSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g Word64
+getSn i rw = case rw of Read -> getRSn i; Write -> getWSn i
+
+sccSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g ()
+sccSn i rw = case rw of Read -> sccRSn i; Write -> sccWSn i
