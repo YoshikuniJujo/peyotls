@@ -18,7 +18,6 @@ module Network.PeyoTLS.Handle ( debug,
 	M.CertSecretKey(..), M.isRsaKey, M.isEcdsaKey,
 	M.Alert(..), M.AlertLevel(..), M.AlertDesc(..), debugCipherSuite ) where
 
-import Control.Arrow (second)
 import Control.Monad (when, unless, liftM)
 import "monads-tf" Control.Monad.State (lift, get, put)
 import "monads-tf" Control.Monad.Error (throwError)
@@ -51,6 +50,9 @@ import qualified Network.PeyoTLS.Monad as M (
 import qualified Network.PeyoTLS.Crypto as C (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, Side(..), finishedHash )
 
+modNm :: String
+modNm = "Network.PeyoTLS.Handle"
+
 data HandleBase h g = Handle { pid :: M.PartnerId, handle :: h } deriving Show
 
 newHandle :: HandleLike h => h -> M.TlsM h g (HandleBase h g)
@@ -60,30 +62,41 @@ newHandle h = M.newPartner `liftM` get >>= \(i, s) ->
 chGet :: (HandleLike h, CPRG g) =>
 	HandleBase h g -> Int -> M.TlsM h g (Either Word8 BS.ByteString)
 chGet _ 0 = return $ Right ""
-chGet t n = do
-	lift . lift . hlDebug (handle t) "critical" .
-		BSC.pack . (++ "\n") $ show n
-	ct <- getContType t
-	lift . lift . hlDebug (handle t) "critical" .
-		BSC.pack . (++ "\n") $ show ct
-	case ct of
-		M.CTCCSpec -> do
-			(M.CTCCSpec, bs) <- buffered t 1
-			resetSequenceNumber t M.Read
-			return . Left . (\[w] -> w) $ BS.unpack bs
-		M.CTHandshake -> do
-			(M.CTHandshake, bs) <- buffered t n
-			return $ Right bs
-		M.CTAlert -> do
-			(M.CTAlert, al) <- buffered t 2
-			throw M.ALFatal M.ADUnclasified $ show al
-		_ -> throwError "not handshake"
+chGet h n = getContType h >>= \ct -> case ct of
+	M.CTCCSpec -> (Left `liftM`) $
+		rstSN h M.Read >> (head . BS.unpack) `liftM` buffered h 1
+	M.CTHandshake -> Right `liftM` buffered h n
+	M.CTAlert -> throw M.ALFatal M.ADUnclasified
+		. ((modNm ++ ".chGet: ") ++) . show =<< buffered h 2
+	_ -> throw M.ALFatal M.ADUnclasified $ modNm ++ ".chGet: not handshake"
+
+buffered :: (HandleLike h, CPRG g) =>
+	HandleBase h g -> Int -> M.TlsM h g BS.ByteString
+buffered h n = do
+	(ct, b) <- M.getRBuf $ pid h; let rl = n - BS.length b
+	if rl <= 0
+	then cut h n ct b
+	else do	(ct', b') <- getWholeWithCt h
+		unless (ct' == ct) . throw M.ALFatal M.ADUnclasified $
+			modNm ++ ".buffered: content type confliction\n"
+		when (BS.null b') $ throwError "buffered: No data available"
+		M.setRBuf (pid h) (ct', b')
+		(b `BS.append`) `liftM` buffered h rl
+
+cut :: HandleLike h => HandleBase h g ->
+	Int -> M.ContType -> BS.ByteString -> M.TlsM h g BS.ByteString
+cut h n ct b = (const r `liftM`) . M.setRBuf (pid h) $
+	(if BS.null b' then M.CTNull else ct, b')
+	where (r, b') = BS.splitAt n b
 
 ccsPut :: (HandleLike h, CPRG g) => HandleBase h g -> Word8 -> M.TlsM h g ()
 ccsPut t w = do
 	ret <- tlsPut t M.CTCCSpec $ BS.pack [w]
-	resetSequenceNumber t M.Write
+	rstSN t M.Write
 	return ret
+
+rstSN :: HandleLike h => HandleBase h g -> M.RW -> M.TlsM h g ()
+rstSN t rw = case rw of M.Read -> M.rstRSn $ pid t; M.Write -> M.rstWSn $ pid t
 
 hsPut :: (HandleLike h, CPRG g) => HandleBase h g -> BS.ByteString -> M.TlsM h g ()
 hsPut = flip tlsPut M.CTHandshake
@@ -113,7 +126,7 @@ flushAd t = do
 				BSC.pack $ show bs
 			return (ad `BS.append` bs, b)
 		M.CTAlert -> do
-			(_, a) <- buffered t 2
+			a <- buffered t 2
 			lift . lift $ hlDebug (handle t) "low" .
 				BSC.pack $ show a
 			case a of
@@ -122,22 +135,6 @@ flushAd t = do
 		_ -> do	lift . lift $ hlDebug (handle t) "low" .
 				BSC.pack $ show ct
 			return ("", True)
-
-buffered :: (HandleLike h, CPRG g) =>
-	HandleBase h g -> Int -> M.TlsM h g (M.ContType, BS.ByteString)
-buffered t n = do
-	(ct, b) <- M.getRBuf $ pid t; let rl = n - BS.length b
-	if rl <= 0
-	then splitRetBuf t n ct b
-	else do	(ct', b') <- getWholeWithCt t
-		unless (ct' == ct) . throw M.ALFatal M.ADUnclasified $
-			"Content Type confliction\n" ++
-				"\tExpected: " ++ show ct ++ "\n" ++
-				"\tActual  : " ++ show ct' ++ "\n" ++
-				"\tData    : " ++ show b'
-		when (BS.null b') $ throwError "buffered: No data available"
-		M.setRBuf (pid t) (ct', b')
-		second (b `BS.append`) `liftM` buffered t rl
 
 adGet :: (HandleLike h, CPRG g) => (HandleBase h g -> M.TlsM h g ()) ->
 	HandleBase h g -> Int -> M.TlsM h g BS.ByteString
@@ -153,7 +150,7 @@ buffered_ rn t n = do
 			(M.CTAlert, b) <- M.getRBuf $ pid t
 			let rl = 2 - BS.length b
 			al <- if rl <= 0
-				then snd `liftM` splitRetBuf t 2 M.CTAlert b
+				then cut t 2 M.CTAlert b
 				else do (ct', b') <- getWholeWithCt t
 					unless (ct' == M.CTAlert) $ throw
 						M.ALFatal M.ADUnclasified
@@ -169,7 +166,7 @@ buffered_ rn t n = do
 					"Alert: " ++ show al
 		_ -> do	(ct, b) <- M.getRBuf $ pid t; let rl = n - BS.length b
 			if rl <= 0
-			then snd `liftM` splitRetBuf t n ct b
+			then cut t n ct b
 			else do
 				(ct', b') <- getWholeWithCt t
 				unless (ct' == ct) $ throw M.ALFatal M.ADUnclasified
@@ -177,14 +174,6 @@ buffered_ rn t n = do
 				when (BS.null b') $ throwError "buffered: No data"
 				M.setRBuf (pid t) (ct', b')
 				(b `BS.append`) `liftM` buffered_ rn t rl
-
-splitRetBuf :: HandleLike h =>
-	HandleBase h g -> Int -> M.ContType -> BS.ByteString ->
-	M.TlsM h g (M.ContType, BS.ByteString)
-splitRetBuf t n ct b = do
-	let (ret, b') = BS.splitAt n b
-	M.setRBuf (pid t) $ if BS.null b' then (M.CTNull, "") else (ct, b')
-	return (ct, ret)
 
 getWholeWithCt :: (HandleLike h, CPRG g) =>
 	HandleBase h g -> M.TlsM h g (M.ContType, BS.ByteString)
@@ -278,11 +267,6 @@ updateSequenceNumber t rw = do
 			M.Write -> M.sccWSn $ pid t
 	return sn
 
-resetSequenceNumber :: HandleLike h => HandleBase h g -> M.RW -> M.TlsM h g ()
-resetSequenceNumber t rw = case rw of
-	M.Read -> M.rstRSn $ pid t
-	M.Write -> M.rstWSn $ pid t
-
 makeKeys :: HandleLike h =>
 	HandleBase h g -> C.Side -> BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> M.CipherSuite -> M.TlsM h g M.Keys
@@ -348,7 +332,7 @@ tGetLine_ rn t = do
 			(M.CTAlert, b) <- M.getRBuf $ pid t
 			let rl = 2 - BS.length b
 			al <- if rl <= 0
-				then snd `liftM` splitRetBuf t 2 M.CTAlert b
+				then cut t 2 M.CTAlert b
 				else do (ct', b') <- getWholeWithCt t
 					unless (ct' == M.CTAlert) . throw M.ALFatal M.ADUnclasified $
 						"Content Type confliction\n"
@@ -421,7 +405,7 @@ tGetContent_ rn t = do
 	case ct of
 		M.CTHandshake -> rn t >> tGetContent_ rn t
 		M.CTAlert -> do
-			(M.CTAlert, al) <- buffered t 2
+			al <- buffered t 2
 			case al of
 				"\SOH\NULL" -> do
 					tlsPut t M.CTAlert "\SOH\NUL"

@@ -158,8 +158,7 @@ tPut = ((lift . lift) .) . hlPut
 tClose :: HandleLike h => h -> TlsM h g ()
 tClose = lift . lift . hlClose
 
-tDebug :: HandleLike h =>
-	h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
+tDebug :: HandleLike h => h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
 tDebug = (((lift . lift) .) .) . hlDebug
 
 thlError :: HandleLike h => h -> BS.ByteString -> TlsM h g a
