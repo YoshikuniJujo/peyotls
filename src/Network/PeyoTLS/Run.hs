@@ -104,7 +104,7 @@ chGet = ask >>= lift . lift . flip H.chGet 1 >>= \ch -> case ch of
 hsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 hsGet n = ask >>= lift . lift . flip H.chGet n >>= \ch -> case ch of
 	Right bs -> return bs
-	_ -> throw H.ALFatal H.ADUnexMsg $ modNm ++ ".hsGet: not handshake"
+	_ -> throw H.ALFtl H.ADUnexMsg $ modNm ++ ".hsGet: not handshake"
 
 ccsPut :: (HandleLike h, CPRG g) => Word8 -> HandshakeM h g ()
 ccsPut = (ask >>=) . ((lift . lift) .) . flip H.ccsPut

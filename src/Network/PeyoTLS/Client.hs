@@ -138,7 +138,7 @@ handshake crts ca cr = do
 		DHE_RSA -> dheHandshake (undefined :: DH.Params)
 		ECDHE_RSA -> dheHandshake (undefined :: ECC.Curve)
 		ECDHE_ECDSA -> dheHandshake (undefined :: ECC.Curve)
-		_ -> \_ _ _ -> throw ALFatal ADHsFailure $
+		_ -> \_ _ _ -> throw ALFtl ADHsFailure $
 			moduleName ++ ".handshake: not implemented"
 
 serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
@@ -146,15 +146,15 @@ serverHello = do
 	ServerHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
 	case v of
 		(3, 3) -> return ()
-		_ -> throw ALFatal ADProtocolVersion $
+		_ -> throw ALFtl ADProtocolVersion $
 			moduleName ++ ".serverHello: only TLS 1.2"
 	case cm of
 		CompMethodNull -> return ()
-		_ -> throw ALFatal ADHsFailure $
+		_ -> throw ALFtl ADHsFailure $
 			moduleName ++ ".serverHello: only compression method null"
 	case find isRenegoInfo $ fromMaybe [] e of
 		Just ri -> checkSvRenego ri
-		_ -> throw ALFatal ADInsufficientSecurity $
+		_ -> throw ALFtl ADInsufficientSecurity $
 			moduleName ++ ".serverHello: require secure renegotiation"
 	setCipherSuite cs
 	return (sr, ke)
@@ -165,11 +165,11 @@ rsaHandshake :: (ValidateHandle h, CPRG g) => (BS.ByteString, BS.ByteString) ->
 rsaHandshake rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) . throw ALFatal (validateAlert vr) $
+	unless (null vr) . throw ALFtl (validateAlert vr) $
 		moduleName ++ ".rsaHandshake: validate failure"
 	pk <- case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA k -> return k
-		_ -> throw ALFatal ADIllegalParameter $
+		_ -> throw ALFtl ADIllegalParameter $
 			moduleName ++ ".rsaHandshake: require RSA public key"
 	crt <- clientCertificate crts
 	pms <- ("\x03\x03" `BS.append`) `liftM` withRandom (cprgGenerate 46)
@@ -190,12 +190,12 @@ dheHandshake :: (ValidateHandle h, CPRG g,
 dheHandshake t rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
-	unless (null vr) . throw ALFatal (validateAlert vr) $
+	unless (null vr) . throw ALFtl (validateAlert vr) $
 		moduleName ++ ".succeed: validate failure"
 	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
 		X509.PubKeyECDSA cv pt -> succeed t (ecdsaPubKey cv pt) rs crts
-		_ -> throw ALFatal ADHsFailure $
+		_ -> throw ALFtl ADHsFailure $
 			moduleName ++ ".dheHandshake: not implemented"
 
 succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
@@ -205,10 +205,10 @@ succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 succeed t pk rs@(cr, sr) crts = do
 	(ps, pv, ha, sa, sn) <- serverKeyExchange
 	let _ = ps `asTypeOf` t
-	unless (sa == sspAlgorithm pk) . throw ALFatal ADHsFailure $
+	unless (sa == sspAlgorithm pk) . throw ALFtl ADHsFailure $
 		pre ++ "sign algorithm unmatch"
 	unless (ssVerify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
-		throw ALFatal ADDecryptError $ pre ++ "verify failure"
+		throw ALFtl ADDecryptError $ pre ++ "verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	makeKeys Client rs $ calculateShared ps sv pv
@@ -240,7 +240,7 @@ clientCertificate crts = do
 		case find (isMatchedCert cct a dn) crts of
 			Just c ->
 				(>>) <$> writeHandshake . snd <*> return . Just $ c
-			_ -> throw ALFatal ADUnknownCa $ moduleName ++
+			_ -> throw ALFtl ADUnknownCa $ moduleName ++
 				".clientCertificate: no certificate"
 
 isMatchedCert :: [ClCertType] -> [(HashAlg, SignAlg)] ->
@@ -273,5 +273,5 @@ finishHandshake crt = do
 	ChangeCipherSpec <- readHandshake
 	flushCipherSuite Read
 	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
-		(throw ALFatal ADDecryptError $
+		(throw ALFtl ADDecryptError $
 			moduleName ++ ".finishHandshake: finished hash failure")

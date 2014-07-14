@@ -7,7 +7,7 @@ module Network.PeyoTLS.Monad (
 		getRBuf, setRBuf, getWBuf, setWBuf,
 		getAdBuf, setAdBuf,
 		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
-		getSn, sccSn, rstSn,
+		getSn, sccSn, rstSn, udSn,
 		getCipherSuite, setCipherSuite,
 		getNames, setNames,
 		setKeys, getKeys,
@@ -24,10 +24,11 @@ module Network.PeyoTLS.Monad (
 	SettingsC, getSettingsC, setSettingsC,
 	RW(..),
 	flushCipherSuite,
+	throw,
 	) where
 
 import Control.Arrow ((***))
-import Control.Monad (liftM)
+import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError, catchError)
@@ -59,6 +60,9 @@ import qualified Network.PeyoTLS.State as S (
 	SettingsS, Settings,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
+
+modNm :: String
+modNm = "Network.PeyoTLS.Monad"
 
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
 run m g = do
@@ -151,7 +155,11 @@ withRandom p = p `liftM` gets S.randomGen >>=
 	uncurry (flip (>>)) . (return *** modify . S.setRandomGen)
 
 tGet :: HandleLike h => h -> Int -> TlsM h g BS.ByteString
-tGet = ((lift . lift) .) . hlGet
+tGet h n = do
+	b <- lift . lift $ hlGet h n
+	unless (BS.length b == n) . throw S.ALFtl S.ADUnk $
+		modNm ++ ".tGet: read err " ++ show (BS.length b) ++ " " ++ show n
+	return b
 
 tPut :: HandleLike h => h -> BS.ByteString -> TlsM h g ()
 tPut = ((lift . lift) .) . hlPut
@@ -190,3 +198,16 @@ getSn i rw = case rw of Read -> getRSn i; Write -> getWSn i
 
 sccSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g ()
 sccSn i rw = case rw of Read -> sccRSn i; Write -> sccWSn i
+
+throw :: HandleLike h => S.AlertLevel -> S.AlertDesc -> String -> TlsM h g a
+throw = ((throwError .) .) . S.Alert
+
+udSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g Word64
+udSn i rw = do
+	ks <- getKeys i
+	sn <- getSn i rw
+	let cs = ($ ks) $ case rw of Read -> S.kReadCS; Write -> S.kWriteCS
+	case cs of
+		S.CipherSuite _ S.BE_NULL -> return ()
+		_ -> sccSn i rw
+	return sn

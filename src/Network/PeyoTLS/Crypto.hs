@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, TupleSections #-}
 
 module Network.PeyoTLS.Crypto (
-	makeKeys, encrypt, decrypt, hashSha1, hashSha256,
+	makeKeys, encrypt, decrypt, sha1, sha256,
 	Side(..), finishedHash) where
 
 import Prelude hiding (splitAt, take)
@@ -51,9 +51,9 @@ hmac hs bls sk =
 
 type Hash = BS.ByteString -> BS.ByteString
 
-hashSha1, hashSha256 :: (Hash, Int)
-hashSha1 = (SHA1.hash, 20)
-hashSha256 = (SHA256.hash, 32)
+sha1, sha256 :: (Hash, Int)
+sha1 = (SHA1.hash, 20)
+sha256 = (SHA256.hash, 32)
 
 encrypt :: CPRG g => (Hash, Int) -> BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> g -> (BS.ByteString, g)

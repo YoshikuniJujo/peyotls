@@ -155,7 +155,7 @@ instance B.Bytable ContType where
 data Alert = Alert AlertLevel AlertDesc String | NotDetected String
 	deriving Show
 
-data AlertLevel = ALWarning | ALFatal | ALRaw Word8 deriving Show
+data AlertLevel = ALWarning | ALFtl | ALRaw Word8 deriving Show
 
 data AlertDesc
 	= ADCloseNotify            | ADUnexMsg              | ADBadRecordMac
@@ -163,7 +163,7 @@ data AlertDesc
 	| ADUnsupportedCertificate | ADCertificateExpired   | ADCertificateUnknown
 	| ADIllegalParameter       | ADUnknownCa            | ADDecodeError
 	| ADDecryptError           | ADProtocolVersion      | ADInsufficientSecurity
-	| ADInternalError          | ADUnclasified
+	| ADInternalError          | ADUnk
 	| ADRaw Word8
 	deriving Show
 

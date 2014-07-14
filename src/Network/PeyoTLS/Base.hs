@@ -102,17 +102,17 @@ readHandshake = do
 	case ch of
 		Left 1 -> case fromHandshake HCCSpec of
 			Just i -> return i
-			_ -> throw ALFatal ADUnexMsg $
+			_ -> throw ALFtl ADUnexMsg $
 				modNm ++ ".readHandshake: " ++ show HCCSpec
 		Right bs -> case B.decode bs of
 			Right HHelloReq -> readHandshake
 			Right hs -> case fromHandshake hs of
 				Just i -> updateHash bs >> return i
-				_ -> throw ALFatal ADUnexMsg $
+				_ -> throw ALFtl ADUnexMsg $
 					modNm ++ ".readHandshake: " ++ show hs
-			Left em -> throw ALFatal ADInternalError $
+			Left em -> throw ALFtl ADInternalError $
 				modNm ++ ".readHandshake: " ++ em
-		_ -> throw ALFatal ADUnexMsg $ modNm ++ ".readHandshake: uk ccs"
+		_ -> throw ALFtl ADUnexMsg $ modNm ++ ".readHandshake: uk ccs"
 
 writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
 writeHandshake hi = do
@@ -133,15 +133,15 @@ finishedHash s = Finished `liftM` do
 checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
 checkClRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` getClFinished
-	unless ok . throw ALFatal ADHsFailure $
+	unless ok . throw ALFtl ADHsFailure $
 		modNm ++ ".checkClRenego: renego info is not match"
-checkClRenego _ = throw ALFatal ADInternalError $
+checkClRenego _ = throw ALFtl ADInternalError $
 	modNm ++ ".checkClRenego: not renego info"
 checkSvRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
-	unless ok . throw ALFatal ADHsFailure $
+	unless ok . throw ALFtl ADHsFailure $
 		modNm ++ ".checkSvRenego: renego info is not match"
-checkSvRenego _ = throw ALFatal ADInternalError $
+checkSvRenego _ = throw ALFtl ADInternalError $
 	modNm ++ ".checkSvRenego: not renego info"
 
 makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
