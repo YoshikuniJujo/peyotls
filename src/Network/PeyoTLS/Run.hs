@@ -17,7 +17,7 @@ module Network.PeyoTLS.Run ( H.debug,
 	H.AlertLevel(..), H.AlertDesc(..), debugCipherSuite, throw ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Arrow (second, (***))
+import Control.Arrow ((***))
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Reader (ReaderT, runReaderT, lift, ask)
 import "monads-tf" Control.Monad.State (StateT, evalStateT, get, modify )
@@ -27,7 +27,6 @@ import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
@@ -51,7 +50,8 @@ import qualified Network.PeyoTLS.Handle as H ( debug,
 		RW(..), flushCipherSuite,
 	ValidateHandle(..), tValidate,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
-	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite )
+	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite,
+	splitLine )
 
 modNm :: String
 modNm = "Network.PeyoTLS.Run"
@@ -66,15 +66,9 @@ adGet rp t n = H.getBuf t >>= \b -> if BS.length b >= n
 
 adGetLine :: (HandleLike h, CPRG g) =>
 	RenegoProc h g -> H.HandleBase h g -> H.TlsM h g BS.ByteString
-adGetLine rp t = H.getBuf t >>= \b -> if '\n' `BSC.elem` b || '\r' `BSC.elem` b
-	then uncurry (>>) . (H.setBuf t *** return) $ case BSC.span (/= '\r') b of
-		(_, "") -> second BS.tail $ BSC.span (/= '\n') b
-		(l, ls) -> case BSC.uncons ls of
-			Just ('\r', ls') -> case BSC.uncons ls' of
-				Just ('\n', ls'') -> (l, ls'')
-				_ -> (l, ls')
-			_ -> (l, ls)
-	else (b `BS.append`) `liftM` H.adGetLine rp t
+adGetLine rp t = H.getBuf t >>= \b -> case H.splitLine b of
+	Just (l, ls) -> H.setBuf t ls >> return l
+	_ -> (b `BS.append`) `liftM` H.adGetLine rp t
 
 adGetContent :: (HandleLike h, CPRG g) =>
 	RenegoProc h g -> H.HandleBase h g -> H.TlsM h g BS.ByteString
