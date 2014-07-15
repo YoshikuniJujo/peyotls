@@ -55,7 +55,7 @@ import Network.PeyoTLS.Base ( debug,
 		readHandshake, writeHandshake, CCSpec(..),
 	Handshake(HHelloReq),
 	ClHello(..), SvHello(..), SssnId(..), Extension(..),
-		isRenegoInfo, emptyRenegoInfo,
+		isRnInfo, emptyRnInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
@@ -199,7 +199,7 @@ clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
 	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version)
 clientHello cssv = do
 	ClHello cv cr _sid cscl cms me <- readHandshake
-	checkRenegoInfo cscl me
+	checkRnInfo cscl me
 	unless (cv >= version) . throw ALFtl ADProtoVer $
 		pre ++ "only implement TLS 1.2"
 	unless (CmpMtdNull `elem` cms) . throw ALFtl ADDecodeErr $
@@ -213,13 +213,13 @@ clientHello cssv = do
 	return (ke, be, cr, cv)
 	where pre = moduleName ++ ".clientHello: "
 
-checkRenegoInfo ::
+checkRnInfo ::
 	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
-checkRenegoInfo cscl me = (\n -> maybe n checkClRenego mcf) . throw
+checkRnInfo cscl me = (\n -> maybe n checkClRenego mcf) . throw
 	ALFtl ADInsSec $ moduleName ++ ".checkRenego: require secure renegotiation"
 	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
-		(True, _) -> Just emptyRenegoInfo
-		(_, Just e) -> find isRenegoInfo e
+		(True, _) -> Just emptyRnInfo
+		(_, Just e) -> find isRnInfo e
 		(_, _) -> Nothing
 
 serverHello :: (HandleLike h, CPRG g) =>

@@ -14,8 +14,7 @@ module Network.PeyoTLS.Base (
 		readHandshake, writeHandshake,
 		CCSpec(..),
 	Handshake(HHelloReq),
-	ClHello(..), SvHello(..), SssnId(..), Extension(..),
-		isRenegoInfo, emptyRenegoInfo,
+	ClHello(..), SvHello(..), SssnId(..), Extension(..), isRnInfo, emptyRnInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
@@ -63,7 +62,7 @@ import Network.PeyoTLS.Codec (
 	Handshake(..), HandshakeItem(..),
 	ClHello(..), SvHello(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CmpMtd(..), Extension(..), isRenegoInfo, emptyRenegoInfo,
+		CmpMtd(..), Extension(..), isRnInfo, emptyRnInfo,
 	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	SHDone(..), ClKeyEx(..), Epms(..),
@@ -131,13 +130,13 @@ finishedHash s = Finished `liftM` do
 	return fh
 
 checkClRenego, checkSvRenego :: HandleLike h => Extension -> HandshakeM h g ()
-checkClRenego (ERenegoInfo ri) = do
+checkClRenego (ERnInfo ri) = do
 	ok <- (ri ==) `liftM` getClFinished
 	unless ok . throw ALFtl ADHsFailure $
 		modNm ++ ".checkClRenego: renego info is not match"
 checkClRenego _ = throw ALFtl ADInternalErr $
 	modNm ++ ".checkClRenego: not renego info"
-checkSvRenego (ERenegoInfo ri) = do
+checkSvRenego (ERnInfo ri) = do
 	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
 	unless ok . throw ALFtl ADHsFailure $
 		modNm ++ ".checkSvRenego: renego info is not match"
@@ -145,9 +144,9 @@ checkSvRenego _ = throw ALFtl ADInternalErr $
 	modNm ++ ".checkSvRenego: not renego info"
 
 makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension
-makeClRenego = ERenegoInfo `liftM` getClFinished
+makeClRenego = ERnInfo `liftM` getClFinished
 makeSvRenego =
-	ERenegoInfo `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
+	ERnInfo `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
 
 class DhParam b where
 	type Secret b

@@ -51,7 +51,7 @@ import Network.PeyoTLS.Base ( debug,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	HandleBase, CertSecretKey(..),
 		readHandshake, writeHandshake, CCSpec(..),
-	ClHello(..), SvHello(..), SssnId(..), isRenegoInfo,
+	ClHello(..), SvHello(..), SssnId(..), isRnInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
@@ -152,7 +152,7 @@ serverHello = do
 		CmpMtdNull -> return ()
 		_ -> throw ALFtl ADHsFailure $
 			modNm ++ ".serverHello: only compression method null"
-	case find isRenegoInfo $ fromMaybe [] e of
+	case find isRnInfo $ fromMaybe [] e of
 		Just ri -> checkSvRenego ri
 		_ -> throw ALFtl ADInsSec $ modNm ++ ".serverHello: no sec renego"
 	setCipherSuite cs

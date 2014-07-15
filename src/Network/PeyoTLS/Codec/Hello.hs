@@ -4,7 +4,7 @@ module Network.PeyoTLS.Codec.Hello (
 	ClHello(..), SvHello(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), SignAlg(..), HashAlg(..),
-		Extension(..), isRenegoInfo, emptyRenegoInfo ) where
+		Extension(..), isRnInfo, emptyRnInfo ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Word (Word8, Word16)
@@ -13,7 +13,7 @@ import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
 import Network.PeyoTLS.Codec.Extension (
-	Extension(..), isRenegoInfo, emptyRenegoInfo, SignAlg(..), HashAlg(..) )
+	Extension(..), isRnInfo, emptyRnInfo, SignAlg(..), HashAlg(..) )
 import Network.PeyoTLS.CipherSuite (CipherSuite(..), KeyEx(..), BulkEnc(..))
 
 modNm :: String

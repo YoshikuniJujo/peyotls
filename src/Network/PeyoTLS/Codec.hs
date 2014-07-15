@@ -4,7 +4,7 @@ module Network.PeyoTLS.Codec (
 	Handshake(..), HandshakeItem(..),
 	ClHello(..), SvHello(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CmpMtd(..), Extension(..), isRenegoInfo, emptyRenegoInfo,
+		CmpMtd(..), Extension(..), isRnInfo, emptyRnInfo,
 	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	SHDone(..), ClKeyEx(..), Epms(..),
@@ -26,7 +26,7 @@ import Network.PeyoTLS.Codec.Hello (
 	ClHello(..), SvHello(..), SssnId(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	CmpMtd(..), HashAlg(..), SignAlg(..),
-	Extension(..), isRenegoInfo, emptyRenegoInfo )
+	Extension(..), isRnInfo, emptyRnInfo )
 import Network.PeyoTLS.Codec.Certificate (
 	CertReq(..), certReq, ClCertType(..), ClKeyEx(..), DigitallySigned(..) )
 

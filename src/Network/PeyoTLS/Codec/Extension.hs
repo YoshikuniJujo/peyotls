@@ -2,9 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Codec.Extension (
-	Extension(..), SignAlg(..), HashAlg(..),
-	isRenegoInfo, emptyRenegoInfo,
-	) where
+	Extension(..), isRnInfo, emptyRnInfo, SignAlg(..), HashAlg(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Bits (shiftL, (.|.))
@@ -19,26 +17,23 @@ import Network.PeyoTLS.Codec.HSAlg(HashAlg(..), SignAlg(..))
 
 data Extension
 	= ESName [ServerName]
-	| EECurve [ECC.CurveName] | EEcPFrt [EcPointFormat]
+	| EECurve [ECC.CurveName] | EEcPFrmt [EcPointFormat]
 	| ESsnTicketTls BS.ByteString
 	| ENextProtoNego BS.ByteString
-	| ERenegoInfo BS.ByteString
+	| ERnInfo BS.ByteString
 	| ERaw EType BS.ByteString
 	deriving (Show, Eq)
 
-instance B.Bytable Extension where
-	encode = encodeE; decode = B.evalBytableM B.parse
-
-instance B.Parsable Extension where
-	parse = parseE
+instance B.Bytable Extension where encode = encodeE; decode = B.evalBytableM B.parse
+instance B.Parsable Extension where parse = parseE
 
 encodeE :: Extension -> BS.ByteString
 encodeE (ESName sn) = encodeE . ERaw TSName . B.addLen w16 $ cmap B.encode sn
 encodeE (EECurve ec) = encodeE . ERaw TECurve . B.addLen w16 $ cmap B.encode ec
-encodeE (EEcPFrt pf) = encodeE . ERaw TEcPFrt . B.addLen w8 $ cmap B.encode pf
+encodeE (EEcPFrmt pf) = encodeE . ERaw TEcPFrt . B.addLen w8 $ cmap B.encode pf
 encodeE (ESsnTicketTls stt) = encodeE $ ERaw TSsnTicketTls stt
 encodeE (ENextProtoNego npn) = encodeE $ ERaw TNextProtoNego npn
-encodeE (ERenegoInfo ri) = encodeE . ERaw TRenegoInfo $ B.addLen w8 ri
+encodeE (ERnInfo ri) = encodeE . ERaw TRnInfo $ B.addLen w8 ri
 encodeE (ERaw et body) = B.encode et `BS.append` B.addLen w16 body
 
 parseE :: B.BytableM Extension
@@ -47,15 +42,15 @@ parseE = do
 	case t of
 		TSName -> ESName <$> (flip B.list B.parse =<< B.take 2)
 		TECurve -> EECurve <$> (flip B.list (B.take 2) =<< B.take 2)
-		TEcPFrt -> EEcPFrt <$> (flip B.list (B.take 1) =<< B.take 1)
+		TEcPFrt -> EEcPFrmt <$> (flip B.list (B.take 1) =<< B.take 1)
 		TSsnTicketTls -> ESsnTicketTls <$> B.take l
 		TNextProtoNego -> ENextProtoNego <$> B.take l
-		TRenegoInfo -> ERenegoInfo <$> (B.take =<< B.take 1)
+		TRnInfo -> ERnInfo <$> (B.take =<< B.take 1)
 		_ -> ERaw t <$> B.take l
 
 data EType
 	= TSName         | TECurve     | TEcPFrt     | TSsnTicketTls
-	| TNextProtoNego | TRenegoInfo | TRaw Word16 deriving (Show, Eq)
+	| TNextProtoNego | TRnInfo | TRaw Word16 deriving (Show, Eq)
 
 instance B.Bytable EType where
 	encode TSName = B.encode (0 :: Word16)
@@ -63,7 +58,7 @@ instance B.Bytable EType where
 	encode TEcPFrt = B.encode (11 :: Word16)
 	encode TSsnTicketTls = B.encode (35 :: Word16)
 	encode TNextProtoNego = B.encode (13172 :: Word16)
-	encode TRenegoInfo = B.encode (65281 :: Word16)
+	encode TRnInfo = B.encode (65281 :: Word16)
 	encode (TRaw et) = B.encode et
 	decode bs = case BS.unpack bs of
 		[w1, w2] -> Right $
@@ -73,7 +68,7 @@ instance B.Bytable EType where
 				11 -> TEcPFrt
 				35 -> TSsnTicketTls
 				13172 -> TNextProtoNego
-				65281 -> TRenegoInfo
+				65281 -> TRnInfo
 				et -> TRaw et
 		_ -> Left "Extension: EType.decode"
 
@@ -222,9 +217,9 @@ w16 :: Word16; w16 = undefined
 cmap :: (a -> BS.ByteString) -> [a] -> BS.ByteString
 cmap = (BS.concat .) . map
 
-isRenegoInfo :: Extension -> Bool
-isRenegoInfo (ERenegoInfo _) = True
-isRenegoInfo _ = False
+isRnInfo :: Extension -> Bool
+isRnInfo (ERnInfo _) = True
+isRnInfo _ = False
 
-emptyRenegoInfo :: Extension
-emptyRenegoInfo = ERenegoInfo ""
+emptyRnInfo :: Extension
+emptyRnInfo = ERnInfo ""
