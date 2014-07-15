@@ -53,7 +53,7 @@ import Network.PeyoTLS.Base ( debug,
 		readHandshake, writeHandshake, CCSpec(..),
 	ClHello(..), SvHello(..), SssnId(..), isRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CompMethod(..), HashAlg(..), SignAlg(..),
+		CmpMtd(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
 		checkSvRenego, makeClRenego,
 	SvKeyExEcdhe(..), SvKeyExDhe(..), SvSignPublicKey(..),
@@ -124,7 +124,7 @@ clientHello :: (HandleLike h, CPRG g) =>
 clientHello cscl = do
 	cr <- withRandom $ cprgGenerate 32
 	((>>) <$> writeHandshake <*> debug "low")
-		. ClHello (3, 3) cr (SssnId "") cscl [CompMethodNull]
+		. ClHello (3, 3) cr (SssnId "") cscl [CmpMtdNull]
 		. Just . (: []) =<< makeClRenego
 	return cr
 
@@ -149,7 +149,7 @@ serverHello = do
 		_ -> throw ALFtl ADProtoVer $
 			modNm ++ ".serverHello: only TLS 1.2"
 	case cm of
-		CompMethodNull -> return ()
+		CmpMtdNull -> return ()
 		_ -> throw ALFtl ADHsFailure $
 			modNm ++ ".serverHello: only compression method null"
 	case find isRenegoInfo $ fromMaybe [] e of

@@ -57,7 +57,7 @@ import Network.PeyoTLS.Base ( debug,
 	ClHello(..), SvHello(..), SssnId(..), Extension(..),
 		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CompMethod(..), HashAlg(..), SignAlg(..),
+		CmpMtd(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClRenego, makeSvRenego,
 	SvKeyEx(..), SvSignSecretKey(..),
@@ -202,7 +202,7 @@ clientHello cssv = do
 	checkRenegoInfo cscl me
 	unless (cv >= version) . throw ALFtl ADProtoVer $
 		pre ++ "only implement TLS 1.2"
-	unless (CompMethodNull `elem` cms) . throw ALFtl ADDecodeErr $
+	unless (CmpMtdNull `elem` cms) . throw ALFtl ADDecodeErr $
 		pre ++ "compression method NULL must be supported"
 	(ke, be) <- case find (`elem` cscl) cssv of
 		Just cs@(CipherSuite k b) -> setCipherSuite cs >> return (k, b)
@@ -233,7 +233,7 @@ serverHello rcc ecc = do
 			moduleName ++ ".serverHello: never occur"
 	sr <- withRandom $ cprgGenerate 32
 	writeHandshake
-		. SvHello version sr (SssnId "") cs CompMethodNull
+		. SvHello version sr (SssnId "") cs CmpMtdNull
 		. Just . (: []) =<< makeSvRenego
 	writeHandshake =<< case (ke, rcc, ecc) of
 		(ECDHE_ECDSA, _, Just c) -> return c
