@@ -25,6 +25,7 @@ module Network.PeyoTLS.Monad (
 	RW(..),
 	flushCipherSuite,
 	throw,
+	decrypt, encrypt, makeKeys, finishedHash, C.Side(..),
 	) where
 
 import Control.Arrow ((***))
@@ -34,10 +35,12 @@ import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError, catchError)
 import Data.Word (Word64)
 import Data.HandleLike (HandleLike(..))
+import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
+import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.State as S (
 	HandshakeState, initState, PartnerId, newPartner, Keys(..), nullKeys,
@@ -60,9 +63,14 @@ import qualified Network.PeyoTLS.State as S (
 	SettingsS, Settings,
 	CertSecretKey(..), isRsaKey, isEcdsaKey,
 	)
+import qualified Network.PeyoTLS.Crypto as C (
+	makeKeys, encrypt, decrypt, sha1, sha256, Side(..), finishedHash )
 
 modNm :: String
 modNm = "Network.PeyoTLS.Monad"
+
+vrsn :: BS.ByteString
+vrsn = "\3\3"
 
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
 run m g = do
@@ -211,3 +219,59 @@ udSn i rw = do
 		S.CipherSuite _ S.BE_NULL -> return ()
 		_ -> sccSn i rw
 	return sn
+
+encrypt :: (HandleLike h, CPRG g) =>
+	S.PartnerId -> S.ContType -> BS.ByteString -> TlsM h g BS.ByteString
+encrypt i ct p = do
+	ks <- getKeys i
+	let	S.CipherSuite _ be = S.kWriteCS ks
+		wk = S.kWriteKey ks
+		mk = S.kWriteMacKey ks
+	sn <- udSn i Write
+	case be of
+		S.AES_128_CBC_SHA -> withRandom $
+			C.encrypt C.sha1 wk mk sn (B.encode ct `BS.append` vrsn) p
+		S.AES_128_CBC_SHA256 -> withRandom $
+			C.encrypt C.sha256 wk mk sn (B.encode ct `BS.append` vrsn) p
+		S.BE_NULL -> return p
+
+decrypt :: HandleLike h =>
+	S.PartnerId -> S.ContType -> BS.ByteString -> TlsM h g BS.ByteString
+decrypt i ct e = do
+	ks <- getKeys i
+	let	S.CipherSuite _ be = S.kReadCS ks
+		wk = S.kReadKey ks
+		mk = S.kReadMacKey ks
+	sn <- udSn i Read
+	case be of
+		S.AES_128_CBC_SHA -> either (throw S.ALFtl S.ADUnk) return $
+			C.decrypt C.sha1 wk mk sn (B.encode ct `BS.append` vrsn) e
+		S.AES_128_CBC_SHA256 -> either (throw S.ALFtl S.ADUnk) return $
+			C.decrypt C.sha256 wk mk sn (B.encode ct `BS.append` vrsn) e
+		S.BE_NULL -> return e
+
+makeKeys :: HandleLike h => S.PartnerId -> C.Side ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString -> S.CipherSuite ->
+	TlsM h g S.Keys
+makeKeys t p cr sr pms cs@(S.CipherSuite _ be) = do
+	kl <- case be of
+		S.AES_128_CBC_SHA -> return $ snd C.sha1
+		S.AES_128_CBC_SHA256 -> return $ snd C.sha256
+		_ -> throw S.ALFtl S.ADUnk $ modNm ++ ".makeKeys: no bulk enc"
+	let (ms, cwmk, swmk, cwk, swk) = C.makeKeys kl cr sr pms
+	k <- getKeys t
+	return $ case p of
+		C.Client -> k {
+			S.kCachedCS = cs, S.kMasterSecret = ms,
+			S.kCachedReadMacKey = swmk, S.kCachedWriteMacKey = cwmk,
+			S.kCachedReadKey = swk, S.kCachedWriteKey = cwk }
+		C.Server -> k {
+			S.kCachedCS = cs, S.kMasterSecret = ms,
+			S.kCachedReadMacKey = cwmk, S.kCachedWriteMacKey = swmk,
+			S.kCachedReadKey = cwk, S.kCachedWriteKey = swk }
+makeKeys _ _ _ _ _ _ = throw S.ALFtl S.ADUnk $ modNm ++ ".makeKeys"
+
+finishedHash :: HandleLike h =>
+	C.Side -> S.PartnerId -> BS.ByteString -> TlsM h g BS.ByteString
+finishedHash s t hs =
+	flip (C.finishedHash s) hs `liftM` S.kMasterSecret `liftM` getKeys t

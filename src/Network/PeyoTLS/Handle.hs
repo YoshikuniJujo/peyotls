@@ -11,7 +11,7 @@ module Network.PeyoTLS.Handle ( debug,
 		M.SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getNames, setNames, makeKeys, setKeys,
-		C.Side(..), finishedHash,
+		M.Side(..), finishedHash,
 		M.RW(..), flushCipherSuite,
 	ValidateHandle(..), tValidate,
 	M.CertSecretKey(..), M.isRsaKey, M.isEcdsaKey,
@@ -38,16 +38,15 @@ import qualified Network.PeyoTLS.Monad as M (
 		tGet, tPut, tClose, tDebug,
 	PartnerId, newPartner, ContType(..),
 		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
-		rstSn, udSn,
+		rstSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getNames, setNames,
-	CipherSuite(..), BulkEnc(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
+	CipherSuite(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
 		SettingsC, getSettingsC, setSettingsC,
 		SettingsS, getSettingsS, setSettingsS,
 		RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
-	Keys(..), getKeys, setKeys )
-import qualified Network.PeyoTLS.Crypto as C (
-	makeKeys, encrypt, decrypt, sha1, sha256, Side(..), finishedHash )
+	Keys(..), getKeys, setKeys,
+	decrypt, encrypt, makeKeys, finishedHash, Side(..))
 
 modNm :: String
 modNm = "Network.PeyoTLS.Handle"
@@ -81,7 +80,7 @@ tRead h n = do
 		unless (ct' == ct) . M.throw M.ALFtl M.ADUnk $
 			modNm ++ ".tRead: content type confliction\n"
 		when (BS.null b') $ M.throw M.ALFtl M.ADUnk  $
-			modNm ++ ".tRead: no data available"
+			modNm ++ ".tRead: no data available\n"
 		M.setRBuf (pid h) (ct', b')
 		(b `BS.append`) `liftM` tRead h n'
 
@@ -191,23 +190,8 @@ getCont h = do
 	ct <- (either (M.throw M.ALFtl M.ADUnk) return . B.decode) =<< rd 1
 	_v <- rd 2
 	e <- rd =<< either (M.throw M.ALFtl M.ADUnk) return . B.decode =<< rd 2
-	(ct ,) `liftM` decrypt h ct e
+	(ct ,) `liftM` M.decrypt (pid h) ct e
 	where rd = M.tGet $ handle h
-
-decrypt :: HandleLike h =>
-	HandleBase h g -> M.ContType -> BS.ByteString -> M.TlsM h g BS.ByteString
-decrypt h ct e = do
-	ks <- M.getKeys $ pid h
-	let	M.CipherSuite _ be = M.kReadCS ks
-		wk = M.kReadKey ks
-		mk = M.kReadMacKey ks
-	sn <- M.udSn (pid h) M.Read
-	case be of
-		M.AES_128_CBC_SHA -> either (M.throw M.ALFtl M.ADUnk) return $
-			C.decrypt C.sha1 wk mk sn (B.encode ct `BS.append` vrsn) e
-		M.AES_128_CBC_SHA256 -> either (M.throw M.ALFtl M.ADUnk) return $
-			C.decrypt C.sha256 wk mk sn (B.encode ct `BS.append` vrsn) e
-		M.BE_NULL -> return e
 
 tWrite :: (HandleLike h, CPRG g) =>
 	HandleBase h g -> M.ContType -> BS.ByteString -> M.TlsM h g ()
@@ -222,23 +206,9 @@ tWrite h ct p = do
 wFlush :: (HandleLike h, CPRG g) => HandleBase h g -> M.TlsM h g ()
 wFlush h = M.getWBuf (pid h) >>= \(bct, bp) -> do
 	M.setWBuf (pid h) (M.CTNull, "")
-	unless (bct == M.CTNull) $ encrypt h bct bp >>= \e -> M.tPut (handle h) $
-		BS.concat [B.encode bct, vrsn, B.addLen (undefined :: Word16) e]
-
-encrypt :: (HandleLike h, CPRG g) =>
-	HandleBase h g -> M.ContType -> BS.ByteString -> M.TlsM h g BS.ByteString
-encrypt t ct p = do
-	ks <- M.getKeys $ pid t
-	let	M.CipherSuite _ be = M.kWriteCS ks
-		wk = M.kWriteKey ks
-		mk = M.kWriteMacKey ks
-	sn <- M.udSn (pid t) M.Write
-	case be of
-		M.AES_128_CBC_SHA -> M.withRandom $
-			C.encrypt C.sha1 wk mk sn (B.encode ct `BS.append` vrsn) p
-		M.AES_128_CBC_SHA256 -> M.withRandom $
-			C.encrypt C.sha256 wk mk sn (B.encode ct `BS.append` vrsn) p
-		M.BE_NULL -> return p
+	unless (bct == M.CTNull) $ M.encrypt (pid h) bct bp >>= \e ->
+		M.tPut (handle h) $ BS.concat
+			[B.encode bct, vrsn, B.addLen (undefined :: Word16) e]
 
 getCipherSuite :: HandleLike h => HandleBase h g -> M.TlsM h g M.CipherSuite
 getCipherSuite = M.getCipherSuite . pid
@@ -274,26 +244,10 @@ getNames = M.getNames . pid
 setNames :: HandleLike h => HandleBase h g -> [String] -> M.TlsM h g ()
 setNames = M.setNames . pid
 
-makeKeys :: HandleLike h => HandleBase h g -> C.Side ->
+makeKeys :: HandleLike h => HandleBase h g -> M.Side ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> M.CipherSuite ->
 	M.TlsM h g M.Keys
-makeKeys t p cr sr pms cs@(M.CipherSuite _ be) = do
-	kl <- case be of
-		M.AES_128_CBC_SHA -> return $ snd C.sha1
-		M.AES_128_CBC_SHA256 -> return $ snd C.sha256
-		_ -> M.throw M.ALFtl M.ADUnk $ modNm ++ ".makeKeys: no bulk enc"
-	let (ms, cwmk, swmk, cwk, swk) = C.makeKeys kl cr sr pms
-	k <- M.getKeys $ pid t
-	return $ case p of
-		C.Client -> k {
-			M.kCachedCS = cs, M.kMasterSecret = ms,
-			M.kCachedReadMacKey = swmk, M.kCachedWriteMacKey = cwmk,
-			M.kCachedReadKey = swk, M.kCachedWriteKey = cwk }
-		C.Server -> k {
-			M.kCachedCS = cs, M.kMasterSecret = ms,
-			M.kCachedReadMacKey = cwmk, M.kCachedWriteMacKey = swmk,
-			M.kCachedReadKey = cwk, M.kCachedWriteKey = swk }
-makeKeys _ _ _ _ _ _ = M.throw M.ALFtl M.ADUnk $ modNm ++ ".makeKeys"
+makeKeys = M.makeKeys . pid
 
 setKeys :: HandleLike h => HandleBase h g -> M.Keys -> M.TlsM h g ()
 setKeys = M.setKeys . pid
@@ -302,9 +256,8 @@ flushCipherSuite :: HandleLike h => M.RW -> HandleBase h g -> M.TlsM h g ()
 flushCipherSuite rw = M.flushCipherSuite rw . pid
 
 finishedHash :: HandleLike h =>
-	C.Side -> HandleBase h g -> BS.ByteString -> M.TlsM h g BS.ByteString
-finishedHash s t hs =
-	flip (C.finishedHash s) hs `liftM` M.kMasterSecret `liftM` M.getKeys (pid t)
+	M.Side -> HandleBase h g -> BS.ByteString -> M.TlsM h g BS.ByteString
+finishedHash s = M.finishedHash s . pid
 
 debug :: (HandleLike h, Show a) =>
 	HandleBase h g -> DebugLevel h -> a -> M.TlsM h g ()
