@@ -35,18 +35,17 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Network.PeyoTLS.Monad as M (
 	TlsM, run, throw, withRandom,
 		Alert(..), AlertLevel(..), AlertDesc(..),
-		tGet, tPut, tClose, tDebug,
+		tGet, decrypt, tPut, encrypt, tClose, tDebug,
 	PartnerId, newPartner, ContType(..),
-		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
-		rstSn,
+		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf, rstSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getNames, setNames,
 	CipherSuite(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
 		SettingsC, getSettingsC, setSettingsC,
 		SettingsS, getSettingsS, setSettingsS,
 		RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
-	Keys(..), getKeys, setKeys,
-	decrypt, encrypt, makeKeys, finishedHash, Side(..))
+	Keys(..), makeKeys, getKeys, setKeys,
+	Side(..), finishedHash )
 
 modNm :: String
 modNm = "Network.PeyoTLS.Handle"

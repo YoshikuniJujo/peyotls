@@ -1,32 +1,19 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Network.PeyoTLS.Monad (
-	TlsM, run, evalTlsM, S.initState,
-		tGet, tPut, tClose, tDebug, thlError,
-		withRandom,
-		getRBuf, setRBuf, getWBuf, setWBuf,
-		getAdBuf, setAdBuf,
-		getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
-		getSn, sccSn, rstSn, udSn,
-		getCipherSuite, setCipherSuite,
+	TlsM, run, throw, withRandom,
+		S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
+		tGet, decrypt, tPut, encrypt, tClose, tDebug,
+	S.PartnerId, S.newPartner, S.ContType(..),
+		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf, rstSn,
+		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getNames, setNames,
-		setKeys, getKeys,
+	S.CipherSuite(..), S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
+		SettingsC, getSettingsC, setSettingsC,
 		S.SettingsS, getSettingsS, setSettingsS,
-	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
-	S.ContType(..),
-	S.CipherSuite(..), S.KeyEx(..), S.BulkEnc(..),
-	S.PartnerId, S.newPartner, S.Keys(..), S.nullKeys,
-
-	getClFinished, setClFinished,
-	getSvFinished, setSvFinished,
-	S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
-
-	SettingsC, getSettingsC, setSettingsC,
-	RW(..),
-	flushCipherSuite,
-	throw,
-	decrypt, encrypt, makeKeys, finishedHash, C.Side(..),
-	) where
+		RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
+	S.Keys(..), makeKeys, getKeys, setKeys,
+	C.Side(..), finishedHash ) where
 
 import Control.Arrow ((***))
 import Control.Monad (unless, liftM)
@@ -43,9 +30,9 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.State as S (
-	HandshakeState, initState, PartnerId, newPartner, Keys(..), nullKeys,
+	HandshakeState, initState, PartnerId, newPartner, Keys(..),
 	ContType(..), Alert(..), AlertLevel(..), AlertDesc(..),
-	CipherSuite(..), KeyEx(..), BulkEnc(..),
+	CipherSuite(..), BulkEnc(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
 	setAdBuf, getAdBuf,
@@ -177,9 +164,6 @@ tClose = lift . lift . hlClose
 
 tDebug :: HandleLike h => h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
 tDebug = (((lift . lift) .) .) . hlDebug
-
-thlError :: HandleLike h => h -> BS.ByteString -> TlsM h g a
-thlError = ((lift . lift) .) . hlError
 
 getSettingsC :: HandleLike h => S.PartnerId -> TlsM h g SettingsC
 getSettingsC i = do
