@@ -64,7 +64,7 @@ chGet :: (HandleLike h, CPRG g) =>
 chGet _ 0 = return $ Right ""
 chGet h n = getType h >>= \ct -> case ct of
 	M.CTCCSpec -> (Left . head . BS.unpack) `liftM`
-		(const `liftM` tRead h 1 `ap` M.rstSn (pid h) M.Read)
+		(const `liftM` tRead h 1 `ap` M.rstSn M.Read (pid h))
 	M.CTHandshake -> Right `liftM` tRead h n
 	M.CTAlert -> M.throw M.ALFtl M.ADUnk
 		. ((modNm ++ ".chGet: ") ++) . show =<< tRead h 2
@@ -91,7 +91,7 @@ cut h n ct b = (const r `liftM`) . M.setRBuf (pid h) $
 
 ccsPut :: (HandleLike h, CPRG g) => HandleBase h g -> Word8 -> M.TlsM h g ()
 ccsPut t w =
-	const `liftM` tWrite t M.CTCCSpec (BS.pack [w]) `ap` M.rstSn (pid t) M.Write
+	const `liftM` tWrite t M.CTCCSpec (BS.pack [w]) `ap` M.rstSn M.Write (pid t)
 
 hsPut :: (HandleLike h, CPRG g) => HandleBase h g -> BS.ByteString -> M.TlsM h g ()
 hsPut = flip tWrite M.CTHandshake
@@ -140,7 +140,7 @@ adGetContent rp h = getType h >>= \ct -> case ct of
 	M.CTAppData -> bCont h
 	M.CTHandshake -> rp h >> adGetContent rp h
 	M.CTAlert -> tRead h 2 >>= \al -> case al of
-		"\SOH\NULL" -> do
+		"\SOH\NUL" -> do
 			tWrite h M.CTAlert "\SOH\NUL"
 			M.throw M.ALFtl M.ADUnk $ modNm ++ ".adGetContent"
 		_ -> M.throw M.ALFtl M.ADUnk $ modNm ++ ".adGetcontent"
@@ -246,7 +246,7 @@ setNames = M.setNames . pid
 makeKeys :: HandleLike h => HandleBase h g -> M.Side ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> M.CipherSuite ->
 	M.TlsM h g M.Keys
-makeKeys = M.makeKeys . pid
+makeKeys = flip M.makeKeys . pid
 
 setKeys :: HandleLike h => HandleBase h g -> M.Keys -> M.TlsM h g ()
 setKeys = M.setKeys . pid

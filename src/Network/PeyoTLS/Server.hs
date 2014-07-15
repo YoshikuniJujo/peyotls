@@ -149,25 +149,24 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
-		_ -> throw ALFtl ADInternalError $
+		_ -> throw ALFtl ADInternalErr $
 			pre ++ "not implemented bulk encryption type"
 	mpk <- ($ mcs) . ($ (cr, sr)) $ case (ke, fst <$> rcrt, fst <$> ecrt) of
 		(RSA, Just rsk, _) -> rsaKeyExchange rsk cv
 		(DHE_RSA, Just rsk, _) -> dhKeyExchange ha dh3072Modp rsk
 		(ECDHE_RSA, Just rsk, _) -> dhKeyExchange ha secp256r1 rsk
 		(ECDHE_ECDSA, _, Just esk) -> dhKeyExchange ha secp256r1 esk
-		_ -> \_ _ -> throw ALFtl ADInternalError $
+		_ -> \_ _ -> throw ALFtl ADInternalErr $
 			pre ++ "no implemented key exchange type or " ++
 				"no applicable certificate files"
 	flip (maybe $ return ()) mpk $ \pk -> case pk of
 		X509.PubKeyRSA rpk -> certVerify rpk
 		X509.PubKeyECDSA c xy -> certVerify $ ecdsaPubKey c xy
-		_ -> throw ALFtl ADUnsupportedCertificate $
-			pre ++ "not implement: " ++ show pk
+		_ -> throw ALFtl ADUnsCert $ pre ++ "not implement: " ++ show pk
 	ChangeCipherSpec <- readHandshake
 	flushCipherSuite Read
 	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok -> unless ok .
-		throw ALFtl ADDecryptError $ pre ++ "wrong finished hash"
+		throw ALFtl ADDecryptErr $ pre ++ "wrong finished hash"
 	writeHandshake ChangeCipherSpec
 	flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
@@ -201,9 +200,9 @@ clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
 clientHello cssv = do
 	ClientHello cv cr _sid cscl cms me <- readHandshake
 	checkRenegoInfo cscl me
-	unless (cv >= version) . throw ALFtl ADProtocolVersion $
+	unless (cv >= version) . throw ALFtl ADProtoVer $
 		pre ++ "only implement TLS 1.2"
-	unless (CompMethodNull `elem` cms) . throw ALFtl ADDecodeError $
+	unless (CompMethodNull `elem` cms) . throw ALFtl ADDecodeErr $
 		pre ++ "compression method NULL must be supported"
 	(ke, be) <- case find (`elem` cscl) cssv of
 		Just cs@(CipherSuite k b) -> setCipherSuite cs >> return (k, b)
@@ -217,8 +216,7 @@ clientHello cssv = do
 checkRenegoInfo ::
 	HandleLike h => [CipherSuite] -> Maybe [Extension] -> HandshakeM h g ()
 checkRenegoInfo cscl me = (\n -> maybe n checkClRenego mcf) . throw
-	ALFtl ADInsufficientSecurity $
-	moduleName ++ ".checkRenego: require secure renegotiation"
+	ALFtl ADInsSec $ moduleName ++ ".checkRenego: require secure renegotiation"
 	where mcf = case (EMPTY_RENEGOTIATION_INFO `elem` cscl, me) of
 		(True, _) -> Just emptyRenegoInfo
 		(_, Just e) -> find isRenegoInfo e
@@ -231,7 +229,7 @@ serverHello rcc ecc = do
 	cs <- getCipherSuite
 	ke <- case cs of
 		CipherSuite k _ -> return k
-		_ -> throw ALFtl ADInternalError $
+		_ -> throw ALFtl ADInternalErr $
 			moduleName ++ ".serverHello: never occur"
 	sr <- withRandom $ cprgGenerate 32
 	writeHandshake
@@ -240,7 +238,7 @@ serverHello rcc ecc = do
 	writeHandshake =<< case (ke, rcc, ecc) of
 		(ECDHE_ECDSA, _, Just c) -> return c
 		(_, Just c, _) -> return c
-		_ -> throw ALFtl ADInternalError $
+		_ -> throw ALFtl ADInternalErr $
 			moduleName ++ ".serverHello: cert files not match"
 	return sr
 
@@ -273,7 +271,7 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 	const `liftM` reqAndCert mcs `ap` do
 		ClientKeyEx cke <- readHandshake
 		makeKeys Server rs . calculateShared dp sv =<<
-			either (throw ALFtl ADInternalError .
+			either (throw ALFtl ADInternalErr .
 					(moduleName ++) . (".dhKeyExchange: " ++))
 				return (B.decode cke)
 
@@ -297,7 +295,7 @@ certVerify pk = do
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, sa) | sa == cspAlgorithm pk -> return ()
-		_ -> throw ALFtl ADDecodeError $
+		_ -> throw ALFtl ADDecodeErr $
 			moduleName ++ ".certVerify: not implement: " ++ show a
-	unless (csVerify pk s hs0) . throw ALFtl ADDecryptError $
+	unless (csVerify pk s hs0) . throw ALFtl ADDecryptErr $
 		moduleName ++ ".certVerify: client auth failed "

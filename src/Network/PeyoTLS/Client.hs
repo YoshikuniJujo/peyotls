@@ -78,8 +78,8 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	hlDebug = adDebug . tlsHandleC
 	hlClose = adClose . tlsHandleC
 
-moduleName :: String
-moduleName = "Network.PeyoTLS.Client"
+modNm :: String
+modNm = "Network.PeyoTLS.Client"
 
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleC
@@ -139,23 +139,22 @@ handshake crts ca cr = do
 		ECDHE_RSA -> dheHandshake (undefined :: ECC.Curve)
 		ECDHE_ECDSA -> dheHandshake (undefined :: ECC.Curve)
 		_ -> \_ _ _ -> throw ALFtl ADHsFailure $
-			moduleName ++ ".handshake: not implemented"
+			modNm ++ ".handshake: not implemented"
 
 serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
 serverHello = do
 	ServerHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
 	case v of
 		(3, 3) -> return ()
-		_ -> throw ALFtl ADProtocolVersion $
-			moduleName ++ ".serverHello: only TLS 1.2"
+		_ -> throw ALFtl ADProtoVer $
+			modNm ++ ".serverHello: only TLS 1.2"
 	case cm of
 		CompMethodNull -> return ()
 		_ -> throw ALFtl ADHsFailure $
-			moduleName ++ ".serverHello: only compression method null"
+			modNm ++ ".serverHello: only compression method null"
 	case find isRenegoInfo $ fromMaybe [] e of
 		Just ri -> checkSvRenego ri
-		_ -> throw ALFtl ADInsufficientSecurity $
-			moduleName ++ ".serverHello: require secure renegotiation"
+		_ -> throw ALFtl ADInsSec $ modNm ++ ".serverHello: no sec renego"
 	setCipherSuite cs
 	return (sr, ke)
 
@@ -166,11 +165,10 @@ rsaHandshake rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
 	unless (null vr) . throw ALFtl (validateAlert vr) $
-		moduleName ++ ".rsaHandshake: validate failure"
+		modNm ++ ".rsaHandshake: validate failure"
 	pk <- case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA k -> return k
-		_ -> throw ALFtl ADIllegalParameter $
-			moduleName ++ ".rsaHandshake: require RSA public key"
+		_ -> throw ALFtl ADIllParam $ modNm ++ ".rsaHandshake: RSA pk"
 	crt <- clientCertificate crts
 	pms <- ("\x03\x03" `BS.append`) `liftM` withRandom (cprgGenerate 46)
 	makeKeys Client rs pms
@@ -191,12 +189,12 @@ dheHandshake t rs crts ca = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
 	vr <- handshakeValidate ca cc
 	unless (null vr) . throw ALFtl (validateAlert vr) $
-		moduleName ++ ".succeed: validate failure"
+		modNm ++ ".succeed: validate failure"
 	case X509.certPubKey . X509.signedObject $ X509.getSigned c of
 		X509.PubKeyRSA pk -> succeed t pk rs crts
 		X509.PubKeyECDSA cv pt -> succeed t (ecdsaPubKey cv pt) rs crts
 		_ -> throw ALFtl ADHsFailure $
-			moduleName ++ ".dheHandshake: not implemented"
+			modNm ++ ".dheHandshake: not implemented"
 
 succeed :: (ValidateHandle h, CPRG g, SvSignPublicKey pk,
 		KeyExchangeClass ke, Show (Secret ke), Show (Public ke)) =>
@@ -208,13 +206,13 @@ succeed t pk rs@(cr, sr) crts = do
 	unless (sa == sspAlgorithm pk) . throw ALFtl ADHsFailure $
 		pre ++ "sign algorithm unmatch"
 	unless (ssVerify ha pk sn $ BS.concat [cr, sr, B.encode ps, B.encode pv]) .
-		throw ALFtl ADDecryptError $ pre ++ "verify failure"
+		throw ALFtl ADDecryptErr $ pre ++ "verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	makeKeys Client rs $ calculateShared ps sv pv
 	writeHandshake . ClientKeyEx . B.encode $ calculatePublic ps sv
 	finishHandshake crt
-	where pre = moduleName ++ ".succeed: "
+	where pre = modNm ++ ".succeed: "
 
 class (DhParam bs, B.Bytable bs, B.Bytable (Public bs)) => KeyExchangeClass bs where
 	serverKeyExchange :: (HandleLike h, CPRG g) => HandshakeM h g
@@ -240,7 +238,7 @@ clientCertificate crts = do
 		case find (isMatchedCert cct a dn) crts of
 			Just c ->
 				(>>) <$> writeHandshake . snd <*> return . Just $ c
-			_ -> throw ALFtl ADUnknownCa $ moduleName ++
+			_ -> throw ALFtl ADUnkCa $ modNm ++
 				".clientCertificate: no certificate"
 
 isMatchedCert :: [ClCertType] -> [(HashAlg, SignAlg)] ->
@@ -254,7 +252,7 @@ isMatchedCert ct hsa dn = (&&) <$> csk . fst <*> ccrt . snd
 	ccrt (X509.CertificateChain cs@(c : _)) =
 		cpk (X509.certPubKey $ obj c) &&
 		not (null . intersect dn $ map (X509.certIssuerDN . obj) cs)
-	ccrt _ = error $ moduleName ++ ".isMatchedCert: empty certificate chain"
+	ccrt _ = error $ modNm ++ ".isMatchedCert: empty certificate chain"
 	cpk X509.PubKeyRSA{} = rsa; cpk X509.PubKeyECDSA{} = ecdsa; cpk _ = False
 
 finishHandshake :: (HandleLike h, CPRG g) =>
@@ -273,5 +271,5 @@ finishHandshake crt = do
 	ChangeCipherSpec <- readHandshake
 	flushCipherSuite Read
 	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
-		(throw ALFtl ADDecryptError $
-			moduleName ++ ".finishHandshake: finished hash failure")
+		(throw ALFtl ADDecryptErr $
+			modNm ++ ".finishHandshake: finished hash failure")

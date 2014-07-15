@@ -110,7 +110,7 @@ readHandshake = do
 				Just i -> updateHash bs >> return i
 				_ -> throw ALFtl ADUnexMsg $
 					modNm ++ ".readHandshake: " ++ show hs
-			Left em -> throw ALFtl ADInternalError $
+			Left em -> throw ALFtl ADInternalErr $
 				modNm ++ ".readHandshake: " ++ em
 		_ -> throw ALFtl ADUnexMsg $ modNm ++ ".readHandshake: uk ccs"
 
@@ -135,13 +135,13 @@ checkClRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` getClFinished
 	unless ok . throw ALFtl ADHsFailure $
 		modNm ++ ".checkClRenego: renego info is not match"
-checkClRenego _ = throw ALFtl ADInternalError $
+checkClRenego _ = throw ALFtl ADInternalErr $
 	modNm ++ ".checkClRenego: not renego info"
 checkSvRenego (ERenegoInfo ri) = do
 	ok <- (ri ==) `liftM` (BS.append `liftM` getClFinished `ap` getSvFinished)
 	unless ok . throw ALFtl ADHsFailure $
 		modNm ++ ".checkSvRenego: renego info is not match"
-checkSvRenego _ = throw ALFtl ADInternalError $
+checkSvRenego _ = throw ALFtl ADInternalErr $
 	modNm ++ ".checkSvRenego: not renego info"
 
 makeClRenego, makeSvRenego :: HandleLike h => HandshakeM h g Extension

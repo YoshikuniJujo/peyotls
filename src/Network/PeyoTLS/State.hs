@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.State (
-	HandshakeState, initState, PartnerId, newPartner, Keys(..), nullKeys,
+	TlsState, initState, PartnerId, newPartner, Keys(..), nullKeys,
 	ContType(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	getGen, setGen,
@@ -43,16 +43,16 @@ import Network.PeyoTLS.CipherSuite (
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-data HandshakeState h g = HandshakeState {
+data TlsState h g = TlsState {
 	getGen :: g, nextPartnerId :: Int,
 	states :: [(PartnerId, StateOne g)] }
 
-initState :: g -> HandshakeState h g
-initState g = HandshakeState{ getGen = g, nextPartnerId = 0, states = [] }
+initState :: g -> TlsState h g
+initState g = TlsState{ getGen = g, nextPartnerId = 0, states = [] }
 
 data PartnerId = PartnerId Int deriving (Show, Eq)
 
-newPartner :: HandshakeState h g -> (PartnerId, HandshakeState h g)
+newPartner :: TlsState h g -> (PartnerId, TlsState h g)
 newPartner s = (PartnerId i ,) s{
 	nextPartnerId = succ i,
 	states = (PartnerId i, so) : sos }
@@ -103,13 +103,13 @@ data StateOne g = StateOne {
 	sNames :: [String]
 	}
 
-getState :: PartnerId -> HandshakeState h g -> StateOne g
+getState :: PartnerId -> TlsState h g -> StateOne g
 getState i = fromJust' "getState" . lookup i . states
 
-setState :: PartnerId -> StateOne g -> Modify (HandshakeState h g)
+setState :: PartnerId -> StateOne g -> Modify (TlsState h g)
 setState i so s = s { states = (i, so) : states s }
 
-modifyState :: PartnerId -> Modify (StateOne g) -> Modify (HandshakeState h g)
+modifyState :: PartnerId -> Modify (StateOne g) -> Modify (TlsState h g)
 modifyState i f s = setState i (f $ getState i s) s
 
 data Keys = Keys {
@@ -153,42 +153,42 @@ instance B.Bytable ContType where
 	decode bs | [ct] <- BS.unpack bs = Right $ CTRaw ct
 	decode _ = Left "State.decodeCT"
 
-setGen :: g -> HandshakeState h g -> HandshakeState h g
+setGen :: g -> TlsState h g -> TlsState h g
 setGen rg st = st { getGen = rg }
 
-getRBuf :: PartnerId -> HandshakeState h g -> (ContType, BS.ByteString)
+getRBuf :: PartnerId -> TlsState h g -> (ContType, BS.ByteString)
 getRBuf i = rBuffer . fromJust' "getRBuf" . lookup i . states
 
-setRBuf :: PartnerId -> (ContType, BS.ByteString) -> Modify (HandshakeState h g)
+setRBuf :: PartnerId -> (ContType, BS.ByteString) -> Modify (TlsState h g)
 setRBuf i = modifyState i . \bs st -> st { rBuffer = bs }
 
-getAdBuf :: PartnerId -> HandshakeState h g -> BS.ByteString
+getAdBuf :: PartnerId -> TlsState h g -> BS.ByteString
 getAdBuf i = radBuffer . fromJust' "getAdBuf" . lookup i . states
 
-setAdBuf :: PartnerId -> BS.ByteString -> Modify (HandshakeState h g)
+setAdBuf :: PartnerId -> BS.ByteString -> Modify (TlsState h g)
 setAdBuf i = modifyState i . \bs st -> st { radBuffer = bs }
 
-getCipherSuite :: PartnerId -> HandshakeState h g -> CipherSuite
+getCipherSuite :: PartnerId -> TlsState h g -> CipherSuite
 getCipherSuite i =
 	kCachedCS . sKeys . fromJust' "getCipherSuite" . lookup i . states
 
-setCipherSuite :: PartnerId -> CipherSuite -> Modify (HandshakeState h g)
+setCipherSuite :: PartnerId -> CipherSuite -> Modify (TlsState h g)
 setCipherSuite i = modifyState i . \cs st ->
 	st { sKeys = (sKeys st) { kCachedCS = cs } }
 
-getNames :: PartnerId -> HandshakeState h g -> [String]
+getNames :: PartnerId -> TlsState h g -> [String]
 getNames i = sNames . fromJust' "getNames" . lookup i . states
 
-setNames :: PartnerId -> [String] -> Modify (HandshakeState h g)
+setNames :: PartnerId -> [String] -> Modify (TlsState h g)
 setNames i = modifyState i . \n st -> st { sNames = n }
 
-getKeys :: PartnerId -> HandshakeState h g -> Keys
+getKeys :: PartnerId -> TlsState h g -> Keys
 getKeys i = sKeys . fromJust' "getKeys" . lookup i . states
 
-setKeys :: PartnerId -> Keys -> Modify (HandshakeState h g)
+setKeys :: PartnerId -> Keys -> Modify (TlsState h g)
 setKeys i = modifyState i . \k st -> st { sKeys = k }
 
-getSettings :: PartnerId -> HandshakeState h g -> Settings
+getSettings :: PartnerId -> TlsState h g -> Settings
 getSettings i = initialSettings . fromJust' "getSettings" . lookup i . states
 
 type SettingsC = (
@@ -196,42 +196,42 @@ type SettingsC = (
 	[(CertSecretKey, X509.CertificateChain)],
 	X509.CertificateStore )
 
-getSettingsC :: PartnerId -> HandshakeState h g -> Maybe SettingsC
+getSettingsC :: PartnerId -> TlsState h g -> Maybe SettingsC
 getSettingsC i s = case getSettings i s of
 	(css, crts, Just cs) -> Just (css, crts, cs)
 	_ -> Nothing
 
-getSettingsS :: PartnerId -> HandshakeState h g -> SettingsS
+getSettingsS :: PartnerId -> TlsState h g -> SettingsS
 getSettingsS i = convertSettings .
 	initialSettings . fromJust' "getSettingsS" . lookup i . states
 
-setSettings :: PartnerId -> Settings -> Modify (HandshakeState h g)
+setSettings :: PartnerId -> Settings -> Modify (TlsState h g)
 setSettings i = modifyState i . \is st -> st { initialSettings = is }
 
-setSettingsC :: PartnerId -> SettingsC -> Modify (HandshakeState h g)
+setSettingsC :: PartnerId -> SettingsC -> Modify (TlsState h g)
 setSettingsC i (css, crts, cs) = setSettings i (css, crts, Just cs)
 
-setSettingsS :: PartnerId -> SettingsS -> Modify (HandshakeState h g)
+setSettingsS :: PartnerId -> SettingsS -> Modify (TlsState h g)
 setSettingsS i = modifyState i . \is st -> st
 	{ initialSettings = revertSettings is }
 
 getClFinished, getSvFinished ::
-	PartnerId -> HandshakeState h g -> BS.ByteString
+	PartnerId -> TlsState h g -> BS.ByteString
 getClFinished i =
 	rnClientFinished . fromJust' "getClFinished" . lookup i . states
 getSvFinished i =
 	rnServerFinished . fromJust' "getClFinished" . lookup i . states
 
 setClFinished, setSvFinished ::
-	PartnerId -> BS.ByteString -> Modify (HandshakeState h g)
+	PartnerId -> BS.ByteString -> Modify (TlsState h g)
 setClFinished i = modifyState i . \cf st -> st { rnClientFinished = cf }
 setSvFinished i = modifyState i . \sf st -> st { rnServerFinished = sf }
 
-flushCipherSuite :: RW -> PartnerId -> Modify (HandshakeState h g)
+flushCipherSuite :: RW -> PartnerId -> Modify (TlsState h g)
 flushCipherSuite Read = flushCipherSuiteRead
 flushCipherSuite Write = flushCipherSuiteWrite
 
-flushCipherSuiteRead :: PartnerId -> Modify (HandshakeState h g)
+flushCipherSuiteRead :: PartnerId -> Modify (TlsState h g)
 flushCipherSuiteRead i = modifyState i $ \st ->
 	st { sKeys = (sKeys st) {
 		kReadCS = kCachedCS (sKeys st),
@@ -239,7 +239,7 @@ flushCipherSuiteRead i = modifyState i $ \st ->
 		kReadKey = kCachedReadKey (sKeys st)
 		} }
 
-flushCipherSuiteWrite :: PartnerId -> Modify (HandshakeState h g)
+flushCipherSuiteWrite :: PartnerId -> Modify (TlsState h g)
 flushCipherSuiteWrite i = modifyState i $ \st ->
 	st { sKeys = (sKeys st) {
 		kWriteCS = kCachedCS (sKeys st),
@@ -247,21 +247,21 @@ flushCipherSuiteWrite i = modifyState i $ \st ->
 		kWriteKey = kCachedWriteKey (sKeys st)
 		} }
 
-getWBuf :: PartnerId -> HandshakeState h g -> (ContType, BS.ByteString)
+getWBuf :: PartnerId -> TlsState h g -> (ContType, BS.ByteString)
 getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . states
 
-setWBuf :: PartnerId -> (ContType, BS.ByteString) -> Modify (HandshakeState h g)
+setWBuf :: PartnerId -> (ContType, BS.ByteString) -> Modify (TlsState h g)
 setWBuf i = modifyState i . \bs st -> st{ wBuffer = bs }
 
-getRSn, getWSn :: PartnerId -> HandshakeState h g -> Word64
+getRSn, getWSn :: PartnerId -> TlsState h g -> Word64
 getRSn i = readSN . fromJust . lookup i . states
 getWSn i = writeSN . fromJust . lookup i . states
 
-sccRSn, sccWSn :: PartnerId -> Modify (HandshakeState h g)
+sccRSn, sccWSn :: PartnerId -> Modify (TlsState h g)
 sccRSn i = modifyState i $ \s -> s{ readSN = succ $ readSN s }
 sccWSn i = modifyState i $ \s -> s{ writeSN = succ $ writeSN s }
 
-rstRSn, rstWSn :: PartnerId -> Modify (HandshakeState h g)
+rstRSn, rstWSn :: PartnerId -> Modify (TlsState h g)
 rstRSn i = modifyState i $ \s -> s{ readSN = 0 }
 rstWSn i = modifyState i $ \s -> s{ writeSN = 0 }
 

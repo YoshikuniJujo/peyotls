@@ -165,10 +165,10 @@ finishedHash s = do
 
 validateAlert :: [X509.FailedReason] -> H.AlertDesc
 validateAlert vr
-	| X509.UnknownCA `elem` vr = H.ADUnknownCa
-	| X509.Expired `elem` vr = H.ADCertificateExpired
-	| X509.InFuture `elem` vr = H.ADCertificateExpired
-	| otherwise = H.ADCertificateUnknown
+	| X509.UnknownCA `elem` vr = H.ADUnkCa
+	| X509.Expired `elem` vr = H.ADCertEx
+	| X509.InFuture `elem` vr = H.ADCertEx
+	| otherwise = H.ADCertUnk
 
 handshakeValidate :: H.ValidateHandle h => X509.CertificateStore ->
 	X509.CertificateChain -> HandshakeM h g [X509.FailedReason]

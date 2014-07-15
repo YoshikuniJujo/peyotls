@@ -88,7 +88,7 @@ calcMac hs mk sn m = hmac hs 64 mk $ B.encode sn `BS.append` m
 data Side = Server | Client deriving (Show, Eq)
 
 finishedHash :: Side -> BS.ByteString -> BS.ByteString -> BS.ByteString
-finishedHash s ms hash = take 12 . prf ms . (`BS.append` hash) $ case s of
+finishedHash s hash ms = take 12 . prf ms . (`BS.append` hash) $ case s of
 	Client -> "client finished"
 	Server -> "server finished"
 
