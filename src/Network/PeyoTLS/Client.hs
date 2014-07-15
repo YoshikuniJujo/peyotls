@@ -50,16 +50,16 @@ import Network.PeyoTLS.Base ( debug,
 		AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	HandleBase, CertSecretKey(..),
-		readHandshake, writeHandshake, ChangeCipherSpec(..),
-	ClientHello(..), ServerHello(..), SessionId(..), isRenegoInfo,
+		readHandshake, writeHandshake, CCSpec(..),
+	ClHello(..), SvHello(..), SssnId(..), isRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
 		checkSvRenego, makeClRenego,
-	ServerKeyExEcdhe(..), ServerKeyExDhe(..), SvSignPublicKey(..),
+	SvKeyExEcdhe(..), SvKeyExDhe(..), SvSignPublicKey(..),
 	CertReq(..), ClCertType(..),
-	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), makeKeys,
+	SHDone(..),
+	ClKeyEx(..), Epms(..), makeKeys,
 	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
 	DhParam(..), ecdsaPubKey )
@@ -124,7 +124,7 @@ clientHello :: (HandleLike h, CPRG g) =>
 clientHello cscl = do
 	cr <- withRandom $ cprgGenerate 32
 	((>>) <$> writeHandshake <*> debug "low")
-		. ClientHello (3, 3) cr (SessionId "") cscl [CompMethodNull]
+		. ClHello (3, 3) cr (SssnId "") cscl [CompMethodNull]
 		. Just . (: []) =<< makeClRenego
 	return cr
 
@@ -143,7 +143,7 @@ handshake crts ca cr = do
 
 serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
 serverHello = do
-	ServerHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
+	SvHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
 	case v of
 		(3, 3) -> return ()
 		_ -> throw ALFtl ADProtoVer $
@@ -210,7 +210,7 @@ succeed t pk rs@(cr, sr) crts = do
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
 	makeKeys Client rs $ calculateShared ps sv pv
-	writeHandshake . ClientKeyEx . B.encode $ calculatePublic ps sv
+	writeHandshake . ClKeyEx . B.encode $ calculatePublic ps sv
 	finishHandshake crt
 	where pre = modNm ++ ".succeed: "
 
@@ -220,12 +220,12 @@ class (DhParam bs, B.Bytable bs, B.Bytable (Public bs)) => KeyExchangeClass bs w
 
 instance KeyExchangeClass ECC.Curve where
 	serverKeyExchange = do
-		ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+		SvKeyExEcdhe cv pnt ha sa sn <- readHandshake
 		return (cv, pnt, ha, sa, sn)
 
 instance KeyExchangeClass DH.Params where
 	serverKeyExchange = do
-		ServerKeyExDhe ps pv ha sa sn <- readHandshake
+		SvKeyExDhe ps pv ha sa sn <- readHandshake
 		return (ps, pv, ha, sa, sn)
 
 clientCertificate :: (HandleLike h, CPRG g) =>
@@ -265,10 +265,10 @@ finishHandshake crt = do
 		Just (EcdsaKey sk) -> writeHandshake $
 			DigitallySigned (cssAlgorithm sk) $ csSign sk hs
 		_ -> return ()
-	writeHandshake ChangeCipherSpec
+	writeHandshake CCSpec
 	flushCipherSuite Write
 	writeHandshake =<< finishedHash Client
-	ChangeCipherSpec <- readHandshake
+	CCSpec <- readHandshake
 	flushCipherSuite Read
 	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
 		(throw ALFtl ADDecryptErr $

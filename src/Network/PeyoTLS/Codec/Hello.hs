@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.PeyoTLS.Codec.Hello ( Extension(..),
-	ClientHello(..), ServerHello(..), SessionId(..),
+module Network.PeyoTLS.Codec.Hello ( Extension(..), isRenegoInfo, emptyRenegoInfo,
+	ClHello(..), SvHello(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..),
 		SignAlg(..), HashAlg(..) ) where
@@ -13,17 +13,20 @@ import Numeric (showHex)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-import Network.PeyoTLS.Codec.Extension (Extension(..), SignAlg(..), HashAlg(..))
+import Network.PeyoTLS.Codec.Extension (
+	Extension(..), SignAlg(..), HashAlg(..),
+	isRenegoInfo, emptyRenegoInfo,
+	)
 import Network.PeyoTLS.CipherSuite (
 	CipherSuite(..), KeyEx(..), BulkEnc(..))
 
-data ClientHello
-	= ClientHello (Word8, Word8) BS.ByteString SessionId
+data ClHello
+	= ClHello (Word8, Word8) BS.ByteString SssnId
 		[CipherSuite] [CompMethod] (Maybe [Extension])
-	| ClientHelloRaw BS.ByteString
+	| ClHelloRaw BS.ByteString
 	deriving Show
 
-instance B.Bytable ClientHello where
+instance B.Bytable ClHello where
 	decode = B.evalBytableM $ do
 		(pv, r, sid) <- (,,) <$> ((,) <$> B.head <*> B.head)
 			<*> B.take 32 <*> (B.take =<< B.take 1)
@@ -32,25 +35,25 @@ instance B.Bytable ClientHello where
 		nl <- B.null
 		me <- if nl then return Nothing else
 			Just <$> (flip B.list B.parse =<< B.take 2)
-		return $ ClientHello pv r sid cs cm me
+		return $ ClHello pv r sid cs cm me
 	encode = encodeCh
 
-encodeCh :: ClientHello -> BS.ByteString
-encodeCh (ClientHello (vmjr, vmnr) r sid css cms mel) = BS.concat [
+encodeCh :: ClHello -> BS.ByteString
+encodeCh (ClHello (vmjr, vmnr) r sid css cms mel) = BS.concat [
 	B.encode vmjr, B.encode vmnr, B.encode r,
 	B.addLen (undefined :: Word8) $ B.encode sid,
 	B.addLen (undefined :: Word16) . BS.concat $ map B.encode css,
 	B.addLen (undefined :: Word8) . BS.concat $ map B.encode cms,
 	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.encode) mel ]
-encodeCh (ClientHelloRaw bs) = bs
+encodeCh (ClHelloRaw bs) = bs
 
-data ServerHello
-	= ServerHello (Word8, Word8) BS.ByteString SessionId
+data SvHello
+	= SvHello (Word8, Word8) BS.ByteString SssnId
 		CipherSuite CompMethod (Maybe [Extension])
-	| ServerHelloRaw BS.ByteString
+	| SvHelloRaw BS.ByteString
 	deriving Show
 
-instance B.Bytable ServerHello where
+instance B.Bytable SvHello where
 	decode = B.evalBytableM $ do
 		(pv, r, sid) <- (,,) <$> ((,) <$> B.head <*> B.head)
 			<*> B.take 32 <*> (B.take =<< B.take 1)
@@ -60,16 +63,16 @@ instance B.Bytable ServerHello where
 		me <- if e then return Nothing else do
 			mel <- B.take 2
 			Just <$> B.list mel B.parse
-		return $ ServerHello pv r sid cs cm me
+		return $ SvHello pv r sid cs cm me
 	encode = encodeSh
 
-encodeSh :: ServerHello -> BS.ByteString
-encodeSh (ServerHello (vmjr, vmnr) r sid cs cm mes) = BS.concat [
+encodeSh :: SvHello -> BS.ByteString
+encodeSh (SvHello (vmjr, vmnr) r sid cs cm mes) = BS.concat [
 	B.encode vmjr, B.encode vmnr, B.encode r,
 	B.addLen (undefined :: Word8) $ B.encode sid,
 	B.encode cs, B.encode cm,
 	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.encode) mes ]
-encodeSh (ServerHelloRaw sh) = sh
+encodeSh (SvHelloRaw sh) = sh
 
 data CompMethod = CompMethodNull | CompMethodRaw Word8
 	deriving (Show, Eq)
@@ -83,12 +86,12 @@ instance B.Bytable CompMethod where
 	encode CompMethodNull = "\0"
 	encode (CompMethodRaw cm) = BS.pack [cm]
 
-data SessionId = SessionId BS.ByteString
+data SssnId = SssnId BS.ByteString
 
-instance Show SessionId where
-	show (SessionId sid) = "(SessionID " ++
+instance Show SssnId where
+	show (SssnId sid) = "(SessionID " ++
 		concatMap (`showHex` "") (BS.unpack sid) ++ ")"
 
-instance B.Bytable SessionId where
-	decode = Right . SessionId
-	encode (SessionId bs) = bs
+instance B.Bytable SssnId where
+	decode = Right . SssnId
+	encode (SssnId bs) = bs

@@ -1,7 +1,10 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Codec.Extension (Extension(..), SignAlg(..), HashAlg(..)) where
+module Network.PeyoTLS.Codec.Extension (
+	Extension(..), SignAlg(..), HashAlg(..),
+	isRenegoInfo, emptyRenegoInfo,
+	) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Bits (shiftL, (.|.))
@@ -218,3 +221,10 @@ w16 :: Word16; w16 = undefined
 
 cmap :: (a -> BS.ByteString) -> [a] -> BS.ByteString
 cmap = (BS.concat .) . map
+
+isRenegoInfo :: Extension -> Bool
+isRenegoInfo (ERenegoInfo _) = True
+isRenegoInfo _ = False
+
+emptyRenegoInfo :: Extension
+emptyRenegoInfo = ERenegoInfo ""

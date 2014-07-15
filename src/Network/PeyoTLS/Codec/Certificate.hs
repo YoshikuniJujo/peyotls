@@ -3,7 +3,7 @@
 
 module Network.PeyoTLS.Codec.Certificate (
 	CertReq(..), certReq, ClCertType(..),
-	ClientKeyEx(..), DigitallySigned(..)) where
+	ClKeyEx(..), DigitallySigned(..)) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Word (Word8, Word16)
@@ -75,11 +75,11 @@ instance B.Bytable ClCertType where
 			1 -> CTRsaSign; 64 -> CTEcdsaSign; _ -> CTRaw w
 		_ -> Left "Certificate: ClCertType.decode"
 
-data ClientKeyEx = ClientKeyEx BS.ByteString deriving Show
+data ClKeyEx = ClKeyEx BS.ByteString deriving Show
 
-instance B.Bytable ClientKeyEx where
-	decode = Right . ClientKeyEx
-	encode (ClientKeyEx epms) = epms
+instance B.Bytable ClKeyEx where
+	decode = Right . ClKeyEx
+	encode (ClKeyEx epms) = epms
 
 data DigitallySigned
 	= DigitallySigned (HashAlg, SignAlg) BS.ByteString

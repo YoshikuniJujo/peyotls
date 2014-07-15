@@ -52,18 +52,18 @@ import Network.PeyoTLS.Base ( debug,
 		AlertLevel(..), AlertDesc(..), throw, debugCipherSuite,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	HandleBase, CertSecretKey(..), isRsaKey, isEcdsaKey,
-		readHandshake, writeHandshake, ChangeCipherSpec(..),
+		readHandshake, writeHandshake, CCSpec(..),
 	Handshake(HHelloReq),
-	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
+	ClHello(..), SvHello(..), SssnId(..), Extension(..),
 		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClRenego, makeSvRenego,
-	ServerKeyEx(..), SvSignSecretKey(..),
+	SvKeyEx(..), SvSignSecretKey(..),
 	certReq, ClCertType(..),
-	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), makeKeys,
+	SHDone(..),
+	ClKeyEx(..), Epms(..), makeKeys,
 	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
@@ -163,11 +163,11 @@ handshake (cssv, rcrt, ecrt, mcs) = do
 		X509.PubKeyRSA rpk -> certVerify rpk
 		X509.PubKeyECDSA c xy -> certVerify $ ecdsaPubKey c xy
 		_ -> throw ALFtl ADUnsCert $ pre ++ "not implement: " ++ show pk
-	ChangeCipherSpec <- readHandshake
+	CCSpec <- readHandshake
 	flushCipherSuite Read
 	(==) `liftM` finishedHash Client `ap` readHandshake >>= \ok -> unless ok .
 		throw ALFtl ADDecryptErr $ pre ++ "wrong finished hash"
-	writeHandshake ChangeCipherSpec
+	writeHandshake CCSpec
 	flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
 	where pre = moduleName ++ ".handshake: "
@@ -198,7 +198,7 @@ dh3072Modp = DH.Params p 2
 clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
 	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version)
 clientHello cssv = do
-	ClientHello cv cr _sid cscl cms me <- readHandshake
+	ClHello cv cr _sid cscl cms me <- readHandshake
 	checkRenegoInfo cscl me
 	unless (cv >= version) . throw ALFtl ADProtoVer $
 		pre ++ "only implement TLS 1.2"
@@ -233,7 +233,7 @@ serverHello rcc ecc = do
 			moduleName ++ ".serverHello: never occur"
 	sr <- withRandom $ cprgGenerate 32
 	writeHandshake
-		. ServerHello version sr (SessionId "") cs CompMethodNull
+		. SvHello version sr (SssnId "") cs CompMethodNull
 		. Just . (: []) =<< makeSvRenego
 	writeHandshake =<< case (ke, rcc, ecc) of
 		(ECDHE_ECDSA, _, Just c) -> return c
@@ -266,10 +266,10 @@ dhKeyExchange ha dp sk rs@(cr, sr) mcs = do
 	bl <- withRandom $ generateBlinder sk
 	let pv = B.encode $ calculatePublic dp sv
 	writeHandshake
-		. ServerKeyEx (B.encode dp) pv ha (sssAlgorithm sk)
+		. SvKeyEx (B.encode dp) pv ha (sssAlgorithm sk)
 		. ssSign sk ha bl $ BS.concat [cr, sr, B.encode dp, pv]
 	const `liftM` reqAndCert mcs `ap` do
-		ClientKeyEx cke <- readHandshake
+		ClKeyEx cke <- readHandshake
 		makeKeys Server rs . calculateShared dp sv =<<
 			either (throw ALFtl ADInternalErr .
 					(moduleName ++) . (".dhKeyExchange: " ++))

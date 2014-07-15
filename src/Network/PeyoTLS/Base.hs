@@ -12,19 +12,19 @@ module Network.PeyoTLS.Base (
 	HandleBase, getNames,
 		CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, writeHandshake,
-		ChangeCipherSpec(..),
+		CCSpec(..),
 	Handshake(HHelloReq),
-	ClientHello(..), ServerHello(..), SessionId(..), Extension(..),
+	ClHello(..), SvHello(..), SssnId(..), Extension(..),
 		isRenegoInfo, emptyRenegoInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
 		checkClRenego, checkSvRenego, makeClRenego, makeSvRenego,
-	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
+	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
 		SvSignSecretKey(..), SvSignPublicKey(..),
 	CertReq(..), certReq, ClCertType(..),
-	ServerHelloDone(..),
-	ClientKeyEx(..), Epms(..), makeKeys,
+	SHDone(..),
+	ClKeyEx(..), Epms(..), makeKeys,
 	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
 		handshakeHash,
 	RW(..), flushCipherSuite,
@@ -61,13 +61,13 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import Network.PeyoTLS.Codec (
 	Handshake(..), HandshakeItem(..),
-	ClientHello(..), ServerHello(..), SessionId(..),
+	ClHello(..), SvHello(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), Extension(..), isRenegoInfo, emptyRenegoInfo,
-	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
+	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
-	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
-	DigitallySigned(..), ChangeCipherSpec(..), Finished(..) )
+	SHDone(..), ClKeyEx(..), Epms(..),
+	DigitallySigned(..), CCSpec(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as RUN (finishedHash, debug)
 import Network.PeyoTLS.Run (
 	TlsM, run, HandleBase, getNames,
