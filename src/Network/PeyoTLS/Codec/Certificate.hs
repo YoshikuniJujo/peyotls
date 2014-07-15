@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Certificate (
+module Network.PeyoTLS.Codec.Certificate (
 	CertReq(..), certReq, ClCertType(..),
 	ClientKeyEx(..), DigitallySigned(..)) where
 
@@ -17,7 +17,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
-import Network.PeyoTLS.HSAlg (HashAlg, SignAlg)
+import Network.PeyoTLS.Codec.HSAlg (HashAlg, SignAlg)
 
 instance B.Bytable X509.CertificateChain where
 	decode = B.evalBytableM B.parse

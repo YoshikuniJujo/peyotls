@@ -292,9 +292,9 @@ library
     other-modules:
         Network.PeyoTLS.Base,
         Network.PeyoTLS.Codec,
-            Network.PeyoTLS.Hello, Network.PeyoTLS.Extension,
-                Network.PeyoTLS.CipherSuite, Network.PeyoTLS.HSAlg,
-            Network.PeyoTLS.Certificate,
+            Network.PeyoTLS.Codec.Hello, Network.PeyoTLS.Codec.Extension,
+                Network.PeyoTLS.CipherSuite, Network.PeyoTLS.Codec.HSAlg,
+            Network.PeyoTLS.Codec.Certificate,
         Network.PeyoTLS.Run,
             Network.PeyoTLS.Run.Handle,
                 Network.PeyoTLS.Run.Monad, Network.PeyoTLS.Run.State,

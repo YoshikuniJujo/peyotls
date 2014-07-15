@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.PeyoTLS.HSAlg (SignAlg(..), HashAlg(..)) where
+module Network.PeyoTLS.Codec.HSAlg (SignAlg(..), HashAlg(..)) where
 
 import Data.Word (Word8)
 

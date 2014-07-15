@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Network.PeyoTLS.Extension (Extension(..), SignAlg(..), HashAlg(..)) where
+module Network.PeyoTLS.Codec.Extension (Extension(..), SignAlg(..), HashAlg(..)) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Bits (shiftL, (.|.))
@@ -12,7 +12,7 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Network.PeyoTLS.HSAlg(HashAlg(..), SignAlg(..))
+import Network.PeyoTLS.Codec.HSAlg(HashAlg(..), SignAlg(..))
 
 data Extension
 	= ESName [ServerName]

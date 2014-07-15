@@ -22,11 +22,11 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Network.PeyoTLS.Hello (
+import Network.PeyoTLS.Codec.Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
 	CompMethod(..), HashAlg(..), SignAlg(..),  Extension(..) )
-import Network.PeyoTLS.Certificate (
+import Network.PeyoTLS.Codec.Certificate (
 	CertReq(..), certReq, ClCertType(..),
 	ClientKeyEx(..), DigitallySigned(..) )
 
