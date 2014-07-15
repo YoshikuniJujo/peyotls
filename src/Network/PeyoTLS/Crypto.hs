@@ -1,24 +1,31 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, TupleSections #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Crypto (
-	makeKeys, encrypt, decrypt, sha1, sha256,
-	Side(..), finishedHash) where
+	makeKeys, decrypt, encrypt, sha1, sha256,
+	Side(..), finishedHash ) where
 
 import Prelude hiding (splitAt, take)
 
 import Control.Arrow (first)
 import Data.Bits (xor)
-import Data.Word (Word8, Word16, Word64)
+import Data.Word (Word16, Word64)
 import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BSL
+import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.Cipher.AES as AES
 
-import qualified Codec.Bytable.BigEndian as B
+modNm :: String
+modNm = "Network.PeyoTLS.Crypto"
+
+type Hash = BS.ByteString -> BS.ByteString
+
+sha1, sha256 :: (Hash, Int)
+sha1 = (SHA1.hash, 20)
+sha256 = (SHA256.hash, 32)
 
 makeKeys :: Int -> BS.ByteString -> BS.ByteString -> BS.ByteString ->
 	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
@@ -26,13 +33,12 @@ makeKeys kl cr sr pms = let
 	kls = [kl, kl, 16, 16]
 	ms = take 48 . prf pms $ BS.concat ["master secret", cr, sr]
 	ems = prf ms $ BS.concat ["key expansion", sr, cr]
-	[cwmk, swmk, cwk, swk] = divide kls ems in
-	(ms, cwmk, swmk, cwk, swk)
+	[cwmk, swmk, cwk, swk] = sep kls ems in (ms, cwmk, swmk, cwk, swk)
 	where
-	divide [] _ = []
-	divide (n : ns) bs
+	sep [] _ = []
+	sep (n : ns) bs
 		| BSL.null bs = []
-		| otherwise = let (x, bs') = splitAt n bs in x : divide ns bs'
+		| otherwise = let (x, bs') = splitAt n bs in x : sep ns bs'
 
 prf :: BS.ByteString -> BS.ByteString -> BSL.ByteString
 prf sk sd = BSL.fromChunks . ph $ hm sk sd
@@ -49,11 +55,17 @@ hmac hs bls sk =
 	k = pd $ if BS.length sk > bls then hs sk else sk
 	pd bs = bs `BS.append` BS.replicate (bls - BS.length bs) 0
 
-type Hash = BS.ByteString -> BS.ByteString
-
-sha1, sha256 :: (Hash, Int)
-sha1 = (SHA1.hash, 20)
-sha256 = (SHA256.hash, 32)
+decrypt :: (Hash, Int) -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
+decrypt (hs, ml) k mk sn pre enc =
+	if rm == em then Right b else Left $ modNm ++ ".decrypt: bad MAC\n"
+	where
+	pln = uncurry (AES.decryptCBC $ AES.initAES k) $ BS.splitAt 16 enc
+	up = BS.take (BS.length pln - fromIntegral (lst pln) - 1) pln
+	(b, rm) = BS.splitAt (BS.length up - ml) up
+	em = calcMac hs mk sn $ pre `BS.append` B.addLen w16 b
+	lst "" = error $ modNm ++ ".decrypt"
+	lst bs = BS.last bs
 
 encrypt :: CPRG g => (Hash, Int) -> BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> g -> (BS.ByteString, g)
@@ -65,36 +77,15 @@ encrypt (hs, _) k mk sn p m g = (, g') $
 	l = 16 - (BS.length pln + 1) `mod` 16
 	pd = BS.replicate (l + 1) $ fromIntegral l
 
-decrypt :: (Hash, Int) ->
-	BS.ByteString -> BS.ByteString -> Word64 ->
-	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
-decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else Left $ if BS.null enc
-	then "CryptoTools.decrypt: enc is null\n"
-	else "CryptoTools.decrypt: bad MAC:" ++
-		"\n\tsn: " ++ show sn ++
-		"\n\tplain: " ++ BSC.unpack pln ++
-		"\n\tExpected: " ++ BSC.unpack em ++
-		"\n\tRecieved: " ++ BSC.unpack rm ++
-		"\n\tml: " ++ show ml ++ "\n"
-	where
-	pln = uncurry (AES.decryptCBC $ AES.initAES k) $ BS.splitAt 16 enc
-	up = BS.take (BS.length pln - fromIntegral (myLast "decrypt" pln) - 1) pln
-	(b, rm) = BS.splitAt (BS.length up - ml) up
-	em = calcMac hs mk sn $ p `BS.append` B.addLen w16 b
-
 calcMac :: Hash -> BS.ByteString -> Word64 -> BS.ByteString -> BS.ByteString
 calcMac hs mk sn m = hmac hs 64 mk $ B.encode sn `BS.append` m
 
 data Side = Server | Client deriving (Show, Eq)
 
 finishedHash :: Side -> BS.ByteString -> BS.ByteString -> BS.ByteString
-finishedHash s hash ms = take 12 . prf ms . (`BS.append` hash) $ case s of
+finishedHash s hs ms = take 12 . prf ms . (`BS.append` hs) $ case s of
 	Client -> "client finished"
 	Server -> "server finished"
-
-myLast :: String -> BS.ByteString -> Word8
-myLast msg "" = error msg
-myLast _ bs = BS.last bs
 
 take :: Int -> BSL.ByteString -> BS.ByteString
 take = (fst .) . splitAt
