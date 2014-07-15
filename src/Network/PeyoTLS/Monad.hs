@@ -85,8 +85,8 @@ decrypt :: HandleLike h =>
 	S.PartnerId -> S.ContType -> BS.ByteString -> TlsM h g BS.ByteString
 decrypt i ct e = do
 	ks <- getKeys i
-	let	S.CipherSuite _ be = S.kReadCS ks;
-		wk = S.kReadKey ks; mk = S.kReadMacKey ks
+	let	S.CipherSuite _ be = S.kRCSuite ks;
+		wk = S.kRKey ks; mk = S.kRMKey ks
 	sn <- udSn S.Read i
 	case be of
 		S.AES_128_CBC_SHA -> either (throw ALFtl ADUnk) return $
@@ -102,8 +102,8 @@ encrypt :: (HandleLike h, CPRG g) =>
 	S.PartnerId -> S.ContType -> BS.ByteString -> TlsM h g BS.ByteString
 encrypt i ct p = do
 	ks <- getKeys i
-	let	S.CipherSuite _ be = S.kWriteCS ks
-		wk = S.kWriteKey ks; mk = S.kWriteMacKey ks
+	let	S.CipherSuite _ be = S.kWCSuite ks
+		wk = S.kWKey ks; mk = S.kWMKey ks
 	sn <- udSn S.Write i
 	case be of
 		S.AES_128_CBC_SHA -> withRandom $
@@ -188,13 +188,13 @@ makeKeys s t cr sr pms cs@(S.CipherSuite _ be) = do
 	let (ms, cwmk, swmk, cwk, swk) = C.makeKeys kl cr sr pms
 	getKeys t >>= \k -> return $ case s of
 		C.Client -> k {
-			S.kCachedCS = cs, S.kMasterSecret = ms,
-			S.kCachedReadMacKey = swmk, S.kCachedWriteMacKey = cwmk,
-			S.kCachedReadKey = swk, S.kCachedWriteKey = cwk }
+			S.kCchCSuite = cs, S.kMSec = ms,
+			S.kCchRMKey = swmk, S.kCchWMKey = cwmk,
+			S.kCchRKey = swk, S.kCchWKey = cwk }
 		C.Server -> k {
-			S.kCachedCS = cs, S.kMasterSecret = ms,
-			S.kCachedReadMacKey = cwmk, S.kCachedWriteMacKey = swmk,
-			S.kCachedReadKey = cwk, S.kCachedWriteKey = swk }
+			S.kCchCSuite = cs, S.kMSec = ms,
+			S.kCchRMKey = cwmk, S.kCchWMKey = swmk,
+			S.kCchRKey = cwk, S.kCchWKey = swk }
 makeKeys _ _ _ _ _ _ = throw ALFtl ADUnk $ modNm ++ ".makeKeys"
 
 getKeys :: HandleLike h => S.PartnerId -> TlsM h g S.Keys
@@ -205,4 +205,4 @@ setKeys = (modify .) . S.setKeys
 
 finishedHash :: HandleLike h =>
 	C.Side -> S.PartnerId -> BS.ByteString -> TlsM h g BS.ByteString
-finishedHash s t hs = C.finishedHash s hs `liftM` S.kMasterSecret `liftM` getKeys t
+finishedHash s t hs = C.finishedHash s hs `liftM` S.kMSec `liftM` getKeys t

@@ -284,5 +284,5 @@ debugCipherSuite h a = do
 	k <- M.getKeys $ pid h
 	M.tDebug (handle h) "high" . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
-		. show $ M.kCachedCS k
+		. show $ M.kCchCSuite k
 	where lenSpace n str = str ++ replicate (n - length str) ' '
