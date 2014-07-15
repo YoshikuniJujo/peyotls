@@ -20,17 +20,14 @@ import Data.List (find)
 import Data.Word (Word8, Word64)
 
 import qualified Data.ByteString as BS
-import qualified Codec.Bytable.BigEndian as B
-
-import Network.PeyoTLS.CertSecretKey (CertSecretKey(..), isRsaKey, isEcdsaKey)
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
-
-import Network.PeyoTLS.CipherSuite (
-	CipherSuite(..), KeyEx(..), BulkEnc(..))
-
+import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+
+import Network.PeyoTLS.CertSecretKey (CertSecretKey(..), isRsaKey, isEcdsaKey)
+import Network.PeyoTLS.CipherSuite (CipherSuite(..), KeyEx(KE_NULL), BulkEnc(..))
 
 data TlsState h g = TlsState {
 	getGen :: g, nextPartnerId :: Int,
