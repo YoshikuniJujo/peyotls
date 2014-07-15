@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.PeyoTLS.Types (
+module Network.PeyoTLS.Codec (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),

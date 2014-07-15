@@ -59,7 +59,7 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.PubKey.HashDescr as HD
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
-import Network.PeyoTLS.Types (
+import Network.PeyoTLS.Codec (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
