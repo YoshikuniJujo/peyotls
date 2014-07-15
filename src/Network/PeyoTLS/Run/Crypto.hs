@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
-module Network.PeyoTLS.Crypto (
+module Network.PeyoTLS.Run.Crypto (
 	makeKeys, decrypt, encrypt, sha1, sha256,
 	Side(..), finishedHash ) where
 

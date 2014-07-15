@@ -296,9 +296,9 @@ library
                 Network.PeyoTLS.CipherSuite, Network.PeyoTLS.HSAlg,
             Network.PeyoTLS.Certificate,
         Network.PeyoTLS.Run,
-            Network.PeyoTLS.Handle,
-                Network.PeyoTLS.Monad, Network.PeyoTLS.State,
-                Network.PeyoTLS.Crypto,
+            Network.PeyoTLS.Run.Handle,
+                Network.PeyoTLS.Run.Monad, Network.PeyoTLS.Run.State,
+                Network.PeyoTLS.Run.Crypto,
         Network.PeyoTLS.Ecdsa, Network.PeyoTLS.CertSecretKey
     build-depends:
         base == 4.*, word24 == 1.0.*, bytestring == 0.10.*, monads-tf == 0.1.*,

@@ -34,7 +34,7 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import qualified Network.PeyoTLS.Handle as H ( debug,
+import qualified Network.PeyoTLS.Run.Handle as H ( debug,
 	TlsM, run, withRandom,
 	HandleBase, CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,

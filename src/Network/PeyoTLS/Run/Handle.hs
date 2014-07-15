@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
-module Network.PeyoTLS.Handle ( debug,
+module Network.PeyoTLS.Run.Handle ( debug,
 	M.TlsM, M.run, M.withRandom,
 	HandleBase, M.CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
@@ -32,7 +32,7 @@ import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
-import qualified Network.PeyoTLS.Monad as M (
+import qualified Network.PeyoTLS.Run.Monad as M (
 	TlsM, run, throw, withRandom,
 		Alert(..), AlertLevel(..), AlertDesc(..),
 		tGet, decrypt, tPut, encrypt, tClose, tDebug,

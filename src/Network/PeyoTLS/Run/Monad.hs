@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
-module Network.PeyoTLS.Monad (
+module Network.PeyoTLS.Run.Monad (
 	TlsM, run, throw, withRandom,
 		Alert(..), AlertLevel(..), AlertDesc(..),
 		tGet, decrypt, tPut, encrypt, tClose, tDebug,
@@ -27,7 +27,7 @@ import "crypto-random" Crypto.Random (CPRG)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-import qualified Network.PeyoTLS.State as S (
+import qualified Network.PeyoTLS.Run.State as S (
 	TlsState, initState, PartnerId, newPartner,
 		getGen, setGen, getNames, setNames,
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
@@ -39,7 +39,7 @@ import qualified Network.PeyoTLS.State as S (
 	SettingsC, getSettingsC, setSettingsC,
 	SettingsS, getSettingsS, setSettingsS,
 	CertSecretKey(..), isRsaKey, isEcdsaKey )
-import qualified Network.PeyoTLS.Crypto as C (
+import qualified Network.PeyoTLS.Run.Crypto as C (
 	makeKeys, encrypt, decrypt, sha1, sha256, Side(..), finishedHash )
 
 modNm :: String
