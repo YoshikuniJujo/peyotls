@@ -1,28 +1,17 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.State (
-	TlsState, initState, PartnerId, newPartner, Keys(..), nullKeys,
-	ContType(..),
-	CipherSuite(..), KeyEx(..), BulkEnc(..),
-	getGen, setGen,
-	getRBuf, setRBuf, getWBuf, setWBuf,
-	getAdBuf, setAdBuf,
-	getRSn, getWSn, sccRSn, sccWSn, rstRSn, rstWSn,
-	getCipherSuite, setCipherSuite, flushCipherSuite,
-	flushCipherSuiteRead, flushCipherSuiteWrite,
-	getKeys, setKeys,
-	getSettings, setSettings,
-	getSettingsC, setSettingsC,
-	getSettingsS, setSettingsS,
-	getClFinished, setClFinished,
-	getSvFinished, setSvFinished,
-
-	SettingsC, SettingsS, Settings,
-	CertSecretKey(..), isRsaKey, isEcdsaKey,
-
-	getNames, setNames,
-	RW(..),
-) where
+	TlsState, initState, PartnerId, newPartner,
+		getGen, setGen, getNames, setNames,
+		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
+		getClFinished, setClFinished, getSvFinished, setSvFinished,
+	ContType(..), getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
+	CipherSuite(..), BulkEnc(..), RW(..),
+		getCipherSuite, setCipherSuite, flushCipherSuite,
+	Keys(..), getKeys, setKeys,
+	SettingsC, getSettingsC, setSettingsC,
+	SettingsS, getSettingsS, setSettingsS,
+	CertSecretKey(..), isRsaKey, isEcdsaKey ) where
 
 import Control.Applicative ((<$>))
 import Control.Arrow (first)
