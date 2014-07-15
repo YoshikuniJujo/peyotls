@@ -2,54 +2,43 @@
 
 module Network.PeyoTLS.Monad (
 	TlsM, run, throw, withRandom,
-		S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
+		Alert(..), AlertLevel(..), AlertDesc(..),
 		tGet, decrypt, tPut, encrypt, tClose, tDebug,
 	S.PartnerId, S.newPartner, S.ContType(..),
 		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf, rstSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		getNames, setNames,
 	S.CipherSuite(..), S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
-		SettingsC, getSettingsC, setSettingsC,
+		S.SettingsC, getSettingsC, setSettingsC,
 		S.SettingsS, getSettingsS, setSettingsS,
-		RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
+		S.RW(..), getCipherSuite, setCipherSuite, flushCipherSuite,
 	S.Keys(..), makeKeys, getKeys, setKeys,
 	C.Side(..), finishedHash ) where
 
 import Control.Arrow ((***))
 import Control.Monad (unless, liftM)
-import "monads-tf" Control.Monad.Trans (lift)
-import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
+import "monads-tf" Control.Monad.State (lift, StateT, evalStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError, catchError)
-import Data.Word (Word64)
+import "monads-tf" Control.Monad.Error.Class (Error(..))
+import Data.Word (Word8, Word64)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.X509 as X509
-import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.State as S (
-	HandshakeState, initState, PartnerId, newPartner, Keys(..),
-	ContType(..), Alert(..), AlertLevel(..), AlertDesc(..),
-	CipherSuite(..), BulkEnc(..),
-	randomGen, setRandomGen,
-	setBuf, getBuf, setWBuf, getWBuf,
-	setAdBuf, getAdBuf,
-	getReadSN, getWriteSN, succReadSN, succWriteSN, resetReadSN, resetWriteSN,
-	getCipherSuite, setCipherSuite,
-	setNames, getNames,
-	setKeys, getKeys,
-	getSettings, setSettings,
-	getInitSet, setInitSet,
-	getClientFinished, setClientFinished,
-	getServerFinished, setServerFinished,
-
-	flushCipherSuiteRead, flushCipherSuiteWrite,
-
-	SettingsS, Settings,
-	CertSecretKey(..), isRsaKey, isEcdsaKey,
-	)
+	HandshakeState, initState, PartnerId, newPartner,
+		getGen, setGen, getNames, setNames,
+		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
+		getClFinished, getSvFinished, setClFinished, setSvFinished,
+	ContType(..), getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
+	CipherSuite(..), BulkEnc(..), RW(..),
+		getCipherSuite, setCipherSuite, flushCipherSuite,
+	Keys(..), getKeys, setKeys,
+	SettingsC, getSettingsC, setSettingsC,
+	SettingsS, getSettingsS, setSettingsS,
+	CertSecretKey(..), isRsaKey, isEcdsaKey )
 import qualified Network.PeyoTLS.Crypto as C (
 	makeKeys, encrypt, decrypt, sha1, sha256, Side(..), finishedHash )
 
@@ -59,6 +48,8 @@ modNm = "Network.PeyoTLS.Monad"
 vrsn :: BS.ByteString
 vrsn = "\3\3"
 
+type TlsM h g = ErrorT Alert (StateT (S.HandshakeState h g) (HandleMonad h))
+
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
 run m g = do
 	ret <- (`evalTlsM` S.initState g) $ m `catchError` \a -> throwError a
@@ -66,15 +57,13 @@ run m g = do
 		Right r -> return r
 		Left a -> error $ show a
 
-type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))
-
 evalTlsM :: HandleLike h => 
-	TlsM h g a -> S.HandshakeState h g -> HandleMonad h (Either S.Alert a)
+	TlsM h g a -> S.HandshakeState h g -> HandleMonad h (Either Alert a)
 evalTlsM = evalStateT . runErrorT
 
 getRBuf, getWBuf ::  HandleLike h =>
 	S.PartnerId -> TlsM h g (S.ContType, BS.ByteString)
-getRBuf = gets . S.getBuf; getWBuf = gets . S.getWBuf
+getRBuf = gets . S.getRBuf; getWBuf = gets . S.getWBuf
 
 getAdBuf :: HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
 getAdBuf = gets . S.getAdBuf
@@ -84,16 +73,16 @@ setAdBuf = (modify .) . S.setAdBuf
 
 setRBuf, setWBuf :: HandleLike h =>
 	S.PartnerId -> (S.ContType, BS.ByteString) -> TlsM h g ()
-setRBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
+setRBuf = (modify .) . S.setRBuf; setWBuf = (modify .) . S.setWBuf
 
 getWSn, getRSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
-getWSn = gets . S.getWriteSN; getRSn = gets . S.getReadSN
+getWSn = gets . S.getWSn; getRSn = gets . S.getRSn
 
 sccWSn, sccRSn :: HandleLike h => S.PartnerId -> TlsM h g ()
-sccWSn = modify . S.succWriteSN; sccRSn = modify . S.succReadSN
+sccWSn = modify . S.sccWSn; sccRSn = modify . S.sccRSn
 
 rstWSn, rstRSn :: HandleLike h => S.PartnerId -> TlsM h g ()
-rstWSn = modify . S.resetWriteSN; rstRSn = modify . S.resetReadSN
+rstWSn = modify . S.rstWSn; rstRSn = modify . S.rstRSn
 
 getCipherSuite :: HandleLike h => S.PartnerId -> TlsM h g S.CipherSuite
 getCipherSuite = gets . S.getCipherSuite
@@ -114,45 +103,39 @@ getKeys :: HandleLike h => S.PartnerId -> TlsM h g S.Keys
 getKeys = gets . S.getKeys
 
 getSettingsS :: HandleLike h => S.PartnerId -> TlsM h g S.SettingsS
-getSettingsS = gets . S.getInitSet
+getSettingsS = gets . S.getSettingsS
 
-getSettings :: HandleLike h => S.PartnerId -> TlsM h g S.Settings
-getSettings = gets . S.getSettings
+getSettingsC :: HandleLike h => S.PartnerId -> TlsM h g S.SettingsC
+getSettingsC i = gets (S.getSettingsC i ) >>= maybe (throw ALFtl ADUnk "...") return
 
 setSettingsS :: HandleLike h => S.PartnerId -> S.SettingsS -> TlsM h g ()
-setSettingsS = (modify .) . S.setInitSet
+setSettingsS = (modify .) . S.setSettingsS
 
-setSettings :: HandleLike h => S.PartnerId -> S.Settings -> TlsM h g ()
-setSettings = (modify .) . S.setSettings
+setSettingsC :: HandleLike h => S.PartnerId -> S.SettingsC -> TlsM h g ()
+setSettingsC = (modify .) . S.setSettingsC
+-- setSettingsC i (css, crts, cs) = modify $ S.setSettings i (css, crts, Just cs)
 
 getClFinished, getSvFinished ::
 	HandleLike h => S.PartnerId -> TlsM h g BS.ByteString
-getClFinished = gets . S.getClientFinished
-getSvFinished = gets . S.getServerFinished
+getClFinished = gets . S.getClFinished
+getSvFinished = gets . S.getSvFinished
 
 setClFinished, setSvFinished ::
 	HandleLike h => S.PartnerId -> BS.ByteString -> TlsM h g ()
-setClFinished = (modify .) . S.setClientFinished
-setSvFinished = (modify .) . S.setServerFinished
+setClFinished = (modify .) . S.setClFinished
+setSvFinished = (modify .) . S.setSvFinished
 
-flushCipherSuite :: HandleLike h => RW -> S.PartnerId -> TlsM h g ()
-flushCipherSuite rw = case rw of
-	Read -> flushCipherSuiteRead
-	Write -> flushCipherSuiteWrite
-
-flushCipherSuiteRead, flushCipherSuiteWrite ::
-	HandleLike h => S.PartnerId -> TlsM h g ()
-flushCipherSuiteRead = modify . S.flushCipherSuiteRead
-flushCipherSuiteWrite = modify . S.flushCipherSuiteWrite
+flushCipherSuite :: HandleLike h => S.RW -> S.PartnerId -> TlsM h g ()
+flushCipherSuite = (modify .) . S.flushCipherSuite
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> TlsM h gen a
-withRandom p = p `liftM` gets S.randomGen >>=
-	uncurry (flip (>>)) . (return *** modify . S.setRandomGen)
+withRandom p = p `liftM` gets S.getGen >>=
+	uncurry (flip (>>)) . (return *** modify . S.setGen)
 
 tGet :: HandleLike h => h -> Int -> TlsM h g BS.ByteString
 tGet h n = do
 	b <- lift . lift $ hlGet h n
-	unless (BS.length b == n) . throw S.ALFtl S.ADUnk $
+	unless (BS.length b == n) . throw ALFtl ADUnk $
 		modNm ++ ".tGet: read err " ++ show (BS.length b) ++ " " ++ show n
 	return b
 
@@ -165,40 +148,23 @@ tClose = lift . lift . hlClose
 tDebug :: HandleLike h => h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
 tDebug = (((lift . lift) .) .) . hlDebug
 
-getSettingsC :: HandleLike h => S.PartnerId -> TlsM h g SettingsC
-getSettingsC i = do
-	(css, crts, mcs) <- getSettings i
-	case mcs of
-		Just cs -> return (css, crts, cs)
-		_ -> throwError "Network.PeyoTLS.Base.getSettingsC"
+rstSn :: HandleLike h => S.PartnerId -> S.RW -> TlsM h g ()
+rstSn i rw = case rw of S.Read -> rstRSn i; S.Write -> rstWSn i
 
-setSettingsC :: HandleLike h => S.PartnerId -> SettingsC -> TlsM h g ()
-setSettingsC i (css, crts, cs) = setSettings i (css, crts, Just cs)
+getSn :: HandleLike h => S.PartnerId -> S.RW -> TlsM h g Word64
+getSn i rw = case rw of S.Read -> getRSn i; S.Write -> getWSn i
 
-type SettingsC = (
-	[S.CipherSuite],
-	[(S.CertSecretKey, X509.CertificateChain)],
-	X509.CertificateStore )
+sccSn :: HandleLike h => S.PartnerId -> S.RW -> TlsM h g ()
+sccSn i rw = case rw of S.Read -> sccRSn i; S.Write -> sccWSn i
 
-data RW = Read | Write deriving Show
+throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
+throw = ((throwError .) .) . Alert
 
-rstSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g ()
-rstSn i rw = case rw of Read -> rstRSn i; Write -> rstWSn i
-
-getSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g Word64
-getSn i rw = case rw of Read -> getRSn i; Write -> getWSn i
-
-sccSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g ()
-sccSn i rw = case rw of Read -> sccRSn i; Write -> sccWSn i
-
-throw :: HandleLike h => S.AlertLevel -> S.AlertDesc -> String -> TlsM h g a
-throw = ((throwError .) .) . S.Alert
-
-udSn :: HandleLike h => S.PartnerId -> RW -> TlsM h g Word64
+udSn :: HandleLike h => S.PartnerId -> S.RW -> TlsM h g Word64
 udSn i rw = do
 	ks <- getKeys i
 	sn <- getSn i rw
-	let cs = ($ ks) $ case rw of Read -> S.kReadCS; Write -> S.kWriteCS
+	let cs = ($ ks) $ case rw of S.Read -> S.kReadCS; S.Write -> S.kWriteCS
 	case cs of
 		S.CipherSuite _ S.BE_NULL -> return ()
 		_ -> sccSn i rw
@@ -211,7 +177,7 @@ encrypt i ct p = do
 	let	S.CipherSuite _ be = S.kWriteCS ks
 		wk = S.kWriteKey ks
 		mk = S.kWriteMacKey ks
-	sn <- udSn i Write
+	sn <- udSn i S.Write
 	case be of
 		S.AES_128_CBC_SHA -> withRandom $
 			C.encrypt C.sha1 wk mk sn (B.encode ct `BS.append` vrsn) p
@@ -226,11 +192,11 @@ decrypt i ct e = do
 	let	S.CipherSuite _ be = S.kReadCS ks
 		wk = S.kReadKey ks
 		mk = S.kReadMacKey ks
-	sn <- udSn i Read
+	sn <- udSn i S.Read
 	case be of
-		S.AES_128_CBC_SHA -> either (throw S.ALFtl S.ADUnk) return $
+		S.AES_128_CBC_SHA -> either (throw ALFtl ADUnk) return $
 			C.decrypt C.sha1 wk mk sn (B.encode ct `BS.append` vrsn) e
-		S.AES_128_CBC_SHA256 -> either (throw S.ALFtl S.ADUnk) return $
+		S.AES_128_CBC_SHA256 -> either (throw ALFtl ADUnk) return $
 			C.decrypt C.sha256 wk mk sn (B.encode ct `BS.append` vrsn) e
 		S.BE_NULL -> return e
 
@@ -241,7 +207,7 @@ makeKeys t p cr sr pms cs@(S.CipherSuite _ be) = do
 	kl <- case be of
 		S.AES_128_CBC_SHA -> return $ snd C.sha1
 		S.AES_128_CBC_SHA256 -> return $ snd C.sha256
-		_ -> throw S.ALFtl S.ADUnk $ modNm ++ ".makeKeys: no bulk enc"
+		_ -> throw ALFtl ADUnk $ modNm ++ ".makeKeys: no bulk enc"
 	let (ms, cwmk, swmk, cwk, swk) = C.makeKeys kl cr sr pms
 	k <- getKeys t
 	return $ case p of
@@ -253,9 +219,26 @@ makeKeys t p cr sr pms cs@(S.CipherSuite _ be) = do
 			S.kCachedCS = cs, S.kMasterSecret = ms,
 			S.kCachedReadMacKey = cwmk, S.kCachedWriteMacKey = swmk,
 			S.kCachedReadKey = cwk, S.kCachedWriteKey = swk }
-makeKeys _ _ _ _ _ _ = throw S.ALFtl S.ADUnk $ modNm ++ ".makeKeys"
+makeKeys _ _ _ _ _ _ = throw ALFtl ADUnk $ modNm ++ ".makeKeys"
 
 finishedHash :: HandleLike h =>
 	C.Side -> S.PartnerId -> BS.ByteString -> TlsM h g BS.ByteString
 finishedHash s t hs =
 	flip (C.finishedHash s) hs `liftM` S.kMasterSecret `liftM` getKeys t
+
+data Alert = Alert AlertLevel AlertDesc String | NotDetected String
+	deriving Show
+
+data AlertLevel = ALWarning | ALFtl | ALRaw Word8 deriving Show
+
+data AlertDesc
+	= ADCloseNotify            | ADUnexMsg              | ADBadRecordMac
+	| ADRecordOverflow         | ADDecompressionFailure | ADHsFailure
+	| ADUnsupportedCertificate | ADCertificateExpired   | ADCertificateUnknown
+	| ADIllegalParameter       | ADUnknownCa            | ADDecodeError
+	| ADDecryptError           | ADProtocolVersion      | ADInsufficientSecurity
+	| ADInternalError          | ADUnk
+	| ADRaw Word8
+	deriving Show
+
+instance Error Alert where strMsg = NotDetected
