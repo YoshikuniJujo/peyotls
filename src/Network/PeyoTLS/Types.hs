@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Types (
 	Handshake(..), HandshakeItem(..),
@@ -7,8 +6,7 @@ module Network.PeyoTLS.Types (
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CompMethod(..), Extension(..), isRenegoInfo, emptyRenegoInfo,
 	ServerKeyEx(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
-	CertReq(..), certReq, ClCertType(..),
-		SignAlg(..), HashAlg(..),
+	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyEx(..), Epms(..),
 	DigitallySigned(..), Finished(..),
 	ChangeCipherSpec(..), ) where
@@ -24,163 +22,153 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Network.PeyoTLS.Hello ( Extension(..),
+import Network.PeyoTLS.Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
-	CompMethod(..), HashAlg(..), SignAlg(..) )
+	CompMethod(..), HashAlg(..), SignAlg(..),  Extension(..) )
 import Network.PeyoTLS.Certificate (
 	CertReq(..), certReq, ClCertType(..),
 	ClientKeyEx(..), DigitallySigned(..) )
 
+modNm :: String
+modNm = "Network.PeyoTLS.Types"
+
 data Handshake
-	= HHelloReq
-	| HClientHello ClientHello           | HServerHello ServerHello
-	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
-	| HCertificateReq CertReq            | HServerHelloDone
-	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyEx
-	| HFinished BS.ByteString            | HRaw Type BS.ByteString
-	| HCCSpec
+	= HCCSpec                     | HHelloReq
+	| HClHello ClientHello        | HSvHello ServerHello
+	| HCert X509.CertificateChain | HSvKeyEx BS.ByteString
+	| HCertReq CertReq            | HSvHelloDone
+	| HCertVerify DigitallySigned | HClKeyEx ClientKeyEx
+	| HFinished BS.ByteString     | HRaw Type BS.ByteString
 	deriving Show
 
 instance B.Bytable Handshake where
 	decode = B.evalBytableM B.parse; encode = encodeH
 
 instance B.Parsable Handshake where
-	parse = do
-		t <- B.take 1
-		len <- B.take 3
-		case t of
-			THelloRequest -> do
-				unless (len == 0) $ fail "parse Handshake"
-				return HHelloReq
-			TClientHello -> HClientHello <$> B.take len
-			TServerHello -> HServerHello <$> B.take len
-			TCertificate -> HCertificate <$> B.take len
-			TServerKeyEx -> HServerKeyEx <$> B.take len
-			TCertificateReq -> HCertificateReq <$> B.take len
-			TServerHelloDone -> let 0 = len in return HServerHelloDone
-			TCertVerify -> HCertVerify <$> B.take len
-			TClientKeyEx -> HClientKeyEx <$> B.take len
-			TFinished -> HFinished <$> B.take len
-			_ -> HRaw t <$> B.take len
+	parse = (,) <$> B.take 1 <*> B.take 3 >>= \(t, l) -> case t of
+		THelloRequest -> const HHelloReq <$>
+			unless (l == 0) (fail $ modNm ++ ": Handshake.parse")
+		TClientHello -> HClHello <$> B.take l
+		TServerHello -> HSvHello <$> B.take l
+		TCertificate -> HCert <$> B.take l
+		TServerKeyEx -> HSvKeyEx <$> B.take l
+		TCertificateReq -> HCertReq <$> B.take l
+		TServerHelloDone -> const HSvHelloDone <$>
+			unless (l == 0) (fail $ modNm ++ ": Handshake.parse")
+		TCertVerify -> HCertVerify <$> B.take l
+		TClientKeyEx -> HClKeyEx <$> B.take l
+		TFinished -> HFinished <$> B.take l
+		_ -> HRaw t <$> B.take l
 
 encodeH :: Handshake -> BS.ByteString
 encodeH HHelloReq = encodeH $ HRaw THelloRequest ""
-encodeH (HClientHello ch) = encodeH . HRaw TClientHello $ B.encode ch
-encodeH (HServerHello sh) = encodeH . HRaw TServerHello $ B.encode sh
-encodeH (HCertificate crts) = encodeH . HRaw TCertificate $ B.encode crts
-encodeH (HServerKeyEx ske) = encodeH $ HRaw TServerKeyEx ske
-encodeH (HCertificateReq cr) = encodeH . HRaw TCertificateReq $ B.encode cr
-encodeH HServerHelloDone = encodeH $ HRaw TServerHelloDone ""
+encodeH (HClHello ch) = encodeH . HRaw TClientHello $ B.encode ch
+encodeH (HSvHello sh) = encodeH . HRaw TServerHello $ B.encode sh
+encodeH (HCert crts) = encodeH . HRaw TCertificate $ B.encode crts
+encodeH (HSvKeyEx ske) = encodeH $ HRaw TServerKeyEx ske
+encodeH (HCertReq cr) = encodeH . HRaw TCertificateReq $ B.encode cr
+encodeH HSvHelloDone = encodeH $ HRaw TServerHelloDone ""
 encodeH (HCertVerify ds) = encodeH . HRaw TCertVerify $ B.encode ds
-encodeH (HClientKeyEx epms) = encodeH . HRaw TClientKeyEx $ B.encode epms
+encodeH (HClKeyEx epms) = encodeH . HRaw TClientKeyEx $ B.encode epms
 encodeH (HFinished bs) = encodeH $ HRaw TFinished bs
-encodeH (HRaw t bs) = B.encode t `BS.append` B.addLen (undefined :: Word24) bs
+encodeH (HRaw t bs) = B.encode t `BS.append` B.addLen w24 bs
 encodeH HCCSpec = B.encode ChangeCipherSpec
+
+w16 :: Word16; w16 = undefined
+w24 :: Word24; w24 = undefined
 
 class HandshakeItem hi where
 	fromHandshake :: Handshake -> Maybe hi; toHandshake :: hi -> Handshake
 
-instance HandshakeItem Handshake where
-	fromHandshake = Just; toHandshake = id
+instance HandshakeItem Handshake where fromHandshake = Just; toHandshake = id
+
+instance (HandshakeItem l, HandshakeItem r) => HandshakeItem (Either l r) where
+	fromHandshake hs = let l = fromHandshake hs; r = fromHandshake hs in
+		maybe (Right <$> r) (Just . Left) l
+	toHandshake (Left l) = toHandshake l
+	toHandshake (Right r) = toHandshake r
 
 instance HandshakeItem ChangeCipherSpec where
 	fromHandshake HCCSpec = Just ChangeCipherSpec
 	fromHandshake _ = Nothing
 	toHandshake ChangeCipherSpec = HCCSpec
-	toHandshake (ChangeCipherSpecRaw _) = error "bad"
-
-instance (HandshakeItem l, HandshakeItem r) => HandshakeItem (Either l r) where
-	fromHandshake hs = let
-		l = fromHandshake hs
-		r = fromHandshake hs in maybe (Right <$> r) (Just . Left) l
-	toHandshake (Left l) = toHandshake l
-	toHandshake (Right r) = toHandshake r
+	toHandshake (ChangeCipherSpecRaw _) =
+		error $ modNm ++ ": ChangeCipherSpec.toHandshake"
 
 instance HandshakeItem ClientHello where
-	fromHandshake (HClientHello ch) = Just ch
+	fromHandshake (HClHello ch) = Just ch
 	fromHandshake _ = Nothing
-	toHandshake = HClientHello
+	toHandshake = HClHello
 
 instance HandshakeItem ServerHello where
-	fromHandshake (HServerHello sh) = Just sh
+	fromHandshake (HSvHello sh) = Just sh
 	fromHandshake _ = Nothing
-	toHandshake = HServerHello
+	toHandshake = HSvHello
 
 instance HandshakeItem X509.CertificateChain where
-	fromHandshake (HCertificate cc) = Just cc
+	fromHandshake (HCert cc) = Just cc
 	fromHandshake _ = Nothing
-	toHandshake = HCertificate
+	toHandshake = HCert
 
-data ServerKeyEx = ServerKeyEx BS.ByteString BS.ByteString
-	HashAlg SignAlg BS.ByteString deriving Show
-
-data ServerKeyExDhe = ServerKeyExDhe DH.Params DH.PublicNumber
-	HashAlg SignAlg BS.ByteString deriving Show
-
-data ServerKeyExEcdhe = ServerKeyExEcdhe ECC.Curve ECC.Point
-	HashAlg SignAlg BS.ByteString deriving Show
+data ServerKeyEx =
+	ServerKeyEx BS.ByteString BS.ByteString HashAlg SignAlg BS.ByteString
+	deriving Show
 
 instance HandshakeItem ServerKeyEx where
 	fromHandshake = undefined
-	toHandshake = HServerKeyEx . B.encode
-
-instance HandshakeItem ServerKeyExDhe where
-	toHandshake = HServerKeyEx . B.encode
-	fromHandshake (HServerKeyEx ske) =
-		either (const Nothing) Just $ B.decode ske
-	fromHandshake _ = Nothing
-
-instance HandshakeItem ServerKeyExEcdhe where
-	toHandshake = HServerKeyEx . B.encode
-	fromHandshake (HServerKeyEx ske) =
-		either (const Nothing) Just $ B.decode ske
-	fromHandshake _ = Nothing
+	toHandshake = HSvKeyEx . B.encode
 
 instance B.Bytable ServerKeyEx where
 	decode = undefined
-	encode (ServerKeyEx ps pv ha sa sn) = BS.concat [
-		ps, pv, B.encode ha, B.encode sa,
-		B.addLen (undefined :: Word16) sn ]
+	encode (ServerKeyEx ps pv h s sn) = BS.concat [
+		ps, pv, B.encode h, B.encode s, B.addLen w16 sn ]
+
+data ServerKeyExDhe =
+	ServerKeyExDhe DH.Params DH.PublicNumber HashAlg SignAlg BS.ByteString
+	deriving Show
+
+instance HandshakeItem ServerKeyExDhe where
+	fromHandshake (HSvKeyEx ske) = either (const Nothing) Just $ B.decode ske
+	fromHandshake _ = Nothing
+	toHandshake = HSvKeyEx . B.encode
 
 instance B.Bytable ServerKeyExDhe where
-	encode (ServerKeyExDhe ps pv ha sa sn) = BS.concat [
-		B.encode ps, B.encode pv, B.encode ha, B.encode sa,
-		B.addLen (undefined :: Word16) sn ]
-	decode = B.evalBytableM B.parse
-
-instance B.Bytable ServerKeyExEcdhe where
-	encode (ServerKeyExEcdhe cv pnt ha sa sn) = BS.concat [
-		B.encode cv, B.encode pnt, B.encode ha, B.encode sa,
-		B.addLen (undefined :: Word16) sn ]
+	encode (ServerKeyExDhe ps pn h s sn) = BS.concat [
+		B.encode ps, B.encode pn, B.encode h, B.encode s, B.addLen w16 sn ]
 	decode = B.evalBytableM B.parse
 
 instance B.Parsable ServerKeyExDhe where
-	parse = do
-		ps <- B.parse
-		pv <- B.parse
-		(ha, sa, sn) <- hasasn
-		return $ ServerKeyExDhe ps pv ha sa sn
+	parse = ServerKeyExDhe <$> B.parse <*> B.parse
+		<*> B.parse <*> B.parse <*> (B.take =<< B.take 2)
+
+data ServerKeyExEcdhe =
+	ServerKeyExEcdhe ECC.Curve ECC.Point HashAlg SignAlg BS.ByteString
+	deriving Show
+
+instance HandshakeItem ServerKeyExEcdhe where
+	fromHandshake (HSvKeyEx ske) = either (const Nothing) Just $ B.decode ske
+	fromHandshake _ = Nothing
+	toHandshake = HSvKeyEx . B.encode
+
+instance B.Bytable ServerKeyExEcdhe where
+	encode (ServerKeyExEcdhe cv pnt h s sn) = BS.concat [
+		B.encode cv, B.encode pnt, B.encode h, B.encode s, B.addLen w16 sn ]
+	decode = B.evalBytableM B.parse
 
 instance B.Parsable ServerKeyExEcdhe where
-	parse = do
-		cv <- B.parse
-		pnt <- B.parse
-		(ha, sa, sn) <- hasasn
-		return $ ServerKeyExEcdhe cv pnt ha sa sn
-
-hasasn :: B.BytableM (HashAlg, SignAlg, BS.ByteString)
-hasasn = (,,) <$> B.parse <*> B.parse <*> (B.take =<< B.take 2)
+	parse = ServerKeyExEcdhe <$> B.parse <*> B.parse
+		<*> B.parse <*> B.parse <*> (B.take =<< B.take 2)
 
 instance HandshakeItem CertReq where
-	fromHandshake (HCertificateReq cr) = Just cr
+	fromHandshake (HCertReq cr) = Just cr
 	fromHandshake _ = Nothing
-	toHandshake = HCertificateReq
+	toHandshake = HCertReq
 
 instance HandshakeItem ServerHelloDone where
-	fromHandshake HServerHelloDone = Just SHDone
+	fromHandshake HSvHelloDone = Just SHDone
 	fromHandshake _ = Nothing
-	toHandshake _ = HServerHelloDone
+	toHandshake _ = HSvHelloDone
 
 instance HandshakeItem DigitallySigned where
 	fromHandshake (HCertVerify ds) = Just ds
@@ -188,16 +176,16 @@ instance HandshakeItem DigitallySigned where
 	toHandshake = HCertVerify
 
 instance HandshakeItem ClientKeyEx where
-	fromHandshake (HClientKeyEx cke) = Just cke
+	fromHandshake (HClKeyEx cke) = Just cke
 	fromHandshake _ = Nothing
-	toHandshake = HClientKeyEx
+	toHandshake = HClKeyEx
 
 data Epms = Epms BS.ByteString
 
 instance HandshakeItem Epms where
-	fromHandshake (HClientKeyEx cke) = ckeToEpms cke
+	fromHandshake (HClKeyEx cke) = ckeToEpms cke
 	fromHandshake _ = Nothing
-	toHandshake = HClientKeyEx . epmsToCke
+	toHandshake = HClKeyEx . epmsToCke
 
 ckeToEpms :: ClientKeyEx -> Maybe Epms
 ckeToEpms (ClientKeyEx cke) = case B.runBytableM (B.take =<< B.take 2) cke of
@@ -205,7 +193,7 @@ ckeToEpms (ClientKeyEx cke) = case B.runBytableM (B.take =<< B.take 2) cke of
 	_ -> Nothing
 
 epmsToCke :: Epms -> ClientKeyEx
-epmsToCke (Epms epms) = ClientKeyEx $ B.addLen (undefined :: Word16) epms
+epmsToCke (Epms epms) = ClientKeyEx $ B.addLen w16 epms
 
 data Finished = Finished BS.ByteString deriving (Show, Eq)
 
