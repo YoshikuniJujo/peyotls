@@ -24,7 +24,7 @@ module Network.PeyoTLS.Base (
 	CertReq(..), certReq, ClCertType(..),
 	SHDone(..),
 	ClKeyEx(..), Epms(..), makeKeys,
-	DigitallySigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
+	DigitSigned(..), ClSignPublicKey(..), ClSignSecretKey(..),
 		handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
@@ -66,7 +66,7 @@ import Network.PeyoTLS.Codec (
 	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	SHDone(..), ClKeyEx(..), Epms(..),
-	DigitallySigned(..), CCSpec(..), Finished(..) )
+	DigitSigned(..), CCSpec(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as RUN (finishedHash, debug)
 import Network.PeyoTLS.Run (
 	TlsM, run, HandleBase, getNames,

@@ -60,7 +60,7 @@ import Network.PeyoTLS.Base ( debug,
 	CertReq(..), ClCertType(..),
 	SHDone(..),
 	ClKeyEx(..), Epms(..), makeKeys,
-	DigitallySigned(..), ClSignSecretKey(..), handshakeHash,
+	DigitSigned(..), ClSignSecretKey(..), handshakeHash,
 	Side(..), RW(..), finishedHash, flushCipherSuite,
 	DhParam(..), ecdsaPubKey )
 
@@ -261,9 +261,9 @@ finishHandshake crt = do
 	hs <- handshakeHash
 	case fst <$> crt of
 		Just (RsaKey sk) -> writeHandshake $
-			DigitallySigned (cssAlgorithm sk) $ csSign sk hs
+			DigitSigned (cssAlgorithm sk) $ csSign sk hs
 		Just (EcdsaKey sk) -> writeHandshake $
-			DigitallySigned (cssAlgorithm sk) $ csSign sk hs
+			DigitSigned (cssAlgorithm sk) $ csSign sk hs
 		_ -> return ()
 	writeHandshake CCSpec
 	flushCipherSuite Write

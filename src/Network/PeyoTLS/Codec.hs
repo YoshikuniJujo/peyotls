@@ -8,7 +8,7 @@ module Network.PeyoTLS.Codec (
 	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
 	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
 	SHDone(..), ClKeyEx(..), Epms(..),
-	DigitallySigned(..), Finished(..),
+	DigitSigned(..), Finished(..),
 	CCSpec(..), ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -28,7 +28,7 @@ import Network.PeyoTLS.Codec.Hello (
 	CmpMtd(..), HashAlg(..), SignAlg(..),
 	Extension(..), isRnInfo, emptyRnInfo )
 import Network.PeyoTLS.Codec.Certificate (
-	CertReq(..), certReq, ClCertType(..), ClKeyEx(..), DigitallySigned(..) )
+	CertReq(..), certReq, ClCertType(..), ClKeyEx(..), DigitSigned(..) )
 
 modNm :: String
 modNm = "Network.PeyoTLS.Types"
@@ -38,7 +38,7 @@ data Handshake
 	| HClHello ClHello            | HSvHello SvHello
 	| HCert X509.CertificateChain | HSvKeyEx BS.ByteString
 	| HCertReq CertReq            | HSHDone
-	| HCertVer DigitallySigned    | HClKeyEx ClKeyEx
+	| HCertVer DigitSigned        | HClKeyEx ClKeyEx
 	| HFinished BS.ByteString     | HRaw Type BS.ByteString
 	deriving Show
 
@@ -175,7 +175,7 @@ instance HandshakeItem SHDone where
 	fromHandshake _ = Nothing
 	toHandshake _ = HSHDone
 
-instance HandshakeItem DigitallySigned where
+instance HandshakeItem DigitSigned where
 	fromHandshake (HCertVer ds) = Just ds
 	fromHandshake _ = Nothing
 	toHandshake = HCertVer

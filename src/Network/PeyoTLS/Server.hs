@@ -64,7 +64,7 @@ import Network.PeyoTLS.Base ( debug,
 	certReq, ClCertType(..),
 	SHDone(..),
 	ClKeyEx(..), Epms(..), makeKeys,
-	DigitallySigned(..), ClSignPublicKey(..), handshakeHash,
+	DigitSigned(..), ClSignPublicKey(..), handshakeHash,
 	RW(..), flushCipherSuite,
 	Side(..), finishedHash,
 	DhParam(..), ecdsaPubKey )
@@ -292,7 +292,7 @@ certVerify :: (HandleLike h, CPRG g, ClSignPublicKey pk) => pk -> HandshakeM h g
 certVerify pk = do
 	debugCipherSuite . show $ cspAlgorithm pk
 	hs0 <- handshakeHash
-	DigitallySigned a s <- readHandshake
+	DigitSigned a s <- readHandshake
 	case a of
 		(Sha256, sa) | sa == cspAlgorithm pk -> return ()
 		_ -> throw ALFtl ADDecodeErr $
