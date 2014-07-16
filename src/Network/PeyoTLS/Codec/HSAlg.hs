@@ -7,8 +7,10 @@ import Data.Word (Word8)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-data HashAlg = Sha1 | Sha224 | Sha256 | Sha384 | Sha512 | HARaw Word8
-	deriving Show
+modNm :: String
+modNm = "Network.PeyoTLS.Codec.HSAlg"
+
+data HashAlg = Sha1 | Sha224 | Sha256 | Sha384 | Sha512 | HARaw Word8 deriving Show
 
 instance B.Bytable HashAlg where
 	encode Sha1   = "\x02"
@@ -21,10 +23,8 @@ instance B.Bytable HashAlg where
 		[ha] -> Right $ case ha of
 			2 -> Sha1  ; 3 -> Sha224; 4 -> Sha256
 			5 -> Sha384; 6 -> Sha512; _ -> HARaw ha
-		_ -> Left "HashSignAlgorithm: Bytable.decode"
-
-instance B.Parsable HashAlg where
-	parse = B.take 1
+		_ -> Left $ modNm ++ ": HashAlg.decode"
+instance B.Parsable HashAlg where parse = B.take 1
 
 data SignAlg = Rsa | Dsa | Ecdsa | SARaw Word8 deriving (Show, Eq)
 
@@ -36,7 +36,5 @@ instance B.Bytable SignAlg where
 	decode bs = case BS.unpack bs of
 		[sa] -> Right $ case sa of
 			1 -> Rsa; 2 -> Dsa; 3 -> Ecdsa; _ -> SARaw sa
-		_ -> Left "Type.decodeSA"
-
-instance B.Parsable SignAlg where
-	parse = B.take 1
+		_ -> Left $ modNm ++ ": SignAlg.decode"
+instance B.Parsable SignAlg where parse = B.take 1
