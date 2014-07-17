@@ -114,11 +114,10 @@ readHandshake = do
 		_ -> throw ALFtl ADUnexMsg $ modNm ++ ".readHandshake: uk ccs"
 
 writeHandshake:: (HandleLike h, CPRG g, HandshakeItem hi) => hi -> HandshakeM h g ()
-writeHandshake hi = do
-	case hs of
-		HHelloReq -> hsPut bs
-		HCCSpec -> ccsPut . (\[w] -> w) $ BS.unpack bs
-		_ -> hsPut bs >> updateHash bs
+writeHandshake hi = case hs of
+	HHelloReq -> hsPut bs
+	HCCSpec -> ccsPut . (\[w] -> w) $ BS.unpack bs
+	_ -> hsPut bs >> updateHash bs
 	where
 	hs = toHandshake hi
 	bs = B.encode hs

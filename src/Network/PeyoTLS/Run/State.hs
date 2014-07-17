@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module Network.PeyoTLS.Run.State (
 	TlsState, initState, PartnerId, newPartner,
@@ -49,7 +49,7 @@ modState :: Modify (State1 g) -> PartnerId -> Modify (TlsState h g)
 modState f i s = s { states = (i, f $ getState i s) : states s }
 
 setState :: (a -> Modify (State1 g)) -> PartnerId -> a -> Modify (TlsState h g)
-setState f i x s = modState (f x) i s
+setState f i x = modState (f x) i
 
 data State1 g = State1 {
 	settings :: Settings,

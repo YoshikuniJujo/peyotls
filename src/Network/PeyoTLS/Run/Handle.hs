@@ -78,7 +78,7 @@ tRead h n = do
 	else do	(ct', b') <- getCont h
 		unless (ct' == ct) . M.throw M.ALFtl M.ADUnk $
 			modNm ++ ".tRead: content type confliction\n"
-		when (BS.null b') $ M.throw M.ALFtl M.ADUnk  $
+		when (BS.null b') . M.throw M.ALFtl M.ADUnk  $
 			modNm ++ ".tRead: no data available\n"
 		M.setRBuf (pid h) (ct', b')
 		(b `BS.append`) `liftM` tRead h n'

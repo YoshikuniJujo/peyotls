@@ -260,9 +260,9 @@ finishHandshake :: (HandleLike h, CPRG g) =>
 finishHandshake crt = do
 	hs <- handshakeHash
 	case fst <$> crt of
-		Just (RsaKey sk) -> writeHandshake $
+		Just (RsaKey sk) -> writeHandshake .
 			DigitSigned (cssAlgorithm sk) $ csSign sk hs
-		Just (EcdsaKey sk) -> writeHandshake $
+		Just (EcdsaKey sk) -> writeHandshake .
 			DigitSigned (cssAlgorithm sk) $ csSign sk hs
 		_ -> return ()
 	writeHandshake CCSpec

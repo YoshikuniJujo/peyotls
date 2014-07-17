@@ -31,7 +31,7 @@ main = do
 			g <- hlGetLine p
 			doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
 			liftIO $ BSC.putStrLn g
-			liftIO $ print $ "secret" `BS.isInfixOf` g
+			liftIO . print $ "secret" `BS.isInfixOf` g
 			if "secret" `BS.isInfixOf` g
 			then do	setCertificateStore p $ Just ca
 				renegotiate p
@@ -40,11 +40,11 @@ main = do
 					"Transfer-Encoding: chunked\r\n",
 					"Content-Type: text/plain\r\n\r\n",
 					"6\r\nSecret0\r\n\r\n" ]
-			else do	hlPut p $ BS.concat [
-					"HTTP/1.1 200 OK\r\n",
-					"Transfer-Encoding: chunked\r\n",
-					"Content-Type: text/plain\r\n\r\n",
-					"5\r\nHello0\r\n\r\n" ]
+			else hlPut p $ BS.concat [
+				"HTTP/1.1 200 OK\r\n",
+				"Transfer-Encoding: chunked\r\n",
+				"Content-Type: text/plain\r\n\r\n",
+				"5\r\nHello0\r\n\r\n" ]
 			hlClose p
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
