@@ -21,7 +21,7 @@ import Control.Arrow (first, second)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.State (lift, get, put)
 import Data.Word (Word8, Word16)
-import Data.HandleLike (HandleLike(..))
+import Data.HandleLike (HandleLike(..), DebugHandle(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
@@ -278,6 +278,9 @@ instance ValidateHandle Handle where
 		ca = X509.ValidationCache
 			(\_ _ _ -> return X509.ValidationCacheUnknown)
 			(\_ _ _ -> return ())
+
+instance ValidateHandle h => ValidateHandle (DebugHandle h) where
+	validate (DebugHandle h _) = validate h
 
 debugCipherSuite :: HandleLike h => HandleBase h g -> String -> M.TlsM h g ()
 debugCipherSuite h a = do
