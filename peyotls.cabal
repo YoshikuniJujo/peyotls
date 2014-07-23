@@ -2,7 +2,7 @@ build-type:	Simple
 cabal-version:	>= 1.8
 
 name:		peyotls
-version:	0.1.1.0
+version:	0.1.2.0
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -147,10 +147,8 @@ description:
     > 	h <- connectTo "localhost" $ PortNumber 443
     > 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
     > 	(`run` g) $ do
-    > 		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+    > 		p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
     >		nms <- getNames p
-    > 		unless ("localhost" `elem` nms) $
-    > 			error "certificate name mismatch"
     > 		hlPut p "GET / HTTP/1.1 \r\n"
     > 		hlPut p "Host: localhost\r\n\r\n"
     > 		doUntil BSC.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
@@ -181,9 +179,9 @@ description:
     > >	rk <- readKey "client_rsa.key"
     > >	rc <- readCertificateChain ["client_rsa.crt"]
     > 20c22
-    > <		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+    > <		p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
     > ---
-    > >		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(rk, rc)] ca
+    > >		p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(rk, rc)] ca
     .
     Client certificate client (ECDSA or RSA certificate)
     .
@@ -194,9 +192,9 @@ description:
     > >	ek <- readKey "client_ecdsa.key"
     > >	ec <- readCertificateChain ["client_ecdsa.crt"]
     > 22c24
-    > <		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(rk, rc)] ca
+    > <		p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(rk, rc)] ca
     > ---
-    > >		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(ek, ec), (rk, rc)] ca
+    > >		p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(ek, ec), (rk, rc)] ca
     .
     ECC server (use ECC or RSA depending on client)
     .
@@ -246,9 +244,9 @@ description:
     > >       "TLS_RSA_WITH_AES_128_CBC_SHA" ]
     > >
     > 20c31
-    > <               p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+    > <               p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
     > ---
-    > >               p <- open h cipherSuites [] ca
+    > >               p <- open' h "localhost" cipherSuites [] ca
     .
 
 extra-source-files:
@@ -283,7 +281,7 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/peyotls.git
-    tag:	peyotls-0.1.1.0
+    tag:	peyotls-0.1.2.0
 
 library
     hs-source-dirs:	src

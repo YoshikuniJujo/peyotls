@@ -30,10 +30,7 @@ main = do
 	h <- connectTo "localhost" $ PortNumber 443
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
-		p <- open h cipherSuites [] ca
-		nms <- getNames p
-		unless ("localhost" `elem` nms p) $
-			error "certificate name mismatch"
+		p <- open' h "localhost" cipherSuites [] ca
 		hlPut p "GET / HTTP/1.1 \r\n"
 		hlPut p "Host: localhost\r\n\r\n"
 		doUntil BSC.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn

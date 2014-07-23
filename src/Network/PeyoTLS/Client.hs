@@ -12,7 +12,8 @@ Stability	: Experimental
 
 module Network.PeyoTLS.Client (
 	-- * Basic
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, run, open, getNames,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle,
+	run, open, open', getNames, checkName,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -85,8 +86,11 @@ modNm = "Network.PeyoTLS.Client"
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleC
 
+checkName :: HandleLike h => TlsHandle h g -> String -> TlsM h g Bool
+checkName t n = flip toCheckName n `liftM` getNames t
+
 toCheckName :: [String] -> String -> Bool
-toCheckName s0s s = any (flip toCheckName1 s) s0s
+toCheckName s0s s = any (`toCheckName1` s) s0s
 
 toCheckName1 :: String -> String -> Bool
 toCheckName1 = on checkSepNames $ sepBy '.'
@@ -103,12 +107,26 @@ checkSepNames [] _ = False
 checkSepNames ("*" : ns0) (_ : ns) = checkSepNames ns0 ns
 checkSepNames (n0 : ns0) (n : ns) = n0 == n && checkSepNames ns0 ns
 
+-- | Don't forget check server name by checkName.
+
 open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandle h g)
 open h cscl crts ca = (TlsHandleC `liftM`) . execHandshakeM h $ do
 	setSettingsC (cscl, crts, ca)
 	handshake crts ca =<< clientHello cscl
+
+-- | This function open and check server name.
+--   Use this so as not to forget to check server name.
+
+open' :: (ValidateHandle h, CPRG g) => h -> String -> [CipherSuite] ->
+	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
+	TlsM h g (TlsHandle h g)
+open' h n cscl crts ca = do
+	t <- open h cscl crts ca
+	c <- checkName t n
+	unless c . E.throwError $ strMsg "certificate name mismatch"
+	return t
 
 renegotiate :: (ValidateHandle h, CPRG g) => TlsHandle h g -> TlsM h g ()
 renegotiate (TlsHandleC t) = rerunHandshakeM t $ do
