@@ -25,6 +25,7 @@ import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (fromMaybe)
 import Data.List (find, intersect)
+import Data.Function (on)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG, cprgGenerate)
@@ -83,6 +84,21 @@ modNm = "Network.PeyoTLS.Client"
 
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleC
+
+toCheckName1 :: String -> String -> Bool
+toCheckName1 = on checkSepNames $ sepBy '.'
+
+sepBy :: Eq a => a ->[a] -> [[a]]
+sepBy x0 xs
+	| (t, _ : d) <- span (/= x0) xs = t : sepBy x0 d
+	| otherwise = [xs]
+
+checkSepNames :: [String] -> [String] -> Bool
+checkSepNames [] [] = True
+checkSepNames _ [] = False
+checkSepNames [] _ = False
+checkSepNames ("*" : ns0) (_ : ns) = checkSepNames ns0 ns
+checkSepNames (n0 : ns0) (n : ns) = n0 == n && checkSepNames ns0 ns
 
 open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
