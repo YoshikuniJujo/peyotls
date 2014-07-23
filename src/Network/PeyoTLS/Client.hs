@@ -85,6 +85,9 @@ modNm = "Network.PeyoTLS.Client"
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleC
 
+toCheckName :: [String] -> String -> Bool
+toCheckName s0s s = any (flip toCheckName1 s) s0s
+
 toCheckName1 :: String -> String -> Bool
 toCheckName1 = on checkSepNames $ sepBy '.'
 
