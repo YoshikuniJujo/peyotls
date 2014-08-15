@@ -14,7 +14,7 @@ module Network.PeyoTLS.Run ( H.debug,
 		H.RW(..), flushCipherSuite, makeKeys,
 		H.Side(..), handshakeHash, finishedHash,
 	H.ValidateHandle(..), handshakeValidate, validateAlert,
-	H.AlertLevel(..), H.AlertDesc(..), debugCipherSuite, throw ) where
+	H.Alert(..), H.AlertLevel(..), H.AlertDesc(..), debugCipherSuite, throw ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ((***))

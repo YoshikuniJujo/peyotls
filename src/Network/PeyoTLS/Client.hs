@@ -12,7 +12,7 @@ Stability	: Experimental
 
 module Network.PeyoTLS.Client (
 	-- * Basic
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
 	run, open, open', getNames, checkName,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
@@ -49,7 +49,7 @@ import Network.PeyoTLS.Base ( debug,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		withRandom, flushAd,
-		AlertLevel(..), AlertDesc(..), throw,
+		Alert(..), AlertLevel(..), AlertDesc(..), throw,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	HandleBase, CertSecretKey(..),
 		readHandshake, writeHandshake, CCSpec(..),

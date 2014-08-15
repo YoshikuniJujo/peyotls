@@ -6,7 +6,7 @@ module Network.PeyoTLS.Base (
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		getSettingsC, setSettingsC, getSettingsS, setSettingsS,
 		withRandom, flushAd,
-		AlertLevel(..), AlertDesc(..), throw,
+		Alert(..), AlertLevel(..), AlertDesc(..), throw,
 		debugCipherSuite, debug,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	HandleBase, getNames,
@@ -82,7 +82,7 @@ import Network.PeyoTLS.Run (
 		RW(..), flushCipherSuite, makeKeys,
 		Side(..), handshakeHash, -- finishedHash,
 	ValidateHandle(..), handshakeValidate, validateAlert,
-	AlertLevel(..), AlertDesc(..), debugCipherSuite, throw )
+	Alert(..), AlertLevel(..), AlertDesc(..), debugCipherSuite, throw )
 import Network.PeyoTLS.Ecdsa (blSign, makeKs, ecdsaPubKey)
 
 modNm :: String

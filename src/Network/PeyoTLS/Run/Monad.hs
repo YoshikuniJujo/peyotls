@@ -58,7 +58,10 @@ run m g = evalStateT (runErrorT m) (S.initState g) >>= \er -> case er of
 throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
 throw = ((throwError .) .) . Alert
 
-data Alert = Alert AlertLevel AlertDesc String | NotDetected String deriving Show
+data Alert
+	= Alert AlertLevel AlertDesc String
+	| ExternalAlert String
+	| NotDetected String deriving Show
 
 data AlertLevel = ALWarning | ALFtl | ALRaw Word8 deriving Show
 
