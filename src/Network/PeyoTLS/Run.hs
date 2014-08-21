@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Run ( H.debug,
-	H.TlsM, H.run, H.HandleBase,
+	H.TlsState(..), H.State1(..), H.wFlush, H.Keys(..),
+	H.TlsM, H.run, H.run', H.HandleBase,
 		adGet, adGetLine, adGetContent, H.adPut, H.adDebug, H.adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM, withRandom,
 		chGet, ccsPut, hsPut, updateHash, flushAd,
@@ -35,7 +36,8 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Network.PeyoTLS.Run.Handle as H ( debug,
-	TlsM, run, withRandom,
+	TlsState(..), State1(..), wFlush, Keys(..),
+	TlsM, run, run', withRandom,
 	HandleBase, CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,

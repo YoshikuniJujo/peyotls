@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Run.Handle ( debug,
-	M.TlsM, M.run, M.withRandom,
+	M.TlsState(..), M.State1(..), wFlush, M.Keys(..),
+	M.TlsM, M.run, M.run', M.withRandom,
 	HandleBase, M.CipherSuite,
 		newHandle, chGet, ccsPut, hsPut,
 		adGet, adGetLine, splitLine, adGetContent, adPut, adDebug, adClose,
@@ -33,7 +34,8 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.Run.Monad as M (
-	TlsM, run, throw, withRandom,
+	TlsState(..), State1(..),
+	TlsM, run, run', throw, withRandom,
 		Alert(..), AlertLevel(..), AlertDesc(..),
 		tGet, decrypt, tPut, encrypt, tClose, tDebug,
 	PartnerId, newPartner, ContType(..),

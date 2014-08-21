@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Base (
-	PeyotlsM, TlsM, run, SettingsS,
+	TlsState(..), State1(..), wFlush, Keys(..),
+	PeyotlsM, TlsM, run, run', SettingsS,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
 		getSettingsC, setSettingsC, getSettingsS, setSettingsS,
@@ -69,7 +70,8 @@ import Network.PeyoTLS.Codec (
 	DigitSigned(..), CCSpec(..), Finished(..) )
 import qualified Network.PeyoTLS.Run as RUN (finishedHash, debug)
 import Network.PeyoTLS.Run (
-	TlsM, run, HandleBase, getNames,
+	TlsState(..), State1(..), wFlush, Keys(..),
+	TlsM, run, run', HandleBase, getNames,
 		chGet, hsPut, updateHash, ccsPut,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,

@@ -12,8 +12,9 @@ Stability	: Experimental
 
 module Network.PeyoTLS.Client (
 	-- * Basic
+	TlsState(..), State1(..), Keys(..),
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
-	run, open, open', getNames, checkName,
+	run, run', open, open', getNames, checkName,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -43,8 +44,9 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import qualified "monads-tf" Control.Monad.Error as E
 
 import qualified Network.PeyoTLS.Base as BASE (getNames)
-import Network.PeyoTLS.Base ( debug,
-	PeyotlsM, TlsM, run,
+import Network.PeyoTLS.Base ( debug, wFlush,
+	TlsState(..), State1(..), Keys(..),
+	PeyotlsM, TlsM, run, run',
 		getSettingsC, setSettingsC,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
@@ -79,6 +81,10 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	hlGetContent = adGetContent rehandshake . tlsHandleC
 	hlDebug = adDebug . tlsHandleC
 	hlClose = adClose . tlsHandleC
+	hlFlush = writeFlush
+
+writeFlush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
+writeFlush = wFlush . tlsHandleC
 
 modNm :: String
 modNm = "Network.PeyoTLS.Client"

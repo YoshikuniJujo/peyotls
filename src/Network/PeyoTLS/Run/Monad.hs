@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Network.PeyoTLS.Run.Monad (
-	TlsM, run, throw, withRandom,
+	S.TlsState(..), S.State1(..),
+
+	TlsM, run, run', throw, withRandom,
 		Alert(..), AlertLevel(..), AlertDesc(..),
 		tGet, decrypt, tPut, encrypt, tClose, tDebug,
 	S.PartnerId, S.newPartner, S.ContType(..),
@@ -17,7 +19,8 @@ module Network.PeyoTLS.Run.Monad (
 
 import Control.Arrow ((***))
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.State (lift, StateT, evalStateT, gets, modify)
+import "monads-tf" Control.Monad.State
+	(lift, StateT, runStateT, evalStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError)
 import "monads-tf" Control.Monad.Error.Class (Error(..))
 import Data.Word (Word8, Word64)
@@ -27,8 +30,8 @@ import "crypto-random" Crypto.Random (CPRG)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
-import qualified Network.PeyoTLS.Run.State as S (
-	TlsState, initState, PartnerId, newPartner,
+import qualified Network.PeyoTLS.Run.State as S (State1(..), Keys(..),
+	TlsState(..), initState, PartnerId, newPartner,
 		getGen, setGen, getNames, setNames,
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
@@ -52,8 +55,13 @@ type TlsM h g = ErrorT Alert (StateT (S.TlsState h g) (HandleMonad h))
 
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
 run m g = evalStateT (runErrorT m) (S.initState g) >>= \er -> case er of
-		Right r -> return r
-		Left a -> error $ show a
+	Right r -> return r
+	Left a -> error $ show a
+
+run' :: HandleLike h => TlsM h g a -> g -> HandleMonad h (a, S.TlsState h g)
+run' m g = runStateT (runErrorT m) (S.initState g) >>= \er -> case er of
+	(Right r, s) -> return (r, s)
+	(Left a, _) -> error $ show a
 
 throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
 throw = ((throwError .) .) . Alert

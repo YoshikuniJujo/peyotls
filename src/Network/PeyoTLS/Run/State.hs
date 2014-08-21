@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections #-}
 
-module Network.PeyoTLS.Run.State (
-	TlsState, initState, PartnerId, newPartner,
+module Network.PeyoTLS.Run.State ( State1(..), Keys(..),
+	TlsState(..), initState, PartnerId, newPartner,
 		getGen, setGen, getNames, setNames,
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
 		getClFinished, setClFinished, getSvFinished, setSvFinished,
