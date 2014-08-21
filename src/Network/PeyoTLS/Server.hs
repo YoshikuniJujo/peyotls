@@ -46,7 +46,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 
 import qualified Network.PeyoTLS.Base as BASE (getNames)
 import Network.PeyoTLS.Base ( debug, Keys(..),
-	PeyotlsM, TlsM, run, run',
+	PeyotlsM, TlsM, run, run', wFlush,
 		SettingsS, getSettingsS, setSettingsS,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
@@ -84,6 +84,7 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	hlGetContent = adGetContent rehandshake . tlsHandleS
 	hlDebug = adDebug . tlsHandleS
 	hlClose = adClose . tlsHandleS
+	hlFlush = wFlush . tlsHandleS
 
 type Version = (Word8, Word8)
 

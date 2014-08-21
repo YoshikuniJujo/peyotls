@@ -31,11 +31,17 @@ main = do
 			((k, n), g') <- (`run'` g) $ do
 				p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"]
 					[(k, c)] Nothing
-				doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
+				hlFlush p
+			pre <- hlGet h 3
+			print pre
+			Right n <- B.decode <$> hlGet h 2
+			print n
+			renc <- hlGet h n
 			let	rk = kRKey k
 				rmk = kRMKey k
 				wk = kWKey k
 				wmk = kWMKey k
+				Right rpln = decrypt sha1 rk rmk 1 pre renc
 				wpln = BS.concat [
 					"HTTP/1.1 200 OK\r\n",
 					"Transfer-Encoding: chunked\r\n",
@@ -43,6 +49,7 @@ main = do
 					"5\r\nHello\r\n5\r\nWorld0\r\n\r\n" ]
 				(wenc, g'') =
 					encrypt sha1 wk wmk 1 "\ETB\ETX\ETX" wpln g'
+			BS.putStr rpln
 			hlPut h "\ETB\ETX\ETX"
 			hlPut h . (B.encode :: Word16 -> BSC.ByteString)
 				. fromIntegral $ BSC.length wenc
