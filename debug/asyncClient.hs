@@ -2,7 +2,7 @@
 
 import Control.Applicative
 import Control.Monad
--- import "monads-tf" Control.Monad.Trans
+import "monads-tf" Control.Monad.State
 import Control.Concurrent
 import Control.Concurrent.STM
 import Data.Word
@@ -52,14 +52,15 @@ open' h inc otc dn cs kc ca g = do
 	putStrLn $ "READ  MAC KEY: " ++ show rmk
 	putStrLn $ "WRITE     KEY: " ++ show wk
 	putStrLn $ "WRITE MAC KEY: " ++ show wmk
-	_ <- forkIO . forever $ do
-		wpln <- atomically $ readTChan otc
-		let	(wenc, g'') = encrypt sha1 wk wmk 1 "\ETB\ETX\ETX" wpln g'
---				"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" g'
-		hlPut h "\ETB\ETX\ETX"
-		hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
+	_ <- forkIO . forever . (`runStateT` (g', 1)) $ do
+		wpln <- liftIO . atomically $ readTChan otc
+		(g0, sn) <- get
+		let	(wenc, g1) = encrypt sha1 wk wmk sn "\ETB\ETX\ETX" wpln g0
+		put (g1, succ sn)
+		liftIO $ hlPut h "\ETB\ETX\ETX"
+		liftIO . hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
 			BSC.length wenc
-		hlPut h wenc
+		liftIO $ hlPut h wenc
 	_ <- forkIO . forever $ do
 		pre <- hlGet h 3
 		print pre
