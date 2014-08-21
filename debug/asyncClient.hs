@@ -3,6 +3,8 @@
 import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
+import Control.Concurrent
+import Control.Concurrent.STM
 import Data.Word
 import Data.HandleLike
 import System.Environment
@@ -17,6 +19,8 @@ import qualified Codec.Bytable.BigEndian as B
 
 main :: IO ()
 main = do
+	inc <- atomically newTChan
+	otc <- atomically newTChan
 	d : _ <- getArgs
 	ca <- readCertificateStore [d ++ "/cacert.pem"]
 	h <- connectTo "localhost" $ PortNumber 443
@@ -30,20 +34,25 @@ main = do
 		wmk = kWMKey k
 		rcs = kRCSuite k
 		wcs = kWCSuite k
-		(wenc, g'') = encrypt sha1 wk wmk 1 "\ETB\ETX\ETX"
-			"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" g'
-	hlPut h "\ETB\ETX\ETX"
-	hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
-		BSC.length wenc
-	hlPut h wenc
-	pre <- hlGet h 3
-	print pre
-	Right n <- B.decode <$> hlGet h 2
-	enc <- hlGet h n
-	print enc
-	let	Right pln = decrypt sha1 rk rmk 1 pre enc
-	putStrLn ""
-	BSC.putStr pln
+	forkIO . forever $ do
+		wpln <- atomically $ readTChan otc
+		let	(wenc, g'') = encrypt sha1 wk wmk 1 "\ETB\ETX\ETX" wpln g'
+--				"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" g'
+		hlPut h "\ETB\ETX\ETX"
+		hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
+			BSC.length wenc
+		hlPut h wenc
+	forkIO . forever $ do
+		pre <- hlGet h 3
+		print pre
+		Right n <- B.decode <$> hlGet h 2
+		enc <- hlGet h n
+		print enc
+		let	Right pln = decrypt sha1 rk rmk 1 pre enc
+		putStrLn ""
+		atomically $ writeTChan inc pln
+	atomically $ writeTChan otc "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	BSC.putStr =<< atomically (readTChan inc)
 	print rcs
 	print wcs
 	putStrLn $ "READ      KEY: " ++ show rk
