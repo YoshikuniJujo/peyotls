@@ -1,16 +1,19 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 import Control.Applicative
 import Control.Monad
-import "monads-tf" Control.Monad.Trans
+-- import "monads-tf" Control.Monad.Trans
 import Control.Concurrent
 import Control.Concurrent.STM
 import Data.Word
 import Data.HandleLike
+import Data.X509
+import Data.X509.CertificateStore
 import System.Environment
 import Network
 import Network.PeyoTLS.ReadFile
-import Network.PeyoTLS.Client.Body
+import Network.PeyoTLS.Client.Body hiding (open, open')
+import qualified Network.PeyoTLS.Client.Body as C
 import Network.PeyoTLS.Run.Crypto
 import "crypto-random" Crypto.Random
 
@@ -25,8 +28,17 @@ main = do
 	ca <- readCertificateStore [d ++ "/cacert.pem"]
 	h <- connectTo "localhost" $ PortNumber 443
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	((k, n), g') <- (`run'` g) $ do
-		open' (DebugHandle h $ Just "low") "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+	open' (DebugHandle h $ Just "low") inc otc "localhost"
+		["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g
+	atomically $ writeTChan otc "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	BSC.putStr =<< atomically (readTChan inc)
+
+open' :: (CPRG g, ValidateHandle h, HandleMonad h ~ IO) => h ->
+	TChan BSC.ByteString -> TChan BSC.ByteString -> String ->
+	[CipherSuite] -> [(CertSecretKey, CertificateChain)] ->
+	CertificateStore -> g -> IO ()
+open' h inc otc dn cs kc ca g = do
+	((k, _n), g') <- (`run'` g) $ C.open' h dn cs kc ca
 	putStrLn ""
 	let	rk = kRKey k
 		rmk = kRMKey k
@@ -34,7 +46,13 @@ main = do
 		wmk = kWMKey k
 		rcs = kRCSuite k
 		wcs = kWCSuite k
-	forkIO . forever $ do
+	print rcs
+	print wcs
+	putStrLn $ "READ      KEY: " ++ show rk
+	putStrLn $ "READ  MAC KEY: " ++ show rmk
+	putStrLn $ "WRITE     KEY: " ++ show wk
+	putStrLn $ "WRITE MAC KEY: " ++ show wmk
+	_ <- forkIO . forever $ do
 		wpln <- atomically $ readTChan otc
 		let	(wenc, g'') = encrypt sha1 wk wmk 1 "\ETB\ETX\ETX" wpln g'
 --				"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" g'
@@ -42,7 +60,7 @@ main = do
 		hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
 			BSC.length wenc
 		hlPut h wenc
-	forkIO . forever $ do
+	_ <- forkIO . forever $ do
 		pre <- hlGet h 3
 		print pre
 		Right n <- B.decode <$> hlGet h 2
@@ -51,15 +69,7 @@ main = do
 		let	Right pln = decrypt sha1 rk rmk 1 pre enc
 		putStrLn ""
 		atomically $ writeTChan inc pln
-	atomically $ writeTChan otc "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
-	BSC.putStr =<< atomically (readTChan inc)
-	print rcs
-	print wcs
-	putStrLn $ "READ      KEY: " ++ show rk
-	putStrLn $ "READ  MAC KEY: " ++ show rmk
-	putStrLn $ "WRITE     KEY: " ++ show wk
-	putStrLn $ "WRITE MAC KEY: " ++ show wmk
-	print n
+	return ()
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
 doUntil p rd = rd >>= \x ->
