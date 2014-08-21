@@ -21,25 +21,17 @@ main = do
 	ca <- readCertificateStore [d ++ "/cacert.pem"]
 	h <- connectTo "localhost" $ PortNumber 443
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	(p, s) <- (`run'` g) $ do
+	((k, n), g') <- (`run'` g) $ do
 		open' (DebugHandle h $ Just "low") "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
---		unless ("localhost" `elem` names p) .
---			error $ "certificate name mismatch: " ++ show (names p)
---		hlPut p "GET / HTTP/1.1 \r\n"
---		hlPut p "Host: localhost\r\n\r\n"
---		hlFlush p
-		{-
-		doUntil BSC.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
-		hlClose p
-		-}
 	putStrLn ""
-	let	g = gen s
-		rk = kRKey . sKeys . snd . head $ states s
-		rmk = kRMKey . sKeys . snd . head $ states s
-		wk = kWKey . sKeys . snd . head $ states s
-		wmk = kWMKey . sKeys . snd . head $ states s
-		(wenc, g') = encrypt sha1 wk wmk 1 "\ETB\ETX\ETX"
-			"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" g
+	let	rk = kRKey k
+		rmk = kRMKey k
+		wk = kWKey k
+		wmk = kWMKey k
+		rcs = kRCSuite k
+		wcs = kWCSuite k
+		(wenc, g'') = encrypt sha1 wk wmk 1 "\ETB\ETX\ETX"
+			"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" g'
 	hlPut h "\ETB\ETX\ETX"
 	hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
 		BSC.length wenc
@@ -52,13 +44,13 @@ main = do
 	let	Right pln = decrypt sha1 rk rmk 1 pre enc
 	putStrLn ""
 	BSC.putStr pln
+	print rcs
+	print wcs
 	putStrLn $ "READ      KEY: " ++ show rk
 	putStrLn $ "READ  MAC KEY: " ++ show rmk
 	putStrLn $ "WRITE     KEY: " ++ show wk
 	putStrLn $ "WRITE MAC KEY: " ++ show wmk
-	print $ readSN $ snd $ head $ states s
-	print $ writeSN $ snd $ head $ states s
-	print $ sNames $ snd $ head $ states s
+	print n
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
 doUntil p rd = rd >>= \x ->

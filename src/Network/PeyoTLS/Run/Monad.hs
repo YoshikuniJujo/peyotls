@@ -58,9 +58,11 @@ run m g = evalStateT (runErrorT m) (S.initState g) >>= \er -> case er of
 	Right r -> return r
 	Left a -> error $ show a
 
-run' :: HandleLike h => TlsM h g a -> g -> HandleMonad h (a, S.TlsState h g)
+run' :: HandleLike h => TlsM h g a -> g -> HandleMonad h ((S.Keys, [String]), g)
 run' m g = runStateT (runErrorT m) (S.initState g) >>= \er -> case er of
-	(Right r, s) -> return (r, s)
+	(Right _, s) -> return ((
+		S.sKeys . snd . head $ S.states s,
+		S.sNames . snd . head $ S.states s ), S.gen s)
 	(Left a, _) -> error $ show a
 
 throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
