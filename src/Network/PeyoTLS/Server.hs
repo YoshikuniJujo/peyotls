@@ -11,8 +11,10 @@ Stability	: Experimental
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Server (
+	Keys(..),
 	-- * Basic
-	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..), run, open, getNames,
+	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
+	run, run', open, getNames,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -43,8 +45,8 @@ import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
 import qualified Network.PeyoTLS.Base as BASE (getNames)
-import Network.PeyoTLS.Base ( debug,
-	PeyotlsM, TlsM, run,
+import Network.PeyoTLS.Base ( debug, Keys(..),
+	PeyotlsM, TlsM, run, run',
 		SettingsS, getSettingsS, setSettingsS,
 		adGet, adGetLine, adGetContent, adPut, adDebug, adClose,
 	HandshakeM, execHandshakeM, rerunHandshakeM,
