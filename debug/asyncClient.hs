@@ -8,7 +8,7 @@ import Data.HandleLike
 import System.Environment
 import Network
 import Network.PeyoTLS.ReadFile
-import Network.PeyoTLS.Client
+import Network.PeyoTLS.Client.Body
 import Network.PeyoTLS.Run.Crypto
 import "crypto-random" Crypto.Random
 

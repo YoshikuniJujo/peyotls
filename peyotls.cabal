@@ -286,8 +286,11 @@ source-repository	this
 library
     hs-source-dirs:	src
     exposed-modules:
-        Network.PeyoTLS.Client, Network.PeyoTLS.Server, Network.PeyoTLS.ReadFile
+        Network.PeyoTLS.Client, Network.PeyoTLS.Server,
+        Network.PeyoTLS.TChan.Client,
+        Network.PeyoTLS.ReadFile
     other-modules:
+        Network.PeyoTLS.Client.Body,
         Network.PeyoTLS.Base,
         Network.PeyoTLS.Codec,
             Network.PeyoTLS.Codec.Hello, Network.PeyoTLS.Codec.Extension,
