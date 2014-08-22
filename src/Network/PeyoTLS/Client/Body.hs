@@ -12,7 +12,7 @@ Stability	: Experimental
 
 module Network.PeyoTLS.Client.Body (
 	-- * Basic
-	TlsState(..), State1(..), Keys(..),
+	TlsState(..), State1(..), Keys(..), toCheckName,
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
 	run, run', open, open', getNames, checkName,
 	-- * Renegotiation
