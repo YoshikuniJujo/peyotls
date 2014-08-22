@@ -309,7 +309,8 @@ library
         cryptohash == 0.11.*,
         crypto-pubkey == 0.2.*, crypto-pubkey-types == 0.4.*,
         cipher-aes == 0.2.*,
-        bytable == 0.1.*, handle-like == 0.1.*
+        bytable == 0.1.*, handle-like == 0.1.*,
+        stm == 2.4.*, transformers-base == 0.4.*, monad-control == 0.3.*
     ghc-options:	-Wall
     extensions:		PatternGuards, DoAndIfThenElse
 
