@@ -34,7 +34,6 @@ open' h dn cs kc ca g = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	((k, _ns), g') <- (`run'` g) $ C.open' h dn cs kc ca
-	liftBase $ putStrLn ""
 	let	rk = kRKey k
 		rmk = kRMKey k
 		wk = kWKey k
@@ -77,7 +76,6 @@ open h cs kc ca g = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	((k, ns), g') <- (`run'` g) $ C.open h cs kc ca
-	liftBase $ putStrLn ""
 	let	rk = kRKey k
 		rmk = kRMKey k
 		wk = kWKey k
