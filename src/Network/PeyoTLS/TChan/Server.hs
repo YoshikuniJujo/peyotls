@@ -51,9 +51,9 @@ open h cs kcs ca g = do
 				pre <- lift $ hlGet h 3
 				when (BSC.null pre) $
 					lift (hlClose h) >> error "bad"
-				liftBase $ print pre
+--				liftBase $ print pre
 				Right n <- B.decode <$> lift (hlGet h 2)
-				liftBase $ print n
+--				liftBase $ print n
 				renc <- lift $ hlGet h n
 				let Right rpln = decrypt sha1 rk rmk sn pre renc
 				liftBase $ do

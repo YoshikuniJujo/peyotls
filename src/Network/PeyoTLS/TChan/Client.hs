@@ -59,10 +59,10 @@ open' h dn cs kc ca g = do
 		sn <- get
 		modify succ
 		pre <- lift $ hlGet h 3
-		liftBase $ print pre
+--		liftBase $ print pre
 		Right n <- B.decode <$> lift (hlGet h 2)
 		enc <- lift $ hlGet h n
-		liftBase $ print enc
+--		liftBase $ print enc
 		let	hs = case rcs of
 				AES_128_CBC_SHA -> sha1
 				AES_128_CBC_SHA256 -> sha256
@@ -105,10 +105,10 @@ open h cs kc ca g = do
 		sn <- get
 		modify succ
 		pre <- lift $ hlGet h 3
-		liftBase $ print pre
+--		liftBase $ print pre
 		Right n <- B.decode <$> lift (hlGet h 2)
 		enc <- lift $ hlGet h n
-		liftBase $ print enc
+--		liftBase $ print enc
 		let	hs = case rcs of
 				AES_128_CBC_SHA -> sha1
 				AES_128_CBC_SHA256 -> sha256
