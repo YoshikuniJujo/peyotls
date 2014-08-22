@@ -41,7 +41,7 @@ open' h dn cs kc ca g = do
 		wmk = kWMKey k
 		CipherSuite _ rcs = kRCSuite k
 		CipherSuite _ wcs = kWCSuite k
-	_ <- liftBaseDiscard forkIO . forever . (`runStateT` (g', 1)) $ do
+	_ <- liftBaseDiscard forkIO . (`evalStateT` (g', 1)) . forever $ do
 		wpln <- liftBase . atomically $ readTChan otc
 		(g0, sn) <- get
 		let	hs = case wcs of
@@ -55,7 +55,7 @@ open' h dn cs kc ca g = do
 			. (B.encode :: Word16 -> BSC.ByteString) . fromIntegral
 			$ BSC.length wenc
 		lift $ hlPut h wenc
-	_ <- liftBaseDiscard forkIO . forever . (`runStateT` 1) $ do
+	_ <- liftBaseDiscard forkIO . (`evalStateT` 1) . forever $ do
 		sn <- get
 		modify succ
 		pre <- lift $ hlGet h 3
