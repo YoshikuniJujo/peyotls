@@ -1,8 +1,11 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
+	PackageImports #-}
 
 import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.State
+import Control.Monad.Trans.Control
+import Control.Monad.Base
 import Control.Concurrent
 import Control.Concurrent.STM
 import Data.Word
@@ -33,43 +36,45 @@ main = do
 	atomically $ writeTChan otc "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
 	BSC.putStr =<< atomically (readTChan inc)
 
-open' :: (CPRG g, ValidateHandle h, HandleMonad h ~ IO) => h ->
+open' :: (CPRG g, ValidateHandle h, MonadBaseControl IO (HandleMonad h)) => h ->
 	TChan BSC.ByteString -> TChan BSC.ByteString -> String ->
 	[CipherSuite] -> [(CertSecretKey, CertificateChain)] ->
-	CertificateStore -> g -> IO ()
+	CertificateStore -> g -> HandleMonad h ()
 open' h inc otc dn cs kc ca g = do
 	((k, _n), g') <- (`run'` g) $ C.open' h dn cs kc ca
-	putStrLn ""
+	liftBase $ putStrLn ""
 	let	rk = kRKey k
 		rmk = kRMKey k
 		wk = kWKey k
 		wmk = kWMKey k
 		rcs = kRCSuite k
 		wcs = kWCSuite k
-	print rcs
-	print wcs
-	putStrLn $ "READ      KEY: " ++ show rk
-	putStrLn $ "READ  MAC KEY: " ++ show rmk
-	putStrLn $ "WRITE     KEY: " ++ show wk
-	putStrLn $ "WRITE MAC KEY: " ++ show wmk
-	_ <- forkIO . forever . (`runStateT` (g', 1)) $ do
-		wpln <- liftIO . atomically $ readTChan otc
+	liftBase $ do
+		print rcs
+		print wcs
+		putStrLn $ "READ      KEY: " ++ show rk
+		putStrLn $ "READ  MAC KEY: " ++ show rmk
+		putStrLn $ "WRITE     KEY: " ++ show wk
+		putStrLn $ "WRITE MAC KEY: " ++ show wmk
+	_ <- liftBaseDiscard forkIO . forever . (`runStateT` (g', 1)) $ do
+		wpln <- liftBase . atomically $ readTChan otc
 		(g0, sn) <- get
 		let	(wenc, g1) = encrypt sha1 wk wmk sn "\ETB\ETX\ETX" wpln g0
 		put (g1, succ sn)
-		liftIO $ hlPut h "\ETB\ETX\ETX"
-		liftIO . hlPut h . (B.encode :: Word16 -> BSC.ByteString) . fromIntegral $
-			BSC.length wenc
-		liftIO $ hlPut h wenc
-	_ <- forkIO . forever $ do
+		lift $ hlPut h "\ETB\ETX\ETX"
+		lift $ hlPut h
+			. (B.encode :: Word16 -> BSC.ByteString) . fromIntegral
+			$ BSC.length wenc
+		lift $ hlPut h wenc
+	_ <- liftBaseDiscard forkIO . forever $ do
 		pre <- hlGet h 3
-		print pre
+		liftBase $ print pre
 		Right n <- B.decode <$> hlGet h 2
 		enc <- hlGet h n
-		print enc
+		liftBase $ print enc
 		let	Right pln = decrypt sha1 rk rmk 1 pre enc
-		putStrLn ""
-		atomically $ writeTChan inc pln
+		liftBase $ putStrLn ""
+		liftBase . atomically $ writeTChan inc pln
 	return ()
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
