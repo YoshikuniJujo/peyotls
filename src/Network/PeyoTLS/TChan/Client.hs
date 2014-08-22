@@ -59,16 +59,13 @@ open' h dn cs kc ca g = do
 		sn <- get
 		modify succ
 		pre <- lift $ hlGet h 3
---		liftBase $ print pre
 		Right n <- B.decode <$> lift (hlGet h 2)
 		enc <- lift $ hlGet h n
---		liftBase $ print enc
 		let	hs = case rcs of
 				AES_128_CBC_SHA -> sha1
 				AES_128_CBC_SHA256 -> sha256
 				_ -> error "Network.PeyoTLS.TChan.Client.open': bad"
 			Right pln = decrypt hs rk rmk sn pre enc
-		liftBase $ putStrLn ""
 		liftBase . atomically $ writeTChan inc pln
 	return (inc, otc)
 
@@ -105,15 +102,12 @@ open h cs kc ca g = do
 		sn <- get
 		modify succ
 		pre <- lift $ hlGet h 3
---		liftBase $ print pre
 		Right n <- B.decode <$> lift (hlGet h 2)
 		enc <- lift $ hlGet h n
---		liftBase $ print enc
 		let	hs = case rcs of
 				AES_128_CBC_SHA -> sha1
 				AES_128_CBC_SHA256 -> sha256
 				_ -> error "Network.PeyoTLS.TChan.Client.open': bad"
 			Right pln = decrypt hs rk rmk sn pre enc
-		liftBase $ putStrLn ""
 		liftBase . atomically $ writeTChan inc pln
 	return (toCheckName ns, (inc, otc))
