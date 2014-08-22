@@ -287,10 +287,10 @@ library
     hs-source-dirs:	src
     exposed-modules:
         Network.PeyoTLS.Client, Network.PeyoTLS.Server,
-        Network.PeyoTLS.TChan.Client,
+        Network.PeyoTLS.TChan.Client, Network.PeyoTLS.TChan.Server,
         Network.PeyoTLS.ReadFile
     other-modules:
-        Network.PeyoTLS.Client.Body,
+        Network.PeyoTLS.Client.Body, Network.PeyoTLS.Server.Body,
         Network.PeyoTLS.Base,
         Network.PeyoTLS.Codec,
             Network.PeyoTLS.Codec.Hello, Network.PeyoTLS.Codec.Extension,
