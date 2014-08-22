@@ -66,13 +66,15 @@ open' h inc otc dn cs kc ca g = do
 			. (B.encode :: Word16 -> BSC.ByteString) . fromIntegral
 			$ BSC.length wenc
 		lift $ hlPut h wenc
-	_ <- liftBaseDiscard forkIO . forever $ do
-		pre <- hlGet h 3
+	_ <- liftBaseDiscard forkIO . forever . (`runStateT` 1) $ do
+		sn <- get
+		modify succ
+		pre <- lift $ hlGet h 3
 		liftBase $ print pre
-		Right n <- B.decode <$> hlGet h 2
-		enc <- hlGet h n
+		Right n <- B.decode <$> lift (hlGet h 2)
+		enc <- lift $ hlGet h n
 		liftBase $ print enc
-		let	Right pln = decrypt sha1 rk rmk 1 pre enc
+		let	Right pln = decrypt sha1 rk rmk sn pre enc
 		liftBase $ putStrLn ""
 		liftBase . atomically $ writeTChan inc pln
 	return ()
