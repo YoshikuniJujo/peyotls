@@ -11,7 +11,7 @@ Stability	: Experimental
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Server (
-	Keys(..),
+	Keys(..), toCheckName,
 	-- * Basic
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
 	run, run', open, getNames,
@@ -29,6 +29,7 @@ import "monads-tf" Control.Monad.Error (catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
+import Data.Function
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import Numeric (readHex)
@@ -302,3 +303,22 @@ certVerify pk = do
 			moduleName ++ ".certVerify: not implement: " ++ show a
 	unless (csVerify pk s hs0) . throw ALFtl ADDecryptErr $
 		moduleName ++ ".certVerify: client auth failed "
+
+toCheckName :: [String] -> Maybe (String -> Bool)
+toCheckName [] = Nothing
+toCheckName s0s = Just $ \s -> any (`toCheckName1` s) s0s
+
+toCheckName1 :: String -> String -> Bool
+toCheckName1 = on checkSepNames $ sepBy '.'
+
+sepBy :: Eq a => a ->[a] -> [[a]]
+sepBy x0 xs
+	| (t, _ : d) <- span (/= x0) xs = t : sepBy x0 d
+	| otherwise = [xs]
+
+checkSepNames :: [String] -> [String] -> Bool
+checkSepNames [] [] = True
+checkSepNames _ [] = False
+checkSepNames [] _ = False
+checkSepNames ("*" : ns0) (_ : ns) = checkSepNames ns0 ns
+checkSepNames (n0 : ns0) (n : ns) = n0 == n && checkSepNames ns0 ns

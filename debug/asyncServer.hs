@@ -53,7 +53,9 @@ main = do
 open :: (CPRG g, ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> [CipherSuite] -> [(CertSecretKey, CertificateChain)] ->
 	Maybe CertificateStore -> g ->
-	HandleMonad h ([String], (TChan BSC.ByteString, TChan BSC.ByteString))
+	HandleMonad h (
+		Maybe (String -> Bool),
+		(TChan BSC.ByteString, TChan BSC.ByteString))
 open h cs kcs ca g = do
 			inc <- liftBase $ atomically newTChan
 			otc <- liftBase $ atomically newTChan
@@ -94,4 +96,4 @@ open h cs kcs ca g = do
 					. fromIntegral $ BSC.length wenc
 				lift $ hlPut h wenc
 
-			return (ns, (inc, otc))
+			return (toCheckName ns, (inc, otc))
