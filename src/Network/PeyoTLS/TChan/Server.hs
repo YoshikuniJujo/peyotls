@@ -53,9 +53,7 @@ open h cs kcs ca g = do
 				Right n <- B.decode <$> lift (hlGet h 2)
 				renc <- lift $ hlGet h n
 				let Right rpln = decrypt sha1 rk rmk sn pre renc
-				liftBase $ do
-					BS.putStr rpln
-					atomically $ writeTChan inc rpln
+				liftBase . atomically $ writeTChan inc rpln
 
 			_ <- liftBaseDiscard forkIO
 				. (`evalStateT` (1, g')) . forever $ do
