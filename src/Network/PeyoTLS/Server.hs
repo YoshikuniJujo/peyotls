@@ -11,7 +11,7 @@ Stability	: Experimental
 module Network.PeyoTLS.Server (
 	-- * Basic
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
-	run, open, getNames, getCertificate,
+	run, open, getNames, checkName, getCertificate,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -19,4 +19,10 @@ module Network.PeyoTLS.Server (
 	-- * Others
 	ValidateHandle(..), CertSecretKey(..) ) where
 
+import Data.HandleLike
 import Network.PeyoTLS.Server.Body
+
+checkName :: HandleLike h => TlsHandle h g -> String -> TlsM h g Bool
+checkName t n = do
+	ns <- getNames t
+	return . maybe False ($ n) $ toCheckName ns
