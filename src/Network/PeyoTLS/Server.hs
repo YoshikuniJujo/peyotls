@@ -11,7 +11,7 @@ Stability	: Experimental
 module Network.PeyoTLS.Server (
 	-- * Basic
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
-	run, open, getNames,
+	run, open, getNames, getCertificate,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite

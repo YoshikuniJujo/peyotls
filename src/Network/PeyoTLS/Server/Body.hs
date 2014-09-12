@@ -14,7 +14,7 @@ module Network.PeyoTLS.Server.Body (
 	Keys(..), toCheckName,
 	-- * Basic
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
-	run, run', open, getNames,
+	run, run', open, getNames, getCertificate,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -27,6 +27,7 @@ import Control.Arrow (first)
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
+import Data.Maybe (fromJust)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.Function
@@ -45,7 +46,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import qualified Network.PeyoTLS.Base as BASE (getNames)
+import qualified Network.PeyoTLS.Base as BASE (getNames, getCertificate)
 import Network.PeyoTLS.Base ( debug, Keys(..),
 	PeyotlsM, TlsM, run, run', wFlush,
 		SettingsS, getSettingsS, setSettingsS,
@@ -97,6 +98,9 @@ moduleName = "Network.PeyoTLS.Server"
 
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleS
+
+getCertificate :: HandleLike h => TlsHandle h g -> TlsM h g X509.SignedCertificate
+getCertificate = (fromJust `liftM`) . BASE.getCertificate . tlsHandleS
 
 open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> Maybe X509.CertificateStore ->

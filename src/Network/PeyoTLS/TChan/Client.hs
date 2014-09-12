@@ -33,7 +33,7 @@ open' :: (CPRG g, ValidateHandle h, MonadBaseControl IO (HandleMonad h)) => h ->
 open' h dn cs kc ca g = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
-	((k, _ns), g') <- (`run'` g) $ C.open' h dn cs kc ca
+	((k, _ns, _), g') <- (`run'` g) $ C.open' h dn cs kc ca
 	let	rk = kRKey k
 		rmk = kRMKey k
 		wk = kWKey k
@@ -49,11 +49,11 @@ open' h dn cs kc ca g = do
 				_ -> error "Network.PeyoTLS.TChan.Client.open': bad"
 			(wenc, g1) = encrypt hs wk wmk sn "\ETB\ETX\ETX" wpln g0
 		put (g1, succ sn)
-		lift $ hlPut h "\ETB\ETX\ETX"
-		lift $ hlPut h
-			. (B.encode :: Word16 -> BSC.ByteString) . fromIntegral
-			$ BSC.length wenc
-		lift $ hlPut h wenc
+		lift $ do
+			hlPut h "\ETB\ETX\ETX"
+			hlPut h . (B.encode :: Word16 -> BSC.ByteString)
+				. fromIntegral $ BSC.length wenc
+			hlPut h wenc
 	_ <- liftBaseDiscard forkIO . (`evalStateT` 1) . forever $ do
 		sn <- get
 		modify succ
@@ -75,7 +75,7 @@ open :: (CPRG g, ValidateHandle h, MonadBaseControl IO (HandleMonad h)) => h ->
 open h cs kc ca g = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
-	((k, ns), g') <- (`run'` g) $ C.open h cs kc ca
+	((k, ns, _), g') <- (`run'` g) $ C.open h cs kc ca
 	let	rk = kRKey k
 		rmk = kRMKey k
 		wk = kWKey k
@@ -84,18 +84,12 @@ open h cs kc ca g = do
 		CipherSuite _ wcs = kWCSuite k
 	_ <- liftBaseDiscard forkIO . (`evalStateT` (g', 1)) . forever $ do
 		wpln <- liftBase . atomically $ readTChan otc
-		(g0, sn) <- get
+--		(g0, sn) <- get
 		let	hs = case wcs of
 				AES_128_CBC_SHA -> sha1
 				AES_128_CBC_SHA256 -> sha256
 				_ -> error "Network.PeyoTLS.TChan.Client.open': bad"
-			(wenc, g1) = encrypt hs wk wmk sn "\ETB\ETX\ETX" wpln g0
-		put (g1, succ sn)
-		lift $ hlPut h "\ETB\ETX\ETX"
-		lift $ hlPut h
-			. (B.encode :: Word16 -> BSC.ByteString) . fromIntegral
-			$ BSC.length wenc
-		lift $ hlPut h wenc
+		putEncrypted h hs wk wmk wpln
 	_ <- liftBaseDiscard forkIO . (`evalStateT` 1) . forever $ do
 		sn <- get
 		modify succ
@@ -109,3 +103,16 @@ open h cs kc ca g = do
 			Right pln = decrypt hs rk rmk sn pre enc
 		liftBase . atomically $ writeTChan inc pln
 	return (toCheckName ns, (inc, otc))
+
+putEncrypted :: (HandleLike h, CPRG g) =>
+	h -> (Hash, Int) -> BSC.ByteString -> BSC.ByteString
+		-> BSC.ByteString -> StateT (g, Word64) (HandleMonad h) ()
+putEncrypted h hs wk wmk wpln = do
+		(g0, sn) <- get
+		let	(wenc, g1) = encrypt hs wk wmk sn "\ETB\ETX\ETX" wpln g0
+		put (g1, succ sn)
+		lift $ do
+			hlPut h "\ETB\ETX\ETX"
+			hlPut h . (B.encode :: Word16 -> BSC.ByteString)
+				. fromIntegral $ BSC.length wenc
+			hlPut h wenc

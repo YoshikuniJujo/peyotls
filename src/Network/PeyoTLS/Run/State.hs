@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Run.State ( State1(..),
 	TlsState(..), initState, PartnerId, newPartner,
-		getGen, setGen, getNames, setNames,
+		getGen, setGen, getNames, setNames, getCertificate, setCertificate,
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
 		getClFinished, setClFinished, getSvFinished, setSvFinished,
 	ContType(..), getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
@@ -57,7 +57,8 @@ data State1 g = State1 {
 	sKeys :: Keys, readSN :: Word64, writeSN :: Word64,
 	rBuffer :: (ContType, BS.ByteString), wBuffer :: (ContType, BS.ByteString),
 	adBuffer :: BS.ByteString,
-	sNames :: [String] }
+	sNames :: [String],
+	sCert :: Maybe X509.SignedCertificate }
 
 type Settings = (
 	[CipherSuite], [(CertSecretKey, X509.CertificateChain)],
@@ -75,7 +76,7 @@ newPartner s@TlsState { nextPid = np, states = ss } = (
 		rnClFinished = "", rnSvFinished = "",
 		sKeys = nullKeys, readSN = 0, writeSN = 0,
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""), adBuffer = "",
-		sNames = [] }
+		sNames = [], sCert = Nothing }
 
 getGen :: TlsState h g -> g
 getGen = gen
@@ -88,6 +89,12 @@ getNames = (sNames .) . getState
 
 setNames :: PartnerId -> [String] -> Modify (TlsState h g)
 setNames = setState $ \n st -> st { sNames = n }
+
+getCertificate :: PartnerId -> TlsState h g -> Maybe X509.SignedCertificate
+getCertificate = (sCert .) . getState
+
+setCertificate :: PartnerId -> X509.SignedCertificate -> Modify (TlsState h g)
+setCertificate = setState $ \c st -> st { sCert = Just c }
 
 getRSn, getWSn :: PartnerId -> TlsState h g -> Word64
 getRSn = (readSN .) . getState; getWSn = (writeSN .) . getState

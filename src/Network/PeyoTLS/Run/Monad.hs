@@ -9,7 +9,7 @@ module Network.PeyoTLS.Run.Monad (
 	S.PartnerId, S.newPartner, S.ContType(..),
 		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf, rstSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		getNames, setNames,
+		getNames, setNames, getCertificate, setCertificate,
 	S.CipherSuite(..), S.CertSecretKey(..), S.isRsaKey, S.isEcdsaKey,
 		S.SettingsC, getSettingsC, setSettingsC,
 		S.SettingsS, getSettingsS, setSettingsS,
@@ -28,11 +28,12 @@ import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
+import qualified Data.X509 as X509
 import qualified Codec.Bytable.BigEndian as B
 
 import qualified Network.PeyoTLS.Run.State as S (State1(..), Keys(..),
 	TlsState(..), initState, PartnerId, newPartner,
-		getGen, setGen, getNames, setNames,
+		getGen, setGen, getNames, setNames, getCertificate, setCertificate,
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 	ContType(..), getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
@@ -58,11 +59,14 @@ run m g = evalStateT (runErrorT m) (S.initState g) >>= \er -> case er of
 	Right r -> return r
 	Left a -> error $ show a
 
-run' :: HandleLike h => TlsM h g a -> g -> HandleMonad h ((S.Keys, [String]), g)
+run' :: HandleLike h => TlsM h g a -> g ->
+	HandleMonad h ((S.Keys, [String], Maybe X509.SignedCertificate), g)
 run' m g = runStateT (runErrorT m) (S.initState g) >>= \er -> case er of
 	(Right _, s) -> return ((
 		S.sKeys . snd . head $ S.states s,
-		S.sNames . snd . head $ S.states s ), S.gen s)
+		S.sNames . snd . head $ S.states s,
+		S.sCert . snd . head $ S.states s
+		), S.gen s)
 	(Left a, _) -> error $ show a
 
 throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
@@ -168,6 +172,14 @@ getNames = gets . S.getNames
 
 setNames :: HandleLike h => S.PartnerId -> [String] -> TlsM h g ()
 setNames = (modify .) . S.setNames
+
+getCertificate :: HandleLike h =>
+	S.PartnerId -> TlsM h g (Maybe X509.SignedCertificate)
+getCertificate = gets . S.getCertificate
+
+setCertificate :: HandleLike h =>
+	S.PartnerId -> X509.SignedCertificate -> TlsM h g ()
+setCertificate = (modify .) . S.setCertificate
 
 getSettingsC :: HandleLike h => S.PartnerId -> TlsM h g S.SettingsC
 getSettingsC i = gets (S.getSettingsC i ) >>= maybe (throw ALFtl ADUnk "...") return

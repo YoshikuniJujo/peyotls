@@ -11,7 +11,7 @@ module Network.PeyoTLS.Run ( H.debug,
 		H.SettingsS, getSettingsS, setSettingsS,
 		getCipherSuite, setCipherSuite,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		H.getNames,
+		H.getNames, H.getCertificate,
 		H.RW(..), flushCipherSuite, makeKeys,
 		H.Side(..), handshakeHash, finishedHash,
 	H.ValidateHandle(..), handshakeValidate, validateAlert,
@@ -47,7 +47,7 @@ import qualified Network.PeyoTLS.Run.Handle as H ( debug,
 		SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
 		makeKeys, setKeys,
-		getNames, setNames,
+		getNames, setNames, getCertificate, setCertificate,
 		Side(..), finishedHash,
 		RW(..), flushCipherSuite,
 	ValidateHandle(..), tValidate,
@@ -176,6 +176,7 @@ handshakeValidate :: H.ValidateHandle h => X509.CertificateStore ->
 	X509.CertificateChain -> HandshakeM h g [X509.FailedReason]
 handshakeValidate cs cc@(X509.CertificateChain (c : _)) =  ask >>= \t -> do
 	lift . lift . H.setNames t . certNames $ X509.getCertificate c
+	lift . lift $ H.setCertificate t c
 	lift . lift $ H.tValidate t cs cc
 handshakeValidate _ _ = error $ modNm ++ ".handshakeValidate: empty cert chain"
 

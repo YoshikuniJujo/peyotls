@@ -2,7 +2,7 @@
 
 module Network.PeyoTLS.Run.Crypto (
 	makeKeys, decrypt, encrypt, sha1, sha256,
-	Side(..), finishedHash ) where
+	Hash, Side(..), finishedHash ) where
 
 import Prelude hiding (splitAt, take)
 

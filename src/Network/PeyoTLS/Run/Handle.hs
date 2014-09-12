@@ -11,7 +11,8 @@ module Network.PeyoTLS.Run.Handle ( debug,
 		M.SettingsC, getSettingsC, setSettingsC,
 		M.SettingsS, getSettingsS, setSettingsS,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		getNames, setNames, makeKeys, setKeys,
+		getNames, setNames, getCertificate, setCertificate,
+		makeKeys, setKeys,
 		M.Side(..), finishedHash,
 		M.RW(..), flushCipherSuite,
 	ValidateHandle(..), tValidate,
@@ -41,7 +42,7 @@ import qualified Network.PeyoTLS.Run.Monad as M (
 	PartnerId, newPartner, ContType(..),
 		getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf, rstSn,
 		getClFinished, getSvFinished, setClFinished, setSvFinished,
-		getNames, setNames,
+		getNames, setNames, getCertificate, setCertificate,
 	CipherSuite(..), CertSecretKey(..), isRsaKey, isEcdsaKey,
 		SettingsC, getSettingsC, setSettingsC,
 		SettingsS, getSettingsS, setSettingsS,
@@ -244,6 +245,14 @@ getNames = M.getNames . pid
 
 setNames :: HandleLike h => HandleBase h g -> [String] -> M.TlsM h g ()
 setNames = M.setNames . pid
+
+getCertificate :: HandleLike h =>
+	HandleBase h g -> M.TlsM h g (Maybe X509.SignedCertificate)
+getCertificate = M.getCertificate . pid
+
+setCertificate :: HandleLike h =>
+	HandleBase h g -> X509.SignedCertificate -> M.TlsM h g ()
+setCertificate = M.setCertificate . pid
 
 makeKeys :: HandleLike h => HandleBase h g -> M.Side ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> M.CipherSuite ->
