@@ -14,7 +14,7 @@ module Network.PeyoTLS.Client.Body (
 	-- * Basic
 	TlsState(..), State1(..), Keys(..), toCheckName,
 	PeyotlsM, PeyotlsHandle, TlsM, TlsHandle, Alert(..),
-	run, run', open, open', getNames, checkName,
+	run, run', open, open', getNames, getCertificate, checkName,
 	-- * Renegotiation
 	renegotiate, setCipherSuites, setKeyCerts, setCertificateStore,
 	-- * Cipher Suite
@@ -25,7 +25,7 @@ module Network.PeyoTLS.Client.Body (
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
 import Data.List (find, intersect)
 import Data.Function (on)
 import Data.HandleLike (HandleLike(..))
@@ -43,7 +43,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import qualified "monads-tf" Control.Monad.Error as E
 
-import qualified Network.PeyoTLS.Base as BASE (getNames)
+import qualified Network.PeyoTLS.Base as BASE (getNames, getCertificate)
 import Network.PeyoTLS.Base ( debug, wFlush,
 	TlsState(..), State1(..), Keys(..),
 	PeyotlsM, TlsM, run, run',
@@ -91,6 +91,9 @@ modNm = "Network.PeyoTLS.Client"
 
 getNames :: HandleLike h => TlsHandle h g -> TlsM h g [String]
 getNames = BASE.getNames . tlsHandleC
+
+getCertificate :: HandleLike h => TlsHandle h g -> TlsM h g X509.SignedCertificate
+getCertificate = (fromJust `liftM`) . BASE.getCertificate . tlsHandleC
 
 checkName :: HandleLike h => TlsHandle h g -> String -> TlsM h g Bool
 checkName t n = flip toCheckName n `liftM` getNames t
