@@ -14,6 +14,7 @@ import Control.Monad.Trans.Control
 import Control.Monad.Base
 import Control.Concurrent
 import Control.Concurrent.STM
+import Data.Maybe
 import Data.Word
 import Data.HandleLike
 import Data.X509
@@ -71,11 +72,13 @@ open' h dn cs kc ca g = do
 open :: (CPRG g, ValidateHandle h, MonadBaseControl IO (HandleMonad h)) => h ->
 	[CipherSuite] -> [(CertSecretKey, CertificateChain)] ->
 	CertificateStore -> g ->
-	HandleMonad h (String -> Bool, (TChan BSC.ByteString, TChan BSC.ByteString))
+	HandleMonad h (
+		(String -> Bool, SignedCertificate),
+		(TChan BSC.ByteString, TChan BSC.ByteString))
 open h cs kc ca g = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
-	((k, ns, _), g') <- (`run'` g) $ C.open h cs kc ca
+	((k, ns, crt), g') <- (`run'` g) $ C.open h cs kc ca
 	let	rk = kRKey k
 		rmk = kRMKey k
 		wk = kWKey k
@@ -102,7 +105,7 @@ open h cs kc ca g = do
 				_ -> error "Network.PeyoTLS.TChan.Client.open': bad"
 			Right pln = decrypt hs rk rmk sn pre enc
 		liftBase . atomically $ writeTChan inc pln
-	return (toCheckName ns, (inc, otc))
+	return ((toCheckName ns, fromJust crt), (inc, otc))
 
 putEncrypted :: (HandleLike h, CPRG g) =>
 	h -> (Hash, Int) -> BSC.ByteString -> BSC.ByteString
