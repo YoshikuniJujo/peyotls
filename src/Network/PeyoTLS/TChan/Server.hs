@@ -42,6 +42,8 @@ open h cs kcs ca g = do
 		rmk = kRMKey k
 		wk = kWKey k
 		wmk = kWMKey k
+		CipherSuite _ rcs = kRCSuite k
+		CipherSuite _ wcs = kWCSuite k
 	_ <- liftBaseDiscard forkIO
 		. (`evalStateT` 1) . forever $ do
 		sn <- get
@@ -51,15 +53,27 @@ open h cs kcs ca g = do
 			lift (hlClose h) >> error "bad"
 		Right n <- B.decode <$> lift (hlGet h 2)
 		renc <- lift $ hlGet h n
-		let Right rpln = decrypt sha1 rk rmk sn pre renc
+		let	hs = case rcs of
+				AES_128_CBC_SHA -> sha1
+				AES_128_CBC_SHA256 -> sha256
+				_ -> error "Network.PeyoTLS.TChan.Server.open: bad"
+			rpln = case decrypt hs rk rmk sn pre renc of
+				Right r -> r
+				Left l -> error $
+					"Network.PeyoTLS.TChan.Server.open: "
+						++ show l
 		liftBase . atomically $ writeTChan inc rpln
 
 	_ <- liftBaseDiscard forkIO
 		. (`evalStateT` (1, g')) . forever $ do
 		(sn, g0) <- get
 		wpln <- liftBase . atomically $ readTChan otc
-		let	(wenc, g1) =
-				encrypt sha1 wk wmk sn "\ETB\ETX\ETX" wpln g0
+		let	hs = case wcs of
+				AES_128_CBC_SHA -> sha1
+				AES_128_CBC_SHA256 -> sha256
+				_ -> error "Network.PeyoTLS.TChan.Server.open: bad"
+			(wenc, g1) =
+				encrypt hs wk wmk sn "\ETB\ETX\ETX" wpln g0
 		put (succ sn, g1)
 		lift $ hlPut h "\ETB\ETX\ETX"
 		lift . hlPut h
