@@ -81,10 +81,7 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	hlGetContent = adGetContent rehandshake . tlsHandleC
 	hlDebug = adDebug . tlsHandleC
 	hlClose = adClose . tlsHandleC
-	hlFlush = writeFlush
-
-writeFlush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
-writeFlush = wFlush . tlsHandleC
+	hlFlush = wFlush . tlsHandleC
 
 modNm :: String
 modNm = "Network.PeyoTLS.Client"

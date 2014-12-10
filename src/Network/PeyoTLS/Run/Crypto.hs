@@ -58,11 +58,12 @@ hmac hs bls sk =
 decrypt :: (Hash, Int) -> BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
 decrypt (hs, ml) k mk sn pre enc =
-	if rm == em then Right b else Left $ modNm ++ ".decrypt: bad MAC\n" ++
-		"\t"++ show b ++ "\n"
+	if rm == em && BS.all (== lst pln) pd
+		then Right b
+		else Left $ modNm ++ ".decrypt: bad MAC\n" ++ "\t"++ show b ++ "\n"
 	where
 	pln = uncurry (AES.decryptCBC $ AES.initAES k) $ BS.splitAt 16 enc
-	up = BS.take (BS.length pln - fromIntegral (lst pln) - 1) pln
+	(up, pd) = BS.splitAt (BS.length pln - fromIntegral (lst pln) - 1) pln
 	(b, rm) = BS.splitAt (BS.length up - ml) up
 	em = calcMac hs mk sn $ pre `BS.append` B.addLen w16 b
 	lst "" = error $ modNm ++ ".decrypt"
