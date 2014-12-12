@@ -154,7 +154,8 @@ bCont h = snd `liftM` M.getRBuf (pid h) >>= \bp -> if BS.null bp
 	then snd `liftM` getCont h
 	else M.setRBuf (pid h) (M.CTNull, BS.empty) >> return bp
 
-adPut :: (HandleLike h, CPRG g) => HandleBase h g -> BS.ByteString -> M.TlsM h g ()
+adPut :: (HandleLike h, CPRG g) =>
+	HandleBase h g -> BS.ByteString -> M.TlsM h g ()
 adPut = flip tWrite M.CTAppData
 
 adDebug :: HandleLike h =>
@@ -208,9 +209,22 @@ tWrite h ct p = do
 wFlush :: (HandleLike h, CPRG g) => HandleBase h g -> M.TlsM h g ()
 wFlush h = M.getWBuf (pid h) >>= \(bct, bp) -> do
 	M.setWBuf (pid h) (M.CTNull, "")
+	unless (bct == M.CTNull)
+		. mapM_ (encryptPut h bct) $ divide (2 ^ (14 :: Int)) bp
+	{-
 	unless (bct == M.CTNull) $ M.encrypt (pid h) bct bp >>= \e ->
 		M.tPut (handle h) $ BS.concat
 			[B.encode bct, vrsn, B.addLen (undefined :: Word16) e]
+			-}
+
+encryptPut :: (HandleLike h, CPRG g) =>
+	HandleBase h g -> M.ContType -> BS.ByteString -> M.TlsM h g ()
+encryptPut h bct bp = M.encrypt (pid h) bct bp >>= \e -> M.tPut (handle h) $
+	BS.concat [B.encode bct, vrsn, B.addLen (undefined :: Word16) e]
+
+divide :: Int -> BS.ByteString -> [BS.ByteString]
+divide _ "" = []
+divide n s = BS.take n s : divide n (BS.drop n s)
 
 getCipherSuite :: HandleLike h => HandleBase h g -> M.TlsM h g M.CipherSuite
 getCipherSuite = M.getCipherSuite . pid
