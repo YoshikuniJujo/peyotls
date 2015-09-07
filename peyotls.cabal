@@ -14,7 +14,7 @@ license-file:	LICENSE
 category:	Network
 synopsis:	Pretty Easy YOshikuni-made TLS library
 description:
-    Currently implement the TLS1.2 protocol only,
+    Currently implement the TLS1.2 protocol (RFC 5246, RFC 4492) only,
     and support the following cipher suites.
     .
     * TLS_RSA_WITH_AES_128_CBC_SHA
