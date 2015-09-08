@@ -13,7 +13,7 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Network.PeyoTLS.Codec.HSAlg(HashAlg(..), SignAlg(..))
+import Network.PeyoTLS.Codec.HSAlg(HSAlg, HashAlg(..), SignAlg(..))
 
 modNm :: String
 modNm = "Network.PeyoTLS.Codec.Extension"
@@ -32,14 +32,16 @@ modNm = "Network.PeyoTLS.Codec.Extension"
 data Extension
 	= ESName [SName]
 	| EECrv [ECC.CurveName]     | EEPFrmt [EPFrmt]
-	| ESsnTcktTls BS.ByteString | ENxPrtNego BS.ByteString
-	| ERnInfo BS.ByteString     | ERaw EType BS.ByteString
+	| ESAlg [HSAlg]       | ESsnTcktTls BS.ByteString
+	| ENxPrtNego BS.ByteString  | ERnInfo BS.ByteString
+	| ERaw EType BS.ByteString
 	deriving (Show, Eq)
 
 instance B.Bytable Extension where
 	encode (ESName n) = B.encode . ERaw TSName . B.addLen w16 $ cmap B.encode n
 	encode (EECrv c) = B.encode . ERaw TECrv . B.addLen w16 $ cmap B.encode c
 	encode (EEPFrmt f) = B.encode . ERaw TEPFrmt . B.addLen w8 $ cmap B.encode f
+	encode (ESAlg sa) = B.encode . ERaw TESAlg . B.addLen w16 $ cmap B.encode sa
 	encode (ESsnTcktTls t) = B.encode $ ERaw TSsnTcktTls t
 	encode (ENxPrtNego n) = B.encode $ ERaw TNxPrtNego n
 	encode (ERnInfo i) = B.encode . ERaw TRnInfo $ B.addLen w8 i
@@ -51,6 +53,7 @@ instance B.Parsable Extension where
 		TSName -> ESName <$> (flip B.list B.parse =<< B.take 2)
 		TECrv -> EECrv <$> (flip B.list (B.take 2) =<< B.take 2)
 		TEPFrmt -> EEPFrmt <$> (flip B.list (B.take 1) =<< B.take 1)
+		TESAlg -> ESAlg <$> (flip B.list (B.take 2) =<< B.take 2)
 		TSsnTcktTls -> ESsnTcktTls <$> B.take l
 		TNxPrtNego -> ENxPrtNego <$> B.take l
 		TRnInfo -> ERnInfo <$> (B.take =<< B.take 1)
@@ -60,14 +63,14 @@ cmap :: (a -> BS.ByteString) -> [a] -> BS.ByteString
 cmap = (BS.concat .) . map
 
 data EType
-	= TSName     | TECrv   | TEPFrmt | TSAlg | TSsnTcktTls
+	= TSName     | TECrv   | TEPFrmt | TESAlg | TSsnTcktTls
 	| TNxPrtNego | TRnInfo | TRaw Word16 deriving (Show, Eq)
 
 instance B.Bytable EType where
 	encode TSName = B.encode (0 :: Word16)
 	encode TECrv = B.encode (10 :: Word16)
 	encode TEPFrmt = B.encode (11 :: Word16)
-	encode TSAlg = B.encode (13 :: Word16)
+	encode TESAlg = B.encode (13 :: Word16)
 	encode TSsnTcktTls = B.encode (35 :: Word16)
 	encode TNxPrtNego = B.encode (13172 :: Word16)
 	encode TRnInfo = B.encode (65281 :: Word16)
@@ -78,7 +81,7 @@ instance B.Bytable EType where
 				0 -> TSName
 				10 -> TECrv
 				11 -> TEPFrmt
-				13 -> TSAlg
+				13 -> TESAlg
 				35 -> TSsnTcktTls
 				13172 -> TNxPrtNego
 				65281 -> TRnInfo
