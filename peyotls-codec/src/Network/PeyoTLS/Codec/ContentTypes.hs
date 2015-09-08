@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Network.PeyoTLS.Codec.ContentTypes (ContType(..), ProtocolVersion) where
+module Network.PeyoTLS.Codec.ContentTypes (ProtocolVersion, ContType(..)) where
 
 import Data.Word
 

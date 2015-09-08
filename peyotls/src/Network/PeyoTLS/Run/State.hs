@@ -27,7 +27,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.CertSecretKey (CertSecretKey(..), isRsaKey, isEcdsaKey)
-import Network.PeyoTLS.CipherSuite (CipherSuite(..), KeyEx(KE_NULL), BulkEnc(..))
+import Network.PeyoTLS.Codec (CipherSuite(..), KeyEx(KE_NULL), BulkEnc(..))
 import Network.PeyoTLS.Codec.ContentTypes (ContType(..), ProtocolVersion)
 
 modNm :: String
