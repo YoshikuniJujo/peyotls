@@ -19,6 +19,31 @@ import Network.PeyoTLS.CipherSuite (CipherSuite(..), KeyEx(..), BulkEnc(..))
 modNm :: String
 modNm = "Network.PeyoTLS.Codec.Hello"
 
+-- RFC 5246 7.4.1.2. Client Hello
+--
+-- struct {
+-- 	uint32 gmt_unix_time;
+-- 	opaque random_bytes[28];
+-- } Random
+--
+-- opaque SessionID<0..32>;
+--
+-- uint8 CipherSuite[2];
+--
+-- enum { null(0), (255) } CompressionMethod;
+--
+-- struct {
+-- 	ProtocolVersion client_version;
+-- 	Random random;
+-- 	SessionID session_id;
+-- 	CipherSuite cipher_suites<2..2^16-2>;
+-- 	CompressionMethod compression_methods<1..2^8-1>;
+-- 	select (extensions_present) {
+-- 		case false:	struct {};
+-- 		case true:	Extension extensions<0..2^16-1>;
+-- 	};
+-- } ClientHello;
+
 data ClHello
 	= ClHello (Word8, Word8) BS.ByteString SssnId [CipherSuite] [CmpMtd]
 		(Maybe [Extension])

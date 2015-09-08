@@ -18,6 +18,17 @@ import Network.PeyoTLS.Codec.HSAlg(HashAlg(..), SignAlg(..))
 modNm :: String
 modNm = "Network.PeyoTLS.Codec.Extension"
 
+-- RFC 5246 7.4.1.4. Hello Wxtensions
+--
+-- struct {
+-- 	ExtensionType extension_type;
+-- 	opaque extension_data<0..2^16-1>;
+-- } Extension;
+--
+-- enum {
+-- 	signature_algorithms(13), (65535)
+-- } ExtensionType
+
 data Extension
 	= ESName [SName]
 	| EECrv [ECC.CurveName]     | EEPFrmt [EPFrmt]
@@ -49,13 +60,14 @@ cmap :: (a -> BS.ByteString) -> [a] -> BS.ByteString
 cmap = (BS.concat .) . map
 
 data EType
-	= TSName     | TECrv   | TEPFrmt | TSsnTcktTls
+	= TSName     | TECrv   | TEPFrmt | TSAlg | TSsnTcktTls
 	| TNxPrtNego | TRnInfo | TRaw Word16 deriving (Show, Eq)
 
 instance B.Bytable EType where
 	encode TSName = B.encode (0 :: Word16)
 	encode TECrv = B.encode (10 :: Word16)
 	encode TEPFrmt = B.encode (11 :: Word16)
+	encode TSAlg = B.encode (13 :: Word16)
 	encode TSsnTcktTls = B.encode (35 :: Word16)
 	encode TNxPrtNego = B.encode (13172 :: Word16)
 	encode TRnInfo = B.encode (65281 :: Word16)
@@ -66,6 +78,7 @@ instance B.Bytable EType where
 				0 -> TSName
 				10 -> TECrv
 				11 -> TEPFrmt
+				13 -> TSAlg
 				35 -> TSsnTcktTls
 				13172 -> TNxPrtNego
 				65281 -> TRnInfo

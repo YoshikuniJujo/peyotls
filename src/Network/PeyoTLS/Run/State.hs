@@ -6,6 +6,7 @@ module Network.PeyoTLS.Run.State ( State1(..),
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
 		getClFinished, setClFinished, getSvFinished, setSvFinished,
 	ContType(..), getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
+	ProtocolVersion,
 	CipherSuite(..), BulkEnc(..), RW(..),
 		getCipherSuite, setCipherSuite, flushCipherSuite,
 	Keys(..), getKeys, setKeys,
@@ -114,6 +115,26 @@ getSvFinished = (rnSvFinished .) . getState
 setClFinished, setSvFinished :: PartnerId -> BS.ByteString -> Modify (TlsState h g)
 setClFinished = setState $ \cf st -> st { rnClFinished = cf }
 setSvFinished = setState $ \sf st -> st { rnSvFinished = sf }
+
+-- RFC 5246 6.2.1
+--
+-- struct {
+-- 	uint8 major;
+-- 	uint8 minor;
+-- } ProtocolVersion;
+--
+-- enum {
+-- 	change_cipher_spec(20), alert(21), handshake(22),
+-- 	application_data(23), (255)
+-- } ContentType;
+
+data ProtocolVersion = ProtocolVersion Word8 Word8 deriving (Show, Eq)
+
+instance B.Bytable ProtocolVersion where
+	encode (ProtocolVersion mj mn) = BS.pack [mj, mn]
+	decode mjmn = case BS.unpack mjmn of
+		[mj, mn] -> Right $ ProtocolVersion mj mn
+		_ -> Left $ modNm ++ ": ProtocolVersion.decode"
 
 data ContType = CTCCSpec | CTAlert | CTHandshake | CTAppData | CTNull | CTRaw Word8
 	deriving (Show, Eq)

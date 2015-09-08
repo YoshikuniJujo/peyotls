@@ -186,6 +186,15 @@ getType h = M.getRBuf (pid h) >>= \(t, b) ->
 		c@(t', _) <- getCont h
 		M.setRBuf (pid h) c >> return t'
 
+-- RFC 5246 6.2.1
+--
+-- struct {
+-- 	ContentType type;
+-- 	ProtocolVersion version;
+-- 	uint16 length;
+-- 	opaque fragment[TLSPalaintext.length];
+-- } TLSPlaintext;
+
 getCont :: (HandleLike h, CPRG g) =>
 	HandleBase h g -> M.TlsM h g (M.ContType, BS.ByteString)
 getCont h = do
