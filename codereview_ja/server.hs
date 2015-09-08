@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 import Control.Applicative
 import Data.Word
@@ -7,6 +7,7 @@ import Network
 import Network.PeyoTLS.Run.State
 import Network.PeyoTLS.Codec
 import Codec.Bytable.BigEndian
+import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
 
@@ -18,7 +19,20 @@ main = do
 	getB h 2 >>= (print :: Either String ProtocolVersion -> IO ())
 	Right n <- getB h 2
 	bs <- BS.hGet h n
+	hl <- hello <$> serverRandom
 	print (decode bs :: Either String Handshake)
+	BS.hPut h $ BS.concat [
+		encode CTHandshake,
+		"\x03\x03",
+		addLen (undefined :: Word16) $ encode hl ]
 
 getB :: Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = decode <$> BS.hGet h n
+
+serverRandom :: IO BS.ByteString
+serverRandom = fst . cprgGenerate 32 <$>
+	(cprgCreate <$> createEntropyPool :: IO SystemRNG)
+
+hello :: BS.ByteString -> Handshake
+hello sr = HSvHello $ SvHello (3, 3) sr (SssnId "")
+	"TLS_RSA_WITH_AES_128_CBC_SHA" CmpMtdNull Nothing
