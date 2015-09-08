@@ -66,6 +66,20 @@ instance B.Bytable ClHello where
 		maybe "" (B.addLen w16 . BS.concat . map B.encode) mel ]
 	encode (ClHelloRaw bs) = bs
 
+-- RFC 5246 7.4.1.3. Server Hello
+--
+-- struct {
+-- 	ProtocolVersion server_version;
+-- 	Random random;
+-- 	SessionID session_id;
+-- 	CipherSuite cipher_suite;
+-- 	CompressionMethod compression_method;
+-- 	select (extensions_present) {
+-- 		case false: struct {};
+-- 		case true: Extension extensions<0..2^16-1>;
+-- 	};
+-- } ServerHello;
+
 data SvHello
 	= SvHello (Word8, Word8) BS.ByteString SssnId CipherSuite CmpMtd
 		(Maybe [Extension])
