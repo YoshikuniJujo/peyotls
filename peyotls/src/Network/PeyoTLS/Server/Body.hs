@@ -29,7 +29,6 @@ import "monads-tf" Control.Monad.Error (catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (fromJust)
 import Data.List (find)
-import Data.Word (Word8)
 import Data.Function
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
@@ -87,8 +86,6 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 	hlDebug = adDebug . tlsHandleS
 	hlClose = adClose . tlsHandleS
 	hlFlush = wFlush . tlsHandleS
-
-type Version = (Word8, Word8)
 
 version :: PrtVrsn
 version = PrtVrsn 3 3
