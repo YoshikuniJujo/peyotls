@@ -1,3 +1,4 @@
-/dist/
+/peyotls/dist/
+/peyotls-codec/dist/
 .html/
 .*.swp
