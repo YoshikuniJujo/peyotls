@@ -37,12 +37,12 @@ instance B.Bytable HSAlg where
 -- @
 
 data HashAlg
-	= HNone | Md5 | Sha1 | Sha224 | Sha256 | Sha384 | Sha512
+	= HANone | Md5 | Sha1 | Sha224 | Sha256 | Sha384 | Sha512
 	| HARaw Word8
 	deriving (Show, Eq)
 
 instance B.Bytable HashAlg where
-	encode HNone  = "\x00"
+	encode HANone  = "\x00"
 	encode Md5    = "\x01"
 	encode Sha1   = "\x02"
 	encode Sha224 = "\x03"
@@ -52,7 +52,7 @@ instance B.Bytable HashAlg where
 	encode (HARaw w) = BS.pack [w]
 	decode bs = case BS.unpack bs of
 		[ha] -> Right $ case ha of
-			0 -> HNone ; 1 -> Md5
+			0 -> HANone ; 1 -> Md5
 			2 -> Sha1  ; 3 -> Sha224; 4 -> Sha256
 			5 -> Sha384; 6 -> Sha512; _ -> HARaw ha
 		_ -> Left $ modNm ++ ": HashAlg.decode"

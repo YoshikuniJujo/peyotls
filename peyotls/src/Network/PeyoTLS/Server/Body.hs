@@ -58,7 +58,7 @@ import Network.PeyoTLS.Base ( debug, Keys(..),
 	HandleBase, CertSecretKey(..), isRsaKey, isEcdsaKey,
 		readHandshake, writeHandshake, CCSpec(..),
 	Handshake(HHelloReq),
-	ClHello(..), SvHello(..), SssnId(..), Extension(..),
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..), Extension(..),
 		isRnInfo, emptyRnInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), HashAlg(..), SignAlg(..),
@@ -90,8 +90,8 @@ instance (ValidateHandle h, CPRG g) => HandleLike (TlsHandle h g) where
 
 type Version = (Word8, Word8)
 
-version :: Version
-version = (3, 3)
+version :: PrtVrsn
+version = PrtVrsn 3 3
 
 moduleName :: String
 moduleName = "Network.PeyoTLS.Server"
@@ -204,7 +204,7 @@ dh3072Modp = DH.Params p 2
 		"43db5bfce0fd108e4b82d120a93ad2caffffffffffffffff"
 
 clientHello :: (HandleLike h, CPRG g) => [CipherSuite] ->
-	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, Version)
+	HandshakeM h g (KeyEx, BulkEnc, BS.ByteString, PrtVrsn)
 clientHello cssv = do
 	ClHello cv cr _sid cscl cms me <- readHandshake
 	checkRnInfo cscl me
@@ -250,13 +250,13 @@ serverHello rcc ecc = do
 			moduleName ++ ".serverHello: cert files not match"
 	return sr
 
-rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
+rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> PrtVrsn ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
-rsaKeyExchange sk (vj, vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
+rsaKeyExchange sk vjvn@(PrtVrsn vj vn) rs mcs = const `liftM` reqAndCert mcs `ap` do
 	Epms epms <- readHandshake
 	makeKeys Server rs =<< mkpms epms `catchError` const
-		((BS.cons vj . BS.cons vn) `liftM` withRandom (cprgGenerate 46))
+		((B.encode vjvn `BS.append`) `liftM` withRandom (cprgGenerate 46))
 	where mkpms epms = do
 		pms <- either (E.throwError . strMsg . show) return =<<
 			withRandom (\g -> RSA.decryptSafer g sk epms)

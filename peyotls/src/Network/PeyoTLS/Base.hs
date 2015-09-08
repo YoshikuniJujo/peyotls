@@ -15,7 +15,7 @@ module Network.PeyoTLS.Base (
 		readHandshake, writeHandshake,
 		CCSpec(..),
 	Handshake(HHelloReq),
-	ClHello(..), SvHello(..), SssnId(..), Extension(..), isRnInfo, emptyRnInfo,
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..), Extension(..), isRnInfo, emptyRnInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), HashAlg(..), SignAlg(..),
 		getCipherSuite, setCipherSuite,
@@ -61,7 +61,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import Network.PeyoTLS.Codec (
 	Handshake(..), HandshakeItem(..),
-	ClHello(..), SvHello(..), SssnId(..),
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), Extension(..), isRnInfo, emptyRnInfo,
 	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),

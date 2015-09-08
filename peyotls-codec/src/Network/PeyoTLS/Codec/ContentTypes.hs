@@ -19,7 +19,7 @@ modNm = "Network.PeyoTLS.Codec.ContentTypes"
 -- } ProtocolVersion;
 -- @
 
-data PrtVrsn = PrtVrsn Word8 Word8 deriving (Show, Eq)
+data PrtVrsn = PrtVrsn Word8 Word8 deriving (Show, Eq, Ord)
 
 instance B.Bytable PrtVrsn where
 	encode (PrtVrsn mj mn) = BS.pack [mj, mn]

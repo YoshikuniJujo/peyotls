@@ -21,7 +21,7 @@ main = do
 		"\x03\x03",
 		addLen (undefined :: Word16) $ encode hl ]
 	getB h 1 >>= (print :: Either String ContType -> IO ())
-	getB h 2 >>= (print :: Either String ProtocolVersion -> IO ())
+	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 	Right n <- getB h 2
 	bs <- BS.hGet h n
 	print (decode bs :: Either String Handshake)
@@ -31,7 +31,7 @@ clientRandom = fst . cprgGenerate 32 <$>
 	(cprgCreate <$> createEntropyPool :: IO SystemRNG)
 
 hello :: BS.ByteString -> Handshake
-hello cr = HClHello $ ClHello (3, 3) cr (SssnId "") [
+hello cr = toHandshake $ ClHello (PrtVrsn 3 3) cr (SssnId "") [
 		"TLS_RSA_WITH_AES_128_CBC_SHA"
 	] [CmpMtdNull] Nothing
 

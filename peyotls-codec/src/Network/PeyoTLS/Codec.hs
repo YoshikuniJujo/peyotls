@@ -1,18 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.PeyoTLS.Codec (
-	ContType(..),
-	Handshake(..), HandshakeItem(..),
-	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..),
-		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CmpMtd(..), Extension(..), isRnInfo, emptyRnInfo,
-	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
-	CertReq(..), certReq, ClCertType(..),
+	-- * Fragment
+	ContType(..), PrtVrsn(..),
+	-- * Cipher Suite, Compression Method, Signature Algorithm
+	CipherSuite(..), KeyEx(..), BulkEnc(..), CmpMtd(..),
 	HSAlg(..), SignAlg(..), HashAlg(..),
+	-- * Handshake
+	Handshake(HCCSpec, HHelloReq), HandshakeItem(..),
+	CCSpec(..),
+	-- ** Hello
+	ClHello(..), SvHello(..), SssnId(..),
+		Extension(..), isRnInfo, emptyRnInfo,
+	-- ** Server Key Exchange
+	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
+	-- ** Others
+	CertReq(..), certReq, ClCertType(..),
 	SHDone(..), ClKeyEx(..), Epms(..),
 	DigitSigned(..),
 	Finished(..),
-	CCSpec(..), ) where
+	) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless)
@@ -37,8 +44,9 @@ import Network.PeyoTLS.Codec.Certificate (
 modNm :: String
 modNm = "Network.PeyoTLS.Types"
 
--- RFC 5246 7.4 Handshake Protocol
+-- | RFC 5246 7.4 Handshake Protocol
 --
+-- @
 -- enum {
 -- 	hello_request(0), client_hello(1), server_hello(2),
 -- 	certificate(11), server_key_exchange(12),
@@ -63,6 +71,7 @@ modNm = "Network.PeyoTLS.Types"
 -- 		case finished:			Finished;
 -- 	} body;
 -- } Handshake;
+-- @
 
 data Handshake
 	= HCCSpec                     | HHelloReq

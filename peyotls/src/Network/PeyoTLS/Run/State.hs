@@ -6,7 +6,7 @@ module Network.PeyoTLS.Run.State ( State1(..),
 		getRSn, getWSn, rstRSn, rstWSn, sccRSn, sccWSn,
 		getClFinished, setClFinished, getSvFinished, setSvFinished,
 	ContType(..), getRBuf, getWBuf, getAdBuf, setRBuf, setWBuf, setAdBuf,
-	ProtocolVersion,
+	PrtVrsn,
 	CipherSuite(..), BulkEnc(..), RW(..),
 		getCipherSuite, setCipherSuite, flushCipherSuite,
 	Keys(..), getKeys, setKeys,
@@ -27,8 +27,8 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.CertSecretKey (CertSecretKey(..), isRsaKey, isEcdsaKey)
-import Network.PeyoTLS.Codec (CipherSuite(..), KeyEx(KE_NULL), BulkEnc(..))
-import Network.PeyoTLS.Codec.ContentTypes (ContType(..), ProtocolVersion)
+import Network.PeyoTLS.Codec (
+	CipherSuite(..), KeyEx(KE_NULL), BulkEnc(..), ContType(..), PrtVrsn)
 
 modNm :: String
 modNm = "Network.PeyoTLS.State"

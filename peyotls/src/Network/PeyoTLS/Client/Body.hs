@@ -55,7 +55,7 @@ import Network.PeyoTLS.Base ( debug, wFlush,
 	ValidateHandle(..), handshakeValidate, validateAlert,
 	HandleBase, CertSecretKey(..),
 		readHandshake, writeHandshake, CCSpec(..),
-	ClHello(..), SvHello(..), SssnId(..), isRnInfo,
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..), isRnInfo,
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
@@ -167,7 +167,7 @@ clientHello :: (HandleLike h, CPRG g) =>
 clientHello cscl = do
 	cr <- withRandom $ cprgGenerate 32
 	((>>) <$> writeHandshake <*> debug "low")
-		. ClHello (3, 3) cr (SssnId "") cscl [CmpMtdNull]
+		. ClHello (PrtVrsn 3 3) cr (SssnId "") cscl [CmpMtdNull]
 		. Just . (: []) =<< makeClRenego
 	return cr
 
@@ -188,7 +188,7 @@ serverHello :: (HandleLike h, CPRG g) => HandshakeM h g (BS.ByteString, KeyEx)
 serverHello = do
 	SvHello v sr _sid cs@(CipherSuite ke _) cm e <- readHandshake
 	case v of
-		(3, 3) -> return ()
+		PrtVrsn 3 3 -> return ()
 		_ -> throw ALFtl ADProtoVer $
 			modNm ++ ".serverHello: only TLS 1.2"
 	case cm of

@@ -16,7 +16,7 @@ main = do
 	soc <- listenOn $ PortNumber 443
 	(h, _, _) <- accept soc
 	getB h 1 >>= (print :: Either String ContType -> IO ())
-	getB h 2 >>= (print :: Either String ProtocolVersion -> IO ())
+	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 	Right n <- getB h 2
 	bs <- BS.hGet h n
 	hl <- hello <$> serverRandom
@@ -34,5 +34,5 @@ serverRandom = fst . cprgGenerate 32 <$>
 	(cprgCreate <$> createEntropyPool :: IO SystemRNG)
 
 hello :: BS.ByteString -> Handshake
-hello sr = HSvHello $ SvHello (3, 3) sr (SssnId "")
+hello sr = toHandshake $ SvHello (PrtVrsn 3 3) sr (SssnId "")
 	"TLS_RSA_WITH_AES_128_CBC_SHA" CmpMtdNull Nothing
