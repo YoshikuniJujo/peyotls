@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Codec.Extension (
-	Extension(..), isRnInfo, emptyRnInfo, SignAlg(..), HashAlg(..) ) where
+	Extension(..), isRnInfo, emptyRnInfo, HSAlg(..), SignAlg(..), HashAlg(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Bits (shiftL, (.|.))
@@ -13,21 +13,23 @@ import qualified Codec.Bytable.BigEndian as B
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Network.PeyoTLS.Codec.HSAlg(HSAlg, HashAlg(..), SignAlg(..))
+import Network.PeyoTLS.Codec.HSAlg(HSAlg(..), HashAlg(..), SignAlg(..))
 
 modNm :: String
 modNm = "Network.PeyoTLS.Codec.Extension"
 
--- RFC 5246 7.4.1.4. Hello Wxtensions
+-- | RFC 5246 7.4.1.4. Hello Wxtensions
 --
+-- @
 -- struct {
 -- 	ExtensionType extension_type;
--- 	opaque extension_data<0..2^16-1>;
+-- 	opaque extension_data\<0..2^16-1>;
 -- } Extension;
 --
 -- enum {
 -- 	signature_algorithms(13), (65535)
 -- } ExtensionType
+-- @
 
 data Extension
 	= ESName [SName]

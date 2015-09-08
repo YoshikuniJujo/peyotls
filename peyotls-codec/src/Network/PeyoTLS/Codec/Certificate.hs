@@ -59,15 +59,15 @@ instance B.Bytable CertReq where
 			either (fail . show) return . ASN1.decodeASN1' ASN1.DER =<<
 			B.take =<< B.take 2)
 
-data ClCertType = CTRsaSign | CTEcdsaSign | CTRaw Word8 deriving (Show, Eq)
+data ClCertType = CTRsaSign | CTEcdsaSign | CertTypeRaw Word8 deriving (Show, Eq)
 
 instance B.Bytable ClCertType where
 	encode CTRsaSign = "\x01"
 	encode CTEcdsaSign = "\x40"
-	encode (CTRaw w) = BS.pack [w]
+	encode (CertTypeRaw w) = BS.pack [w]
 	decode bs = case BS.unpack bs of
 		[w] -> Right $ case w of
-			1 -> CTRsaSign; 64 -> CTEcdsaSign; _ -> CTRaw w
+			1 -> CTRsaSign; 64 -> CTEcdsaSign; _ -> CertTypeRaw w
 		_ -> Left $ modNm ++ ": ClCertType.decode"
 
 data ClKeyEx = ClKeyEx BS.ByteString deriving Show

@@ -1,14 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.PeyoTLS.Codec (
+	ContType(..),
 	Handshake(..), HandshakeItem(..),
-	ClHello(..), SvHello(..), SssnId(..),
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
 		CmpMtd(..), Extension(..), isRnInfo, emptyRnInfo,
 	SvKeyEx(..), SvKeyExDhe(..), SvKeyExEcdhe(..),
-	CertReq(..), certReq, ClCertType(..), SignAlg(..), HashAlg(..),
+	CertReq(..), certReq, ClCertType(..),
+	HSAlg(..), SignAlg(..), HashAlg(..),
 	SHDone(..), ClKeyEx(..), Epms(..),
-	DigitSigned(..), Finished(..),
+	DigitSigned(..),
+	Finished(..),
 	CCSpec(..), ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -23,9 +26,10 @@ import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
 import Network.PeyoTLS.Codec.Hello (
-	ClHello(..), SvHello(..), SssnId(..),
+	ContType(..),
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..),
 	CipherSuite(..), KeyEx(..), BulkEnc(..),
-	CmpMtd(..), HashAlg(..), SignAlg(..),
+	CmpMtd(..), HSAlg(..), HashAlg(..), SignAlg(..),
 	Extension(..), isRnInfo, emptyRnInfo )
 import Network.PeyoTLS.Codec.Certificate (
 	CertReq(..), certReq, ClCertType(..), ClKeyEx(..), DigitSigned(..) )

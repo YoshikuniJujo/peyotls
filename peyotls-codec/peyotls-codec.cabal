@@ -2,7 +2,7 @@ build-type:	Simple
 cabal-version:	>= 1.8
 
 name:		peyotls-codec
-version:	0.1.0.0
+version:	0.2.0.0
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -22,14 +22,14 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/peyotls.git
-    tag:	peyotls-0.1.6.7
+    tag:	peyotls-0.1.6.8
 
 library
     hs-source-dirs:	src
     exposed-modules:
-            Network.PeyoTLS.Codec,
-            Network.PeyoTLS.Codec.ContentTypes
+            Network.PeyoTLS.Codec
     other-modules:
+            Network.PeyoTLS.Codec.ContentTypes
             Network.PeyoTLS.Codec.Hello, Network.PeyoTLS.Codec.Extension,
             Network.PeyoTLS.Codec.Certificate
             Network.PeyoTLS.Codec.HSAlg

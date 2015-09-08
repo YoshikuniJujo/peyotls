@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.PeyoTLS.Codec.Hello (
-	ClHello(..), SvHello(..), SssnId(..),
+	ContType(..),
+	ClHello(..), SvHello(..), PrtVrsn(..), SssnId(..),
 		CipherSuite(..), KeyEx(..), BulkEnc(..),
-		CmpMtd(..), SignAlg(..), HashAlg(..),
+		CmpMtd(..), HSAlg(..), SignAlg(..), HashAlg(..),
 		Extension(..), isRnInfo, emptyRnInfo ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -13,20 +14,22 @@ import qualified Data.ByteString as BS
 import qualified Codec.Bytable.BigEndian as B
 
 import Network.PeyoTLS.Codec.Extension (
-	Extension(..), isRnInfo, emptyRnInfo, SignAlg(..), HashAlg(..) )
+	Extension(..), isRnInfo, emptyRnInfo, HSAlg(..), SignAlg(..), HashAlg(..) )
+import Network.PeyoTLS.Codec.ContentTypes (ContType(..), PrtVrsn(..))
 import Network.PeyoTLS.CipherSuite (CipherSuite(..), KeyEx(..), BulkEnc(..))
 
 modNm :: String
 modNm = "Network.PeyoTLS.Codec.Hello"
 
--- RFC 5246 7.4.1.2. Client Hello
+-- | RFC 5246 7.4.1.2. Client Hello
 --
+-- @
 -- struct {
 -- 	uint32 gmt_unix_time;
 -- 	opaque random_bytes[28];
 -- } Random
 --
--- opaque SessionID<0..32>;
+-- opaque SessionID\<0..32>;
 --
 -- uint8 CipherSuite[2];
 --
@@ -36,38 +39,40 @@ modNm = "Network.PeyoTLS.Codec.Hello"
 -- 	ProtocolVersion client_version;
 -- 	Random random;
 -- 	SessionID session_id;
--- 	CipherSuite cipher_suites<2..2^16-2>;
--- 	CompressionMethod compression_methods<1..2^8-1>;
+-- 	CipherSuite cipher_suites\<2..2^16-2>;
+-- 	CompressionMethod compression_methods\<1..2^8-1>;
 -- 	select (extensions_present) {
 -- 		case false:	struct {};
--- 		case true:	Extension extensions<0..2^16-1>;
+-- 		case true:	Extension extensions\<0..2^16-1>;
 -- 	};
 -- } ClientHello;
+-- @
 
 data ClHello
-	= ClHello (Word8, Word8) BS.ByteString SssnId [CipherSuite] [CmpMtd]
+	= ClHello PrtVrsn BS.ByteString SssnId [CipherSuite] [CmpMtd]
 		(Maybe [Extension])
 	| ClHelloRaw BS.ByteString
 	deriving Show
 
 instance B.Bytable ClHello where
 	decode = B.evalBytableM $ ClHello
-		<$> ((,) <$> B.head <*> B.head)
+		<$> B.take 2
 		<*> B.take 32 <*> (B.take =<< B.take 1)
 		<*> (flip B.list (B.take 2) =<< B.take 2)
 		<*> (flip B.list (B.take 1) =<< B.take 1)
 		<*> do	nl <- B.null
 			if nl then return Nothing else Just <$>
 				(flip B.list B.parse =<< B.take 2)
-	encode (ClHello (vj, vn) r sid css cms mel) = BS.concat [
-		B.encode vj, B.encode vn, B.encode r, B.addLen w8 $ B.encode sid,
+	encode (ClHello vjvn r sid css cms mel) = BS.concat [
+		B.encode vjvn, B.encode r, B.addLen w8 $ B.encode sid,
 		B.addLen w16 . BS.concat $ map B.encode css,
 		B.addLen w8 . BS.concat $ map B.encode cms,
 		maybe "" (B.addLen w16 . BS.concat . map B.encode) mel ]
 	encode (ClHelloRaw bs) = bs
 
--- RFC 5246 7.4.1.3. Server Hello
+-- | RFC 5246 7.4.1.3. Server Hello
 --
+-- @
 -- struct {
 -- 	ProtocolVersion server_version;
 -- 	Random random;
@@ -76,25 +81,26 @@ instance B.Bytable ClHello where
 -- 	CompressionMethod compression_method;
 -- 	select (extensions_present) {
 -- 		case false: struct {};
--- 		case true: Extension extensions<0..2^16-1>;
+-- 		case true: Extension extensions\<0..2^16-1>;
 -- 	};
 -- } ServerHello;
+-- @
 
 data SvHello
-	= SvHello (Word8, Word8) BS.ByteString SssnId CipherSuite CmpMtd
+	= SvHello PrtVrsn BS.ByteString SssnId CipherSuite CmpMtd
 		(Maybe [Extension])
 	| SvHelloRaw BS.ByteString
 	deriving Show
 
 instance B.Bytable SvHello where
 	decode = B.evalBytableM $ SvHello
-		<$> ((,) <$> B.head <*> B.head)
+		<$> B.take 2
 		<*> B.take 32 <*> (B.take =<< B.take 1) <*> B.take 2 <*> B.take 1
 		<*> do	n <- B.null
 			if n then return Nothing else Just <$>
 				(flip B.list B.parse =<< B.take 2)
-	encode (SvHello (vj, vn) r sid cs cm mes) = BS.concat [
-		B.encode vj, B.encode vn, B.encode r, B.addLen w8 $ B.encode sid,
+	encode (SvHello vjvn r sid cs cm mes) = BS.concat [
+		B.encode vjvn, B.encode r, B.addLen w8 $ B.encode sid,
 		B.encode cs, B.encode cm,
 		maybe "" (B.addLen w16 . BS.concat . map B.encode) mes ]
 	encode (SvHelloRaw sh) = sh
