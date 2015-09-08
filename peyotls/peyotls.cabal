@@ -2,7 +2,7 @@ build-type:	Simple
 cabal-version:	>= 1.8
 
 name:		peyotls
-version:	0.1.6.7
+version:	0.1.6.8
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -281,7 +281,7 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/peyotls.git
-    tag:	peyotls-0.1.6.7
+    tag:	peyotls-0.1.6.8
 
 library
     hs-source-dirs:	src
@@ -305,7 +305,7 @@ library
         cryptohash == 0.11.*,
         crypto-pubkey == 0.2.*, crypto-pubkey-types == 0.4.*,
         cipher-aes == 0.2.*,
-        bytable == 0.1.*, handle-like == 0.1.*, peyotls-codec == 0.1.*,
+        bytable == 0.1.*, handle-like == 0.1.*, peyotls-codec == 0.2.*,
         stm == 2.4.*, transformers-base == 0.4.*, monad-control == 0.3.*
     ghc-options:	-Wall
     extensions:		PatternGuards, DoAndIfThenElse
