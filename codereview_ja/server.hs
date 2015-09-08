@@ -4,8 +4,8 @@ import Control.Applicative
 import Data.Word
 import System.IO
 import Network
-import Network.PeyoTLS.Run.State
 import Network.PeyoTLS.Codec
+import Network.PeyoTLS.Codec.ContentTypes
 import Codec.Bytable.BigEndian
 import "crypto-random" Crypto.Random
 

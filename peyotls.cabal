@@ -293,6 +293,7 @@ library
         Network.PeyoTLS.Client.Body, Network.PeyoTLS.Server.Body,
         Network.PeyoTLS.Base,
         Network.PeyoTLS.Codec,
+            Network.PeyoTLS.Codec.ContentTypes,
             Network.PeyoTLS.Codec.Hello, Network.PeyoTLS.Codec.Extension,
                 Network.PeyoTLS.CipherSuite, Network.PeyoTLS.Codec.HSAlg,
             Network.PeyoTLS.Codec.Certificate,
