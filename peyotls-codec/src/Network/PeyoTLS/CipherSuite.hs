@@ -13,6 +13,108 @@ import qualified Codec.Bytable.BigEndian as B
 modNm :: String
 modNm = "Network.PeyoTLS.CipherSuite"
 
+-- | RFC 5246 7.4.1.2. Client Hello
+--
+-- @
+-- uint8 CipherSuite[2];
+-- @
+--
+-- RFC 5246 A.5. The Cipher Suite
+--
+-- @
+-- CipherSuite TLS_NULL_WITH_NULL_NULL		= { 0x00, 0x00 };
+-- CipherSuite TLS_RSA_WITH_NULL_MD5		= { 0x00, 0x01 };
+-- CipherSuite TLS_RSA_WITH_NULL_SHA		= { 0x00, 0x02 };
+-- CipherSuite TLS_RSA_WITH_NULL_SHA256		= { 0x00, 0x3B };
+-- CipherSuite TLS_RSA_WITH_RC4_128_MD5		= { 0x00, 0x04 };
+-- CipherSuite TLS_RSA_WITH_RC4_128_SHA		= { 0x00, 0x05 };
+-- CipherSuite TLS_RSA_WITH_3DES_EDE_CBC_SHA	= { 0x00, 0x0A };
+-- CipherSuite TLS_RSA_WITH_AES_128_CBC_SHA	= { 0x00, 0x2F };
+-- CipherSuite TLS_RSA_WITH_AES_256_CBC_SHA	= { 0x00, 0x35 };
+-- CipherSuite TLS_RSA_WITH_AES_128_CBC_SHA256	= { 0x00, 0x3C };
+-- CipherSuite TLS_RSA_WITH_AES_256_CBC_SHA256	= { 0x00, 0x3D };
+-- @
+--
+-- @
+-- CipherSuite TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA	= { 0x00, 0x0D };
+-- CipherSuite TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA	= { 0x00, 0x10 };
+-- CipherSuite TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA	= { 0x00, 0x13 };
+-- CipherSuite TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA	= { 0x00, 0x16 };
+-- CipherSuite TLS_DH_DSS_WITH_AES_128_CBC_SHA	= { 0x00, 0x30 };
+-- CipherSuite TLS_DH_RSA_WITH_AES_128_CBC_SHA	= { 0x00, 0x31 };
+-- CipherSuite TLS_DHE_DSS_WITH_AES_128_CBC_SHA	= { 0x00, 0x32 };
+-- CipherSuite TLS_DHE_RSA_WITH_AES_128_CBC_SHA	= { 0x00, 0x33 };
+-- CipherSuite TLS_DH_DSS_WITH_AES_256_CBC_SHA	= { 0x00, 0x36 };
+-- CipherSuite TLS_DH_RSA_WITH_AES_256_CBC_SHA	= { 0x00, 0x37 };
+-- CipherSuite TLS_DHE_DSS_WITH_AES_256_CBC_SHA	= { 0x00, 0x38 };
+-- CipherSuite TLS_DHE_RSA_WITH_AES_256_CBC_SHA	= { 0x00, 0x39 };
+-- CipherSuite TLS_DH_DSS_WITH_AES_128_CBC_SHA256	= { 0x00, 0x3E };
+-- CipherSuite TLS_DH_RSA_WITH_AES_128_CBC_SHA256	= { 0x00, 0x3F };
+-- CipherSuite TLS_DHE_DSS_WITH_AES_128_CBC_SHA256= { 0x00, 0x40 };
+-- CipherSuite TLS_DHE_RSA_WITH_AES_128_CBC_SHA256= { 0x00, 0x67 };
+-- CipherSuite TLS_DH_DSS_WITH_AES_256_CBC_SHA256	= { 0x00, 0x68 };
+-- CipherSuite TLS_DH_RSA_WITH_AES_256_CBC_SHA256	= { 0x00, 0x69 };
+-- CipherSuite TLS_DHE_DSS_WITH_AES_256_CBC_SHA256= { 0x00, 0x6A };
+-- CipherSuite TLS_DHE_RSA_WITH_AES_256_CBC_SHA256= { 0x00, 0x6B };
+-- @
+--
+-- @
+-- CipherSuite TLS_DH_anon_WITH_RC4_128_MD5	= { 0x00, 0x00 };
+-- CipherSuite TLS_DH_anon_WITH_3DES_EDE_CBC_SHA	= { 0x00, 0x00 };
+-- CipherSuite TLS_DH_anon_WITH_AES_128_CBC_SHA	= { 0x00, 0x00 };
+-- CipherSuite TLS_DH_anon_WITH_AES_256_CBC_SHA	= { 0x00, 0x00 };
+-- CipherSuite TLS_DH_anon_WITH_AES_128_CBC_SHA256= { 0x00, 0x00 };
+-- CipherSuite TLS_DH_anon_WITH_AES_256_CBC_SHA256= { 0x00, 0x00 };
+-- @
+--
+-- RFC 4492 6. Cipher Suites
+--
+-- @
+-- CipherSuite TLS_ECDH_ECDSA_WITH_NULL_SHA		= { 0xC0, 0x01 };
+-- CipherSuite TLS_ECDH_ECDSA_WITH_RC4_128_SHA		= { 0xC0, 0x02 };
+-- CipherSuite TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA	= { 0xC0, 0x03 };
+-- CipherSuite TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA	= { 0xC0, 0x04 };
+-- CipherSuite TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA	= { 0xC0, 0x05 };
+-- @
+--
+-- @
+-- CipyherSuite TLS_ECDHE_ECDSA_WITH_NULL_SHA		= { 0xC0, 0x06 };
+-- CipyherSuite TLS_ECDHE_ECDSA_WITH_RC4_128_SHA		= { 0xC0, 0x07};
+-- CipyherSuite TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA	= { 0xC0, 0x08 };
+-- CipyherSuite TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA	= { 0xC0, 0x09 };
+-- CipyherSuite TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA	= { 0xC0, 0x0A };
+-- @
+--
+-- @
+-- CipherSuite TLS_ECDH_RSA_WITH_NULL_SHA			= { 0xC0, 0x0B };
+-- CipherSuite TLS_ECDH_RSA_WITH_RC4_128_SHA		= { 0xC0, 0x0C };
+-- CipherSuite TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA		= { 0xC0, 0x0D };
+-- CipherSuite TLS_ECDH_RSA_WITH_AES_128_CBC_SHA		= { 0xC0, 0x0E };
+-- CipherSuite TLS_ECDH_RSA_WITH_AES_256_CBC_SHA		= { 0xC0, 0x0F };
+-- @
+--
+-- @
+-- CipherSuite TLS_ECDHE_RSA_WITH_NULL_SHA		= { 0xC0, 0x10 };
+-- CipherSuite TLS_ECDHE_RSA_WITH_RC4_128_SHA		= { 0xC0, 0x11 };
+-- CipherSuite TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA	= { 0xC0, 0x12 };
+-- CipherSuite TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA		= { 0xC0, 0x13 };
+-- CipherSuite TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA		= { 0xC0, 0x14 };
+-- @
+--
+-- @
+-- CipherSuite TLS_ECDH_anon_WITH_NULL_SHA		= { 0xC0, 0x15 };
+-- CipherSuite TLS_ECDH_anon_WITH_RC4_128_SHA		= { 0xC0, 0x16 };
+-- CipherSuite TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA	= { 0xC0, 0x17 };
+-- CipherSuite TLS_ECDH_anon_WITH_AES_128_CBC_SHA		= { 0xC0, 0x18 };
+-- CipherSuite TLS_ECDH_anon_WITH_AES_256_CBC_SHA		= { 0xC0, 0x19 };
+-- @
+--
+-- RFC 5746 3.3. Renegotiation Protection Request Signaling Cipher Suite Value
+--
+-- @
+-- CipherSuite TLS_EMPTY_RENEGOTIATION_INFO_SCSV	= {0x00, 0xFF}
+-- @
+
 data CipherSuite
 	= CipherSuite KeyEx BulkEnc
 	| EMPTY_RENEGOTIATION_INFO
