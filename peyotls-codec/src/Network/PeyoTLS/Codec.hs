@@ -126,6 +126,14 @@ instance (HandshakeItem l, HandshakeItem r) => HandshakeItem (Either l r) where
 	toHandshake (Left l) = toHandshake l
 	toHandshake (Right r) = toHandshake r
 
+-- | RFC 5246
+--
+-- @
+-- struct {
+-- 	enum { change_cipher_spec(1), (255) } type;
+-- } ChangeCipherSpec;
+-- @
+
 data CCSpec = CCSpec | CCSpecRaw Word8 deriving Show
 
 instance HandshakeItem CCSpec where

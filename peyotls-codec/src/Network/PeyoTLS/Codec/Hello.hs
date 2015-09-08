@@ -105,9 +105,21 @@ instance B.Bytable SvHello where
 		maybe "" (B.addLen w16 . BS.concat . map B.encode) mes ]
 	encode (SvHelloRaw sh) = sh
 
+-- | RFC 5246 7.4.1.2 Client Hello
+--
+-- @
+-- opaque SessionID\<0..32>;
+-- @
+
 data SssnId = SssnId BS.ByteString deriving Show
 
 instance B.Bytable SssnId where decode = Right . SssnId; encode (SssnId bs) = bs
+
+-- | RFC 5246 7.4.1.2. Client Hello
+--
+-- @
+-- enum { null(0), (255) } CompressionMethod;
+-- @
 
 data CmpMtd = CmpMtdNull | CmpMtdRaw Word8 deriving (Show, Eq)
 

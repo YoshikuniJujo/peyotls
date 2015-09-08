@@ -11,7 +11,7 @@ import qualified Codec.Bytable.BigEndian as B
 modNm :: String
 modNm = "Network.PeyoTLS.Codec.HSAlg"
 
--- | RFC 5246 7.4.1.4.1.
+-- | RFC 5246 7.4.1.4.1. Signature Algorithms
 --
 -- @
 -- struct {
@@ -27,7 +27,7 @@ instance B.Bytable HSAlg where
 	decode hasa = let (ha, sa) = BS.splitAt 1 hasa in
 		HSAlg <$> B.decode ha <*> B.decode sa
 
--- | RFC 5246 7.4.1.4.1.
+-- | RFC 5246 7.4.1.4.1. Signature Algorithms
 --
 -- @
 -- enum {
@@ -58,7 +58,7 @@ instance B.Bytable HashAlg where
 		_ -> Left $ modNm ++ ": HashAlg.decode"
 instance B.Parsable HashAlg where parse = B.take 1
 
--- | RFC 5246 7.4.1.4.1.
+-- | RFC 5246 7.4.1.4.1. Signature Algorithms
 --
 -- @
 -- enum { anonymous(0), rsa(1), dsa(2), ecdsa(3), (255) }
