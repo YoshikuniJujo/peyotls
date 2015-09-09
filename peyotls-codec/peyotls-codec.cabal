@@ -2,7 +2,7 @@ build-type:	Simple
 cabal-version:	>= 1.8
 
 name:		peyotls-codec
-version:	0.3.0.0
+version:	0.3.1.0
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -22,12 +22,12 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/peyotls.git
-    tag:	peyotls-0.1.6.9
+    tag:	peyotls-codec-0.3.1.0
 
 library
     hs-source-dirs:	src
     exposed-modules:
-            Network.PeyoTLS.Codec
+            Network.PeyoTLS.Codec, Network.PeyoTLS.Codec.Alert
     other-modules:
             Network.PeyoTLS.Codec.ContentTypes
             Network.PeyoTLS.Codec.Hello, Network.PeyoTLS.Codec.Extension,
@@ -35,7 +35,7 @@ library
             Network.PeyoTLS.Codec.HSAlg
             Network.PeyoTLS.CipherSuite
     build-depends:
-        base == 4.*, word24 == 1.0.*, bytestring == 0.10.*,
+        base == 4.*, word24 == 1.0.*, bytestring == 0.10.*, monads-tf == 0.1.*,
         asn1-encoding == 0.9.*, asn1-types == 0.3.*,
         x509 == 1.5.*, x509-store == 1.5.*,
         crypto-pubkey == 0.2.*, crypto-pubkey-types == 0.4.*,

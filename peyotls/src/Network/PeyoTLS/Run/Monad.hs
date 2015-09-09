@@ -22,8 +22,7 @@ import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.State
 	(lift, StateT, runStateT, evalStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (ErrorT, runErrorT, throwError)
-import "monads-tf" Control.Monad.Error.Class (Error(..))
-import Data.Word (Word8, Word64)
+import Data.Word (Word64)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
@@ -31,6 +30,7 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Codec.Bytable.BigEndian as B
 
+import Network.PeyoTLS.Codec.Alert (Alert(..), AlertLevel(..), AlertDesc(..))
 import qualified Network.PeyoTLS.Run.State as S (State1(..), Keys(..),
 	TlsState(..), initState, PartnerId, newPartner,
 		getGen, setGen, getNames, setNames, getCertificate, setCertificate,
@@ -71,22 +71,6 @@ run' m g = runStateT (runErrorT m) (S.initState g) >>= \er -> case er of
 
 throw :: HandleLike h => AlertLevel -> AlertDesc -> String -> TlsM h g a
 throw = ((throwError .) .) . Alert
-
-data Alert
-	= Alert AlertLevel AlertDesc String
-	| ExternalAlert String
-	| NotDetected String deriving Show
-
-data AlertLevel = ALWarning | ALFtl | ALRaw Word8 deriving Show
-
-data AlertDesc
-	= ADCloseNotify | ADUnexMsg   | ADBadRecMac  | ADRecOverflow | ADDecFail
-	| ADHsFailure   | ADUnsCert   | ADCertEx     | ADCertUnk     | ADIllParam
-	| ADUnkCa       | ADDecodeErr | ADDecryptErr | ADProtoVer    | ADInsSec
-	| ADInternalErr | ADUnk       | ADRaw Word8
-	deriving Show
-
-instance Error Alert where strMsg = NotDetected
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> TlsM h gen a
 withRandom p = p `liftM` gets S.getGen >>=
