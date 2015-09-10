@@ -233,7 +233,7 @@ instance HandshakeItem ClKeyEx where
 	fromHandshake _ = Nothing
 	toHandshake = HClKeyEx
 
-data Epms = Epms BS.ByteString
+data Epms = Epms BS.ByteString deriving Show
 
 instance HandshakeItem Epms where
 	fromHandshake (HClKeyEx (ClKeyEx cke)) =
