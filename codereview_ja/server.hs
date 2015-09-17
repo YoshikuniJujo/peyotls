@@ -3,6 +3,7 @@
 import Control.Applicative
 import Control.Monad
 import Data.Word
+import Data.IORef
 import System.IO
 import Network
 import Network.PeyoTLS.ReadFile
@@ -12,9 +13,11 @@ import Network.PeyoTLS.Codec
 import Network.PeyoTLS.Codec.Alert
 import qualified Codec.Bytable.BigEndian as B
 import "crypto-random" Crypto.Random
+import Crypto.Hash.SHA256 as SHA256
 import Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 
 main :: IO ()
 main = do
@@ -22,10 +25,12 @@ main = do
 	sk <- readKey "codereview_ja/newkey_dec.pem"
 	soc <- listenOn $ PortNumber 443
 	(h, _, _) <- accept soc
+	hs <- newIORef ""
 	getB h 1 >>= (print :: Either String ContType -> IO ())
 	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 	Right n <- getB h 2
 	bs <- BS.hGet h n
+	modifyIORef hs (`BS.append` bs)
 	sr <- serverRandom
 	let	hl = hello sr
 		Right (Just ch@(ClHello pv cr _ _ _ _)) =
@@ -42,24 +47,31 @@ main = do
 --		-}
 		error "bad"
 	putStrLn $ take 50 (show (ch :: ClHello)) ++ "..."
-	BS.hPut h $ BS.concat [
-		B.encode CTHandshake,
-		B.encode $ PrtVrsn 3 3,
-		B.addLen (undefined :: Word16) $
+	let sh = B.encode hl
 --			B.encode hl `BS.append` B.encode (toHandshake cc) ]
-			B.encode hl ]
 	BS.hPut h $ BS.concat [
 		B.encode CTHandshake,
 		B.encode $ PrtVrsn 3 3,
-		B.addLen (undefined :: Word16) . B.encode $ toHandshake cc ]
+		B.addLen (undefined :: Word16) sh ]
+	modifyIORef hs (`BS.append` sh)
+	let bs = B.encode $ toHandshake cc
 	BS.hPut h $ BS.concat [
 		B.encode CTHandshake,
 		B.encode $ PrtVrsn 3 3,
-		B.addLen (undefined :: Word16) . B.encode $ toHandshake SHDone ]
+		B.addLen (undefined :: Word16) bs ]
+	modifyIORef hs (`BS.append` bs)
+	let bs = B.encode $ toHandshake SHDone
+	BS.hPut h $ BS.concat [
+		B.encode CTHandshake,
+		B.encode $ PrtVrsn 3 3,
+		B.addLen (undefined :: Word16) bs ]
+	modifyIORef hs (`BS.append` bs)
 	getB h 1 >>= (print :: Either String ContType -> IO ())
 	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 	Right n <- getB h 2
-	Right (Just (Epms epms)) <- (fromHandshake <$>) <$> getB h n
+	bs <- BS.hGet h n
+	modifyIORef hs (`BS.append` bs)
+	let Right (Just (Epms epms)) = fromHandshake <$> B.decode bs
 	g <- cprgCreate <$> createEntropyPool
 	let	Right pms = fst $ RSA.decryptSafer (g :: SystemRNG) (rsaKey sk) epms
 		(ms, cwmk, swmk, cwk, swk) = C.makeKeys 20 cr sr pms
@@ -67,7 +79,8 @@ main = do
 	getB h 1 >>= (print :: Either String ContType -> IO ())
 	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 	Right n <- getB h 2
-	BS.hGet h n >>= print
+	bs <- BS.hGet h n
+--	modifyIORef hs (`BS.append` bs)
 	Right ct <- getB h 1
 	(print :: ContType -> IO ()) ct
 	Right vrsn <- getB h 2
@@ -78,6 +91,7 @@ main = do
 	print . either Left (B.decode :: BS.ByteString -> Either String Handshake)
 		$ C.decrypt C.sha1 cwk cwmk 0
 		(B.encode ct `BS.append` B.encode vrsn) ef
+	readIORef hs >>= print . LBS.take 12 . C.prf ms . ("client finished" `BS.append`) . SHA256.hash
 
 getB :: B.Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = B.decode <$> BS.hGet h n

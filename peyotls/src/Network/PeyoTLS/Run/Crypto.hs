@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module Network.PeyoTLS.Run.Crypto (
-	makeKeys, decrypt, encrypt, sha1, sha256,
+	makeKeys, decrypt, encrypt, sha1, sha256, prf,
 	Hash, Side(..), finishedHash ) where
 
 import Prelude hiding (splitAt, take)
