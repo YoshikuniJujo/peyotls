@@ -80,6 +80,8 @@ main = do
 	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 	Right n <- getB h 2
 	bs <- BS.hGet h n
+	readIORef hs >>= print . SHA256.hash
+	readIORef hs >>= print . LBS.take 12 . C.prf ms . ("client finished" `BS.append`) . SHA256.hash
 --	modifyIORef hs (`BS.append` bs)
 	Right ct <- getB h 1
 	(print :: ContType -> IO ()) ct
@@ -87,11 +89,10 @@ main = do
 	(print :: PrtVrsn -> IO ()) vrsn
 	Right n <- getB h 2
 	ef <- BS.hGet h n
---	print ef
+	print ef
 	print . either Left (B.decode :: BS.ByteString -> Either String Handshake)
 		$ C.decrypt C.sha1 cwk cwmk 0
 		(B.encode ct `BS.append` B.encode vrsn) ef
-	readIORef hs >>= print . LBS.take 12 . C.prf ms . ("client finished" `BS.append`) . SHA256.hash
 
 getB :: B.Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = B.decode <$> BS.hGet h n
