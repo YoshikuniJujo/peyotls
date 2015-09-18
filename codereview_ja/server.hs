@@ -25,6 +25,11 @@ main = do
 	sk <- readKey "codereview_ja/newkey_dec.pem"
 	soc <- listenOn $ PortNumber 443
 	(h, _, _) <- accept soc
+	send False h cc sk
+	(h, _, _) <- accept soc
+	send True h cc sk
+
+send b h cc sk = do
 	hs <- newIORef ""
 	getB h 1 >>= (print :: Either String ContType -> IO ())
 	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
@@ -81,6 +86,7 @@ main = do
 	Right n <- getB h 2
 	bs <- BS.hGet h n
 	readIORef hs >>= print . SHA256.hash
+	putStr "ClientFinished: "
 	readIORef hs >>= print . LBS.take 12 . C.prf ms . ("client finished" `BS.append`) . SHA256.hash
 --	modifyIORef hs (`BS.append` bs)
 	Right ct <- getB h 1
@@ -93,6 +99,7 @@ main = do
 	let Right f = C.decrypt C.sha1 cwk cwmk 0
 		(B.encode ct `BS.append` B.encode vrsn) ef
 	print f
+	putStrLn "here"
 	modifyIORef hs (`BS.append` f)
 	sf <- LBS.take 12 . C.prf ms . ("server finished" `BS.append`) . SHA256.hash <$> readIORef hs
 	print sf
@@ -105,11 +112,20 @@ main = do
 		B.encode $ PrtVrsn 3 3,
 		B.addLen (undefined :: Word16) . B.encode $ toHandshake CCSpec
 		]
-	BS.hPut h $ BS.concat [
-		B.encode CTHandshake,
-		B.encode $ PrtVrsn 3 3,
-		B.addLen (undefined :: Word16) esf
-		]
+	putStrLn "here"
+	when b $ do
+		BS.hPut h $ BS.concat [
+			B.encode CTHandshake,
+			B.encode $ PrtVrsn 3 3,
+			B.addLen (undefined :: Word16) esf
+			]
+		getB h 1 >>= (print :: Either String ContType -> IO ())
+		getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
+		Right n <- getB h 2
+		ebs <- BS.hGet h n
+		let Right bs = C.decrypt C.sha1 cwk cwmk 1
+			(B.encode CTAppData `BS.append` B.encode vrsn) ebs
+		BS.putStr bs
 
 getB :: B.Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = B.decode <$> BS.hGet h n
