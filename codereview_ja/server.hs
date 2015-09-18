@@ -90,9 +90,26 @@ main = do
 	Right n <- getB h 2
 	ef <- BS.hGet h n
 	print ef
-	print . either Left (B.decode :: BS.ByteString -> Either String Handshake)
-		$ C.decrypt C.sha1 cwk cwmk 0
+	let Right f = C.decrypt C.sha1 cwk cwmk 0
 		(B.encode ct `BS.append` B.encode vrsn) ef
+	print f
+	modifyIORef hs (`BS.append` f)
+	sf <- LBS.take 12 . C.prf ms . ("server finished" `BS.append`) . SHA256.hash <$> readIORef hs
+	print sf
+	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+	let (esf, g') = C.encrypt C.sha1 swk swmk 0
+		(B.encode CTHandshake `BS.append` B.encode (PrtVrsn 3 3))
+			(B.encode . toHandshake . Finished $ LBS.toStrict sf) g
+	BS.hPut h $ BS.concat [
+		B.encode CTCCSpec,
+		B.encode $ PrtVrsn 3 3,
+		B.addLen (undefined :: Word16) . B.encode $ toHandshake CCSpec
+		]
+	BS.hPut h $ BS.concat [
+		B.encode CTHandshake,
+		B.encode $ PrtVrsn 3 3,
+		B.addLen (undefined :: Word16) esf
+		]
 
 getB :: B.Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = B.decode <$> BS.hGet h n

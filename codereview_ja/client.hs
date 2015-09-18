@@ -102,6 +102,7 @@ main = do
 	(print :: PrtVrsn -> IO ()) vrsn
 	Right n <- getB h 2
 	BS.hGet h n >>= print
+	readIORef log >>= print . LBS.take 12 . C.prf ms . ("server finished" `BS.append`) . SHA256.hash
 	Right ct <- getB h 1
 	(print :: ContType -> IO ()) ct
 	Right vrsn <- getB h 2
@@ -111,7 +112,6 @@ main = do
 	print . either Left (B.decode :: BS.ByteString -> Either String Handshake)
 		$ C.decrypt C.sha1 swk swmk 0
 		(B.encode ct `BS.append` B.encode vrsn) esf
-	readIORef log >>= print . LBS.take 12 . C.prf ms . ("server finished" `BS.append`) . SHA256.hash
 
 clientRandom :: IO BS.ByteString
 clientRandom = fst . cprgGenerate 32 <$>
