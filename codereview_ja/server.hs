@@ -134,6 +134,21 @@ send b h cc sk = do
 			(B.encode CTAppData `BS.append` B.encode vrsn) ebs
 		print bs
 --		BS.putStr bs
+		let (ec, g'') = C.encrypt C.sha1 swk swmk 1
+			(B.encode CTAppData `BS.append` B.encode (PrtVrsn 3 3)) contents g'
+		BS.hPut h $ BS.concat [
+			B.encode CTAppData,
+			B.encode $ PrtVrsn 3 3,
+			B.addLen (undefined :: Word16) ec
+			]
+
+contents :: BS.ByteString
+contents = BS.concat [
+	"HTTP/1.1 200 OK\r\n",
+	"Transfer-Encoding: chunked\r\n",
+	"Content-Type: text/plain\r\n\r\n",
+	"5\r\nHello0\r\n\r\n"
+	]
 
 getB :: B.Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = B.decode <$> BS.hGet h n
