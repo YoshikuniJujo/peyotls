@@ -34,16 +34,16 @@ main = do
 		B.encode $ PrtVrsn 3 3,
 		B.addLen (undefined :: Word16) $ B.encode hl ]
 	modifyIORef log (`BS.append` B.encode hl)
-	getB h 1 >>= (print :: Either String ContType -> IO ())
-	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
+	getB h 1 :: IO (Either String ContType)
+	getB h 2 :: IO (Either String PrtVrsn)
 	Right n <- getB h 2
 	bs <- BS.hGet h n
 	modifyIORef log (`BS.append` bs)
 	let	Right (Just sh@(SvHello _ sr _ _ _ _)) =
 			fromHandshake <$> (B.decode bs :: Either String Handshake)
 	print sh -- (B.decode bs :: Either String Handshake)
-	getB h 1 >>= (print :: Either String ContType -> IO ())
-	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
+	getB h 1 :: IO (Either String ContType)
+	getB h 2 :: IO (Either String PrtVrsn)
 	Right n <- getB h 2
 	bs <- BS.hGet h n
 	modifyIORef log (`BS.append` bs)
@@ -56,8 +56,8 @@ main = do
 			(\_ _ _ -> return X509.ValidationCacheUnknown)
 			(\_ _ _ -> return ()))
 		("localhost", "") cc >>= print
-	getB h 1 >>= (print :: Either String ContType -> IO ())
-	getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
+	getB h 1 :: IO (Either String ContType)
+	getB h 2 :: IO (Either String PrtVrsn)
 	Right n <- getB h 2
 	print n
 	bs <- BS.hGet h n
@@ -70,7 +70,7 @@ main = do
 		(Right epms, g'') = RSA.encrypt g' pk pms
 		(ms, cwmk, swmk, cwk, swk) = C.makeKeys 20 cr sr pms
 	print pms
-	print epms
+--	print epms
 	BS.hPut h $ BS.concat [
 		B.encode CTHandshake,
 		B.encode $ PrtVrsn 3 3,
@@ -88,7 +88,7 @@ main = do
 	let (ef, g''') = C.encrypt C.sha1 cwk cwmk 0
 		(B.encode CTHandshake `BS.append` B.encode (PrtVrsn 3 3)) 
 			(B.encode . toHandshake . Finished $ LBS.toStrict f) g''
-	print ef
+--	print ef
 	BS.hPut h $ BS.concat [
 		B.encode CTHandshake,
 		B.encode $ PrtVrsn 3 3,
@@ -96,22 +96,39 @@ main = do
 		]
 	modifyIORef log
 		(`BS.append` (B.encode . toHandshake . Finished $ LBS.toStrict f))
-	Right ct <- getB h 1
-	(print :: ContType -> IO ()) ct
-	Right vrsn <- getB h 2
-	(print :: PrtVrsn -> IO ()) vrsn
+	getB h 1 :: IO (Either String ContType)
+	getB h 2 :: IO (Either String PrtVrsn)
 	Right n <- getB h 2
 	BS.hGet h n >>= print
 	readIORef log >>= print . LBS.take 12 . C.prf ms . ("server finished" `BS.append`) . SHA256.hash
-	Right ct <- getB h 1
-	(print :: ContType -> IO ()) ct
-	Right vrsn <- getB h 2
-	(print :: PrtVrsn -> IO ()) vrsn
+	Right ct <- getB h 1 :: IO (Either String ContType)
+	Right vrsn <- getB h 2 :: IO (Either String PrtVrsn)
 	Right n <- getB h 2
 	esf <- BS.hGet h n
 	print . either Left (B.decode :: BS.ByteString -> Either String Handshake)
 		$ C.decrypt C.sha1 swk swmk 0
 		(B.encode ct `BS.append` B.encode vrsn) esf
+	let (em, g'''') = C.encrypt C.sha1 cwk cwmk 1
+		(B.encode CTAppData `BS.append` B.encode (PrtVrsn 3 3)) msg g'''
+--	print ef
+	BS.hPut h $ BS.concat [
+		B.encode CTAppData,
+		B.encode $ PrtVrsn 3 3,
+		B.addLen (undefined :: Word16) em
+		]
+	Right ct <- getB h 1 :: IO (Either String ContType)
+	print ct
+	Right vrsn <- getB h 2 :: IO (Either String PrtVrsn)
+	print vrsn
+	Right n <- getB h 2
+	ebs <- BS.hGet h n
+	let bs = C.decrypt C.sha1 swk swmk 1
+		(B.encode CTAppData `BS.append` B.encode (PrtVrsn 3 3)) ebs
+	print bs
+
+msg :: BS.ByteString
+msg = "GET / HTTP/1.1 \r\n" `BS.append`
+	"Host: localhost\r\n\r\n"
 
 clientRandom :: IO BS.ByteString
 clientRandom = fst . cprgGenerate 32 <$>

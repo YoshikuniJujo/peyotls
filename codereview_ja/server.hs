@@ -130,9 +130,10 @@ send b h cc sk = do
 		getB h 2 >>= (print :: Either String PrtVrsn -> IO ())
 		Right n <- getB h 2
 		ebs <- BS.hGet h n
-		let Right bs = C.decrypt C.sha1 cwk cwmk 1
+		let bs = C.decrypt C.sha1 cwk cwmk 1
 			(B.encode CTAppData `BS.append` B.encode vrsn) ebs
-		BS.putStr bs
+		print bs
+--		BS.putStr bs
 
 getB :: B.Bytable b => Handle -> Int -> IO (Either String b)
 getB h n = B.decode <$> BS.hGet h n
