@@ -2,6 +2,7 @@
 
 import Control.Applicative
 import Control.Monad
+import Control.Concurrent
 import Data.Word
 import Data.IORef
 import System.IO
@@ -24,10 +25,16 @@ main = do
 	cc <- readCertificateChain ["codereview_ja/newcert.pem"]
 	sk <- readKey "codereview_ja/newkey_dec.pem"
 	soc <- listenOn $ PortNumber 443
-	(h, _, _) <- accept soc
-	send False h cc sk
-	(h, _, _) <- accept soc
-	send True h cc sk
+	forever $ do
+--	2 `timesDo_` do
+		(h, _, _) <- accept soc
+		forkIO $ send True h cc sk
+--		(h, _, _) <- accept soc
+--		send True h cc sk
+
+timesDo_ :: Monad m => Int -> m a -> m ()
+timesDo_ 0 a = return ()
+timesDo_ n a = a >> timesDo_ (n - 1) a
 
 send b h cc sk = do
 	hs <- newIORef ""
