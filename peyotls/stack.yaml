@@ -1,0 +1,8 @@
+resolver: lts-2.22
+extra-deps:
+        - bytable-0.1.0.0
+        - handle-like-0.1.0.3
+        - peyotls-codec-0.3.1.0
+        - word24-1.0.7
+packages:
+        - ./

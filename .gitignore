@@ -2,3 +2,4 @@
 /peyotls-codec/dist/
 .html/
 .*.swp
+.stack-work/
